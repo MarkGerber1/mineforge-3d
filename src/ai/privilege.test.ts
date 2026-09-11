@@ -199,11 +199,12 @@ describe("HTTP privileged endpoints", { concurrency: 1 }, () => {
     assert.ok(res);
     assert.equal(res!.status, 200);
     assert.match(res!.headers.get("content-type") ?? "", /application\/json/);
-    const body = (await res!.json()) as { mode: string; sha?: string; buildId?: string };
+    const body = (await res!.json()) as { mode: string; sha?: string; buildId?: string; instanceModel?: string };
     assert.equal(body.mode, "server");
     assert.equal(typeof body.sha, "string");
     assert.ok((body.sha ?? "").length > 0);
     assert.equal(typeof body.buildId, "string");
+    assert.equal(body.instanceModel, "single-instance");
   });
 
   it("AC-6 owner login + mutation path is authorized (login ignores client role claim)", async () => {

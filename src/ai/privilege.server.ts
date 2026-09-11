@@ -175,12 +175,14 @@ export function runtimeSnapshot(
   role: ActorRole;
   sha: string;
   buildId: string;
+  instanceModel: "single-instance" | "multi-instance";
 } {
   const env = input.env ?? process.env;
   const enabled = isAppEditEnabled(env);
   const session = verifySession(parseCookieHeader(input.cookieHeader, PRIV_COOKIE), sessionSecret(env));
   const ai = Boolean(env.XAI_API_KEY);
   const id = deployedIdentity(env);
+  const instance = (env.PRODUCTION_INSTANCE_MODEL ?? "single-instance").trim().toLowerCase();
   return {
     mode: "server",
     ai,
@@ -189,6 +191,7 @@ export function runtimeSnapshot(
     role: session?.role ?? "anonymous",
     sha: id.sha,
     buildId: id.buildId,
+    instanceModel: instance === "multi-instance" ? "multi-instance" : "single-instance",
   };
 }
 

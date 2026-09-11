@@ -4,26 +4,28 @@ MINEFORGE 3D has **one architecture** and **two public surfaces**.
 
 ## Full-stack server runtime (canonical for Grok AI + Application Edit)
 
-`CANONICAL_FULLSTACK_URL=https://mineforge3d.continuous-impatiens.workers.dev`
+**Correction Pass 3:** there is **no accepted durable public hostname** in this
+workspace. A Cloudflare temporary `workers.dev` account and Quick Tunnels were
+rejected as canonical. Named Tunnel credentials (`CLOUDFLARE_TUNNEL_TOKEN`)
+are not present.
 
-Browser → named Cloudflare Worker (`mineforge3d`) → unpublished origin hop →
-live Grok Build full-stack process → `/api/*` and server functions → xAI
+`CANONICAL_FULLSTACK_URL=` *(unset until a claimed Cloudflare Named Tunnel
+token + DNS hostname are provided)*
+
+When the token is present, `scripts/canonical-tunnel.sh` runs
+`cloudflared tunnel run --token …` and the owner-supplied
+`CANONICAL_FULLSTACK_URL` is the persistent HTTPS identity.
+
+Browser → named Cloudflare Tunnel (claimed account, DNS route) →
+single full-stack process → `/api/*` and server functions → xAI
 (`XAI_API_KEY`, server-only) and isolated git jobs (owner session required).
 
-The public hostname is **not** `*.trycloudflare.com`. It is a requested
-Worker name on `workers.dev`. Restart of the application and of the origin hop
-redeploys the same Worker name; the hostname does not change.
-
-This Worker is currently backed by a **Cloudflare temporary (claim) account**.
-Unclaimed temporary accounts expire (about 60 minutes) and `workers.dev` may
-present a bot-management challenge. A claimed Cloudflare account / named
-Tunnel / grok.me publish remains the durable production path.
-
-`GET /api/runtime` (when the Worker is not challenging) →
+`GET /api/runtime` →
 
 ```
 { "mode": "server", "ai": true|false, "available": true|false,
-  "appEditEnabled": true|false, "role": "...", "sha": "<git sha>", "buildId": "..." }
+  "appEditEnabled": true|false, "role": "...", "sha": "<git sha>",
+  "buildId": "...", "instanceModel": "single-instance" }
 ```
 
 `sha` / `buildId` come from `MF_DEPLOY_SHA` (startup) or `git rev-parse HEAD`.
@@ -39,23 +41,35 @@ Environment (server-only, never `VITE_`):
 | `APP_EDIT_OWNER_SECRET` | Owner passphrase. Compared server-side only. |
 | `APP_EDIT_USER_SECRET` | Standard-user passphrase (tests / reduced role). |
 | `APP_EDIT_SESSION_SECRET` | HMAC key for the httpOnly `mf_priv` cookie. |
-| `RATE_LIMIT_TRUST` | `cloudflare` \| `vercel` \| `test` \| `local` \| `auto`. Production behind Cloudflare must set `cloudflare`. |
+| `RATE_LIMIT_TRUST` | `cloudflare` when Named Tunnel is in front; otherwise `local`. |
 | `MF_DEPLOY_SHA` | Exact deployed git SHA exposed on `/api/runtime`. |
+| `CLOUDFLARE_TUNNEL_TOKEN` | Named Tunnel token. Absence ⇒ no public canonical URL. |
+| `CANONICAL_FULLSTACK_URL` | Persistent public HTTPS origin served by that tunnel. |
+| `PRODUCTION_INSTANCE_MODEL` | `single-instance` on this process. |
 
-Privileged operations (deny by default, owner session required):
+### Application Edit policy (this architecture)
 
-create-branch, write-source, commit, rollback, create-job, promote, reject, inspect/read source.
+This runtime is a **persistent git worktree process** (filesystem, git,
+child processes, isolated preview). `APP_EDIT_ENABLED=true` is valid here.
+Authorization / isolation gates from Batch 1 remain required.
 
-Standard CAD users do not authenticate. They use Project / CAD / Engineering / 2D / 3D / IndexedDB.
+If the same commit is published to grok.me / Vercel / other serverless:
+`GROK_PROJECT_ID` is set, App Edit stays **off**, and the UI must say
+Application Edit is unavailable on that deployment.
 
-Rate limits (server-side, in-memory, fail-closed): Grok 20/60s, login 8/60s, App Edit mutations 30/60s.
-Behind Cloudflare, identity is **CF-Connecting-IP** (validated IPv4/IPv6). First
-`X-Forwarded-For` is never the key. Invalid/missing identity uses a single bounded
-`unknown` bucket.
+### Rate-limit topology
+
+`PRODUCTION_INSTANCE_MODEL=single-instance`. One Node process serves the
+canonical origin behind one Named Tunnel. Process-local memory buckets are
+sufficient: a request cannot land on a second independent limiter process
+because there is no autoscaling fleet. Multi-instance / serverless would
+require a shared store; that is not this architecture.
+
+Rate limits: Grok 20/60s, login 8/60s, App Edit mutations 30/60s.
+Behind Cloudflare, identity is **CF-Connecting-IP** (validated IPv4/IPv6).
+First `X-Forwarded-For` is never the key.
 
 Application Edit preview is **real build + started SSR + health, or fail-closed**.
-There is no synthetic `fixtureAppHtml` production fallback. `evidence.html` is
-not the runnable preview. `PROMOTE` requires `previewCommitSha === jobCommitSha`.
 
 ## Static CAD surface (GitHub Pages) — Option B
 
@@ -66,9 +80,6 @@ No server. `GET /api/runtime` is not JSON (static host fallback). The client ent
 - AI OFFLINE — no fake Grok answers
 - Application Edit is not presented as available
 - CAD, Engineering Core, REQUESTED/SAFE, 2D, 3D, local persistence still work
-
-GitHub Pages is mounted at `/mineforge-3d/`. The client resolves that basepath at runtime.
-Asset URLs in the Pages snapshot are rewritten to `/mineforge-3d/…`.
 
 **Do not treat GitHub Pages as the Grok / full-stack host.**
 

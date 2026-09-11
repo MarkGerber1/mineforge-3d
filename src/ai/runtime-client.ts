@@ -9,6 +9,7 @@ export interface RuntimeSnapshot {
   role: RuntimeRole;
   sha?: string;
   buildId?: string;
+  instanceModel?: "single-instance" | "multi-instance";
 }
 
 export const STATIC_RUNTIME: RuntimeSnapshot = {
@@ -31,6 +32,7 @@ export function parseRuntime(raw: unknown): RuntimeSnapshot | null {
     role: o.role === "owner" || o.role === "user" ? o.role : "anonymous",
     sha: typeof o.sha === "string" ? o.sha : undefined,
     buildId: typeof o.buildId === "string" ? o.buildId : undefined,
+    instanceModel: o.instanceModel === "multi-instance" ? "multi-instance" : "single-instance",
   };
 }
 

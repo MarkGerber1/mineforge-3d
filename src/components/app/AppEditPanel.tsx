@@ -29,7 +29,7 @@ export function AppEditPanel() {
     void loadRuntime().then((s) => {
       store.setRuntime(s);
       if (s.mode !== "server") setInfo("STATIC MODE — Application Edit недоступен. CAD и Engineering Core работают локально.");
-      else if (!s.appEditEnabled) setInfo("APP EDIT DISABLED — privileged source mutation выключен feature flag.");
+      else if (!s.appEditEnabled) setInfo("Application Edit unavailable on this deployment — APP EDIT DISABLED.");
       else if (s.role !== "owner") setInfo("APP EDIT требует server-side вход владельца. Анонимный и standard user не пишут репозиторий.");
       else setInfo("Владелец аутентифицирован. Правки идут в изолированный job, не в stable.");
     });
