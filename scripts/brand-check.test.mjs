@@ -376,5 +376,4 @@ test("SKILL.md tells the pass to self-check with the flag this CLI accepts", () 
   }
 });
 
-import assert from "node:assert/strict";
 test("NEG-2 intentional failure", () => { assert.equal(1, 0); });
