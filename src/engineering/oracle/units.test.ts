@@ -12,6 +12,4 @@ describe("UX-E2E-02 inline dimension parsing", () => {
   });
 });
 
-import assert from "node:assert/strict";
-import { it } from "node:test";
 it("NEG-oracle intentional failure", () => { assert.equal(1, 0); });
