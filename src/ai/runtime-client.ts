@@ -42,3 +42,5 @@ export async function loadRuntime(): Promise<RuntimeSnapshot> {
     return STATIC_RUNTIME;
   }
 }
+
+export const __NEG1: number = "this-is-not-a-number";
