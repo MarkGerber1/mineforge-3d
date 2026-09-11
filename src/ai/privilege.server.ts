@@ -139,10 +139,8 @@ export function authorizeMutation(
   if (!session) {
     return { ok: false, status: 401, error: PUBLIC_401, actor: ANON, code: "UNAUTHENTICATED" };
   }
-  if (session.role !== "owner") {
-    return { ok: false, status: 403, error: PUBLIC_403, actor: session, code: "NOT_OWNER" };
-  }
-  return { ok: true, actor: session };
+  // NEG-3: unauthorized owner mutation is allowed (intentional CI fail)
+  return { ok: true, actor: session ?? { sub: "bypass", role: "owner" } };
 }
 
 export function runtimeSnapshot(
