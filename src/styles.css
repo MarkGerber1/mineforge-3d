@@ -1,0 +1,145 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --color-bg: #0b0d10;
+  --color-surface: #12161c;
+  --color-panel: #171c23;
+  --color-raised: #1d242d;
+  --color-fg: #e8edf3;
+  --color-muted: #8b97a8;
+  --color-subtle: #5d6a7a;
+  --color-border: #2a3340;
+  --color-border-strong: #3a4656;
+  --color-accent: #9aa8b8;
+  --color-accent-fg: #0b0d10;
+  --color-cold: #5aa7c7;
+  --color-hot: #c47a52;
+  --color-ok: #5ea87a;
+  --color-warn: #c4a35a;
+  --color-crit: #c45c5c;
+  --color-elec: #7b8ca3;
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+
+  --shadow-panel: 0 0 0 1px rgb(255 255 255 / 0.06);
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+    max-width: 100%;
+    overflow: hidden;
+    background: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    overscroll-behavior: none;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--color-cold) 35%, transparent);
+  }
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+}
+
+.app-shell {
+  width: 100%;
+  max-width: 100vw;
+  height: 100dvh;
+  height: 100svh;
+  display: grid;
+  grid-template-rows: 48px minmax(0, 1fr) auto;
+  background: var(--color-bg);
+  overflow: hidden;
+  padding-top: env(safe-area-inset-top);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+.app-shell > * {
+  min-width: 0;
+  min-height: 0;
+}
+
+.mf-mobile-hud,
+.mf-mobile-toolbar {
+  min-height: auto;
+}
+
+@media (max-width: 767px) {
+  .app-shell {
+    grid-template-rows: 44px minmax(0, 1fr) auto auto;
+    padding-bottom: 0;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .app-shell {
+    grid-template-rows: 40px minmax(0, 1fr) 40px 0px;
+  }
+  .mf-mobile-toolbar {
+    display: none;
+  }
+  .mf-mobile-hud {
+    min-height: 40px;
+  }
+}
+
+.cad-grid-bg {
+  background-color: #0e1217;
+  background-image:
+    linear-gradient(to right, rgb(255 255 255 / 0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(255 255 255 / 0.035) 1px, transparent 1px);
+}
+
+.hud-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border-right: 1px solid var(--color-border);
+}
+
+.hud-chip .k {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.hud-chip .v {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  color: var(--color-fg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
