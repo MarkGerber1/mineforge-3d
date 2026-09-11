@@ -1,7 +1,12 @@
 /**
  * Process-local rate limiter. Fail-closed: any internal error denies the request.
  * Single-instance preview: in-memory buckets. Multi-instance production needs a shared store.
+ *
+ * Client identity is taken only from a trusted source for the deployment
+ * architecture. Attacker-controlled X-Forwarded-For first hops are never keys.
  */
+
+import { isIP } from "node:net";
 
 export interface LimitConfig {
   max: number;
@@ -20,6 +25,14 @@ export interface AllowResult {
   retryAfter: number;
 }
 
+/** Trusted identity policy. Production must set RATE_LIMIT_TRUST explicitly. */
+export type TrustMode = "cloudflare" | "vercel" | "test" | "local" | "auto";
+
+export const UNKNOWN_IP = "unknown";
+export const LOCAL_IP = "local";
+const MAX_IP_CHARS = 45;
+const MAX_KEY_CHARS = 96;
+
 const buckets = new Map<string, number[]>();
 let nowFn = () => Date.now();
 
@@ -33,7 +46,7 @@ export function resetRateLimits(): void {
 
 export function allow(key: string, cfg: LimitConfig): AllowResult {
   try {
-    if (!key || cfg.max < 1 || cfg.windowMs < 1) {
+    if (!key || key.length > MAX_KEY_CHARS || cfg.max < 1 || cfg.windowMs < 1) {
       return { ok: false, remaining: 0, retryAfter: 60 };
     }
     const now = nowFn();
@@ -54,15 +67,73 @@ export function allow(key: string, cfg: LimitConfig): AllowResult {
   }
 }
 
-export function clientIpFromHeaders(headers: Headers | Record<string, string | undefined> | undefined): string {
-  if (!headers) return "local";
-  const get = (name: string) => {
-    if (headers instanceof Headers) return headers.get(name) ?? undefined;
-    return headers[name] ?? headers[name.toLowerCase()];
-  };
-  const fwd = get("x-forwarded-for") ?? get("X-Forwarded-For");
-  if (fwd) return fwd.split(",")[0]!.trim() || "local";
-  return get("x-real-ip") ?? get("X-Real-Ip") ?? "local";
+export function rateLimitTrustMode(env: NodeJS.ProcessEnv = process.env): TrustMode {
+  const v = (env.RATE_LIMIT_TRUST ?? "auto").trim().toLowerCase();
+  if (v === "cloudflare" || v === "vercel" || v === "test" || v === "local" || v === "auto") return v;
+  return "local";
+}
+
+function headerGet(headers: Headers | Record<string, string | undefined>, name: string): string | undefined {
+  if (headers instanceof Headers) return headers.get(name) ?? undefined;
+  const lower = name.toLowerCase();
+  for (const [k, val] of Object.entries(headers)) {
+    if (k.toLowerCase() === lower) return val;
+  }
+  return undefined;
+}
+
+/** Validated IPv4/IPv6 only. Bounded length. Rejects lists and junk. */
+export function validClientIp(raw: string | undefined | null): string | undefined {
+  if (raw == null) return undefined;
+  if (typeof raw !== "string") return undefined;
+  if (raw.length > MAX_IP_CHARS) return undefined;
+  const s = raw.trim();
+  if (!s || s.length > MAX_IP_CHARS) return undefined;
+  if (/[,\s\r\n]/.test(s)) return undefined;
+  return isIP(s) ? s : undefined;
+}
+
+function resolveTrust(mode: TrustMode): TrustMode {
+  if (mode === "auto") {
+    // Presence of CF-RAY / CF-Connecting-IP is spoofable when the process is
+    // not actually behind Cloudflare. Auto therefore does not trust proxy
+    // headers. Production sets RATE_LIMIT_TRUST=cloudflare|vercel.
+    return "local";
+  }
+  return mode;
+}
+
+/**
+ * Trusted client identity for Grok, login, and App Edit mutation.
+ *
+ * cloudflare: CF-Connecting-IP only (validated). X-Forwarded-For / X-Real-IP ignored.
+ * vercel: x-real-ip or x-vercel-forwarded-for. First XFF hop ignored.
+ * test: x-mf-test-ip only (isolation tests).
+ * local / auto: ignore all client-supplied proxy headers → "local".
+ * Missing/invalid identity → bounded "unknown" bucket (fail-safe, not attacker-defined).
+ */
+export function clientIpFromHeaders(
+  headers: Headers | Record<string, string | undefined> | undefined,
+  mode?: TrustMode,
+): string {
+  const trust = resolveTrust(mode ?? rateLimitTrustMode());
+  if (!headers) {
+    return trust === "local" ? LOCAL_IP : UNKNOWN_IP;
+  }
+  if (trust === "cloudflare") {
+    return validClientIp(headerGet(headers, "cf-connecting-ip")) ?? UNKNOWN_IP;
+  }
+  if (trust === "vercel") {
+    return (
+      validClientIp(headerGet(headers, "x-real-ip")) ??
+      validClientIp(headerGet(headers, "x-vercel-forwarded-for")) ??
+      UNKNOWN_IP
+    );
+  }
+  if (trust === "test") {
+    return validClientIp(headerGet(headers, "x-mf-test-ip")) ?? UNKNOWN_IP;
+  }
+  return LOCAL_IP;
 }
 
 export async function clientIpFromRequest(): Promise<string> {
@@ -71,6 +142,6 @@ export async function clientIpFromRequest(): Promise<string> {
     const req = getRequest();
     return clientIpFromHeaders(req?.headers);
   } catch {
-    return "local";
+    return rateLimitTrustMode() === "local" || rateLimitTrustMode() === "auto" ? LOCAL_IP : UNKNOWN_IP;
   }
 }

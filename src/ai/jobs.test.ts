@@ -15,6 +15,9 @@ import {
   rollbackStableHandler,
   git,
   stableSha,
+  materializePreview,
+  stopJobPreview,
+  stopAllJobPreviews,
 } from "./jobs.server.ts";
 import { handleAppEditHttp } from "./http.server.ts";
 import { PRIV_COOKIE } from "./privilege.server.ts";
@@ -64,6 +67,27 @@ async function makeFixture() {
     }),
   );
   await writeFile(
+    join(dir, "build-preview-fixture.mjs"),
+    `import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+const root = process.cwd();
+const staticDir = join(root, ".vercel/output/static");
+const assets = join(staticDir, "assets");
+const fn = join(root, ".vercel/output/functions/__server.func");
+await mkdir(assets, { recursive: true });
+await mkdir(fn, { recursive: true });
+const html = "<!DOCTYPE html><html lang=\\"ru\\"><head><meta charset=\\"utf-8\\"/><title>MINEFORGE 3D</title></head>\\n<body data-mf-preview=\\"app\\"><div id=\\"mf-app\\">MINEFORGE 3D</div><script type=\\"module\\" src=\\"/assets/index-fixture.js\\"></script></body></html>";
+await writeFile(join(staticDir, "index.html"), html);
+await writeFile(join(assets, "index-fixture.js"), 'console.log("MINEFORGE 3D");\\n');
+await writeFile(
+  join(fn, "index.mjs"),
+  "export default { fetch() { return new Response(" +
+    JSON.stringify(html) +
+    ', { headers: { "content-type": "text/html; charset=utf-8" } }); } };\\n',
+);
+`,
+  );
+  await writeFile(
     join(dir, "package.json"),
     JSON.stringify({
       name: "mf-fixture",
@@ -71,7 +95,7 @@ async function makeFixture() {
       scripts: {
         typecheck: "tsc --noEmit",
         test: "node --experimental-strip-types --test src/ok.test.ts",
-        build: "tsc --noEmit && mkdir -p dist && echo ok > dist/ok.txt",
+        build: "node ./build-preview-fixture.mjs",
       },
     }),
   );
@@ -90,13 +114,16 @@ describe("Application Edit isolation pipeline", { concurrency: 1 }, () => {
     dir = await makeFixture();
     prev = {
       APP_EDIT_ROOT: process.env.APP_EDIT_ROOT,
+      MF_PREVIEW_HEALTH_MS: process.env.MF_PREVIEW_HEALTH_MS,
       ...Object.fromEntries(Object.keys(BASE_ENV).map((k) => [k, process.env[k]])),
     };
     process.env.APP_EDIT_ROOT = dir;
     Object.assign(process.env, BASE_ENV);
+    process.env.MF_PREVIEW_HEALTH_MS = "4000";
   });
 
   after(async () => {
+    stopAllJobPreviews();
     for (const [k, v] of Object.entries(prev)) {
       if (v === undefined) delete process.env[k];
       else process.env[k] = v;
@@ -250,5 +277,107 @@ describe("Application Edit isolation pipeline", { concurrency: 1 }, () => {
     });
     const res = await handleAppEditHttp(req);
     assert.equal(res!.status, 403);
+  });
+
+  it("AC-2 missing build artifact fails preview and blocks PROMOTE", async () => {
+    const before = await stableSha(dir);
+    const res = await createIsolatedJob(OWNER, {
+      request: "missing artifact",
+      name: "missart",
+      files: [{ path: "src/components/Panel.ts", content: 'export const Panel = "ok";\n// missart\n' }],
+    });
+    assert.equal(res.job!.status, "preview");
+    stopJobPreview(res.job!.id);
+    await rm(join(res.job!.worktree, ".vercel"), { recursive: true, force: true });
+    await rm(join(res.job!.worktree, "dist"), { recursive: true, force: true }).catch(() => undefined);
+    const m = await materializePreview(res.job!, "diff");
+    assert.equal(m.ok, false);
+    assert.equal(m.error, "missing-build-artifact");
+    assert.equal(res.job!.previewUrl, undefined);
+    assert.equal(res.job!.previewCommitSha, undefined);
+    assert.equal(existsSync(join(res.job!.worktree, "preview", "app", "index.html")), false);
+    assert.equal(existsSync(join(res.job!.worktree, "preview", "evidence.html")), true);
+    res.job!.status = "failed";
+    await writeFile(join(dir, ".grok/jobs", `${res.job!.id}.json`), JSON.stringify(res.job!, null, 2), "utf8");
+    const promo = await promoteJobHandler(OWNER, res.job!.id);
+    assert.equal(promo.ok, false);
+    assert.equal(await stableSha(dir), before);
+  });
+
+  it("AC-3 missing SSR entry fails closed", async () => {
+    const res = await createIsolatedJob(OWNER, {
+      request: "no ssr",
+      name: "nossr",
+      files: [{ path: "src/components/Panel.ts", content: 'export const Panel = "ok";\n// nossr\n' }],
+    });
+    assert.equal(res.job!.status, "preview");
+    stopJobPreview(res.job!.id);
+    await rm(join(res.job!.worktree, ".vercel/output/functions"), { recursive: true, force: true });
+    const m = await materializePreview(res.job!, "diff");
+    assert.equal(m.ok, false);
+    assert.equal(m.error, "missing-ssr-entry");
+    assert.equal(res.job!.previewUrl, undefined);
+    assert.equal(existsSync(join(res.job!.worktree, "preview", "app", "index.html")), false);
+    res.job!.status = "failed";
+    await writeFile(join(dir, ".grok/jobs", `${res.job!.id}.json`), JSON.stringify(res.job!, null, 2), "utf8");
+    const promo = await promoteJobHandler(OWNER, res.job!.id);
+    assert.equal(promo.ok, false);
+  });
+
+  it("AC-4 preview process startup failure fails closed", async () => {
+    const res = await createIsolatedJob(OWNER, {
+      request: "boom ssr",
+      name: "boomssr",
+      files: [{ path: "src/components/Panel.ts", content: 'export const Panel = "ok";\n// boomssr\n' }],
+    });
+    assert.equal(res.job!.status, "preview", res.job!.error);
+    stopJobPreview(res.job!.id);
+    const entry = join(res.job!.worktree, ".vercel/output/functions/__server.func/index.mjs");
+    await writeFile(entry, "throw new Error('startup-fail');\n", "utf8");
+    const m = await materializePreview(res.job!, "diff");
+    assert.equal(m.ok, false);
+    assert.equal(m.error, "preview-runtime-failed");
+    assert.equal(res.job!.previewUrl, undefined);
+    res.job!.status = "failed";
+    await writeFile(join(dir, ".grok/jobs", `${res.job!.id}.json`), JSON.stringify(res.job!, null, 2), "utf8");
+    const promo = await promoteJobHandler(OWNER, res.job!.id);
+    assert.equal(promo.ok, false);
+  });
+
+  it("AC-5 commit mismatch blocks PROMOTE", async () => {
+    const before = await stableSha(dir);
+    const res = await createIsolatedJob(OWNER, {
+      request: "mismatch",
+      name: "mismatch1",
+      files: [{ path: "src/components/Panel.ts", content: 'export const Panel = "ok";\n// mismatch\n' }],
+    });
+    assert.equal(res.job!.status, "preview");
+    res.job!.previewCommitSha = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+    await writeFile(join(dir, ".grok/jobs", `${res.job!.id}.json`), JSON.stringify(res.job!, null, 2), "utf8");
+    const promo = await promoteJobHandler(OWNER, res.job!.id);
+    assert.equal(promo.ok, false);
+    assert.equal(await stableSha(dir), before);
+    stopJobPreview(res.job!.id);
+  });
+
+  it("AC-6 evidence.html is not the previewUrl contract", async () => {
+    const res = await createIsolatedJob(OWNER, {
+      request: "evidence vs preview",
+      name: "evid1",
+      files: [{ path: "src/components/Panel.ts", content: 'export const Panel = "ok";\n// evid\n' }],
+    });
+    assert.equal(res.job!.status, "preview");
+    assert.ok(res.job!.previewUrl);
+    assert.equal(res.job!.previewUrl, `/__preview/${res.job!.id}/`);
+    assert.notEqual(res.job!.previewUrl, `/__preview/${res.job!.id}/evidence.html`);
+    const ev = await handleAppEditHttp(new Request(`http://app.test/__preview/${res.job!.id}/evidence.html`));
+    assert.equal(ev!.status, 200);
+    const evText = await ev!.text();
+    assert.match(evText, /evidence/i);
+    assert.doesNotMatch(evText, /data-mf-preview="app"/);
+    const app = await handleAppEditHttp(new Request(`http://app.test/__preview/${res.job!.id}/`));
+    assert.equal(app!.status, 200);
+    assert.match(await app!.text(), /data-mf-preview="app"/);
+    stopJobPreview(res.job!.id);
   });
 });

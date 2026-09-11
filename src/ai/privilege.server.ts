@@ -1,4 +1,5 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { spawnSync } from "node:child_process";
 
 export type ActorRole = "anonymous" | "user" | "owner";
 
@@ -145,6 +146,25 @@ export function authorizeMutation(
   return { ok: true, actor: session };
 }
 
+export function deployedIdentity(env: NodeJS.ProcessEnv = process.env): { sha: string; buildId: string } {
+  const fromEnv = (env.MF_DEPLOY_SHA || env.VERCEL_GIT_COMMIT_SHA || env.GITHUB_SHA || "").trim();
+  const sha = /^[0-9a-f]{7,64}$/i.test(fromEnv)
+    ? fromEnv.slice(0, 64)
+    : gitHead();
+  const buildId = (env.MF_BUILD_ID || env.VERCEL_DEPLOYMENT_ID || sha || "unknown").trim().slice(0, 80);
+  return { sha: sha || "unknown", buildId: buildId || "unknown" };
+}
+
+function gitHead(): string {
+  try {
+    const r = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8", timeout: 2000 });
+    const s = (r.stdout || "").trim();
+    return /^[0-9a-f]{7,64}$/i.test(s) ? s.slice(0, 64) : "";
+  } catch {
+    return "";
+  }
+}
+
 export function runtimeSnapshot(
   input: { cookieHeader?: string; env?: NodeJS.ProcessEnv } = {},
 ): {
@@ -153,17 +173,22 @@ export function runtimeSnapshot(
   available: boolean;
   appEditEnabled: boolean;
   role: ActorRole;
+  sha: string;
+  buildId: string;
 } {
   const env = input.env ?? process.env;
   const enabled = isAppEditEnabled(env);
   const session = verifySession(parseCookieHeader(input.cookieHeader, PRIV_COOKIE), sessionSecret(env));
   const ai = Boolean(env.XAI_API_KEY);
+  const id = deployedIdentity(env);
   return {
     mode: "server",
     ai,
     available: ai,
     appEditEnabled: enabled,
     role: session?.role ?? "anonymous",
+    sha: id.sha,
+    buildId: id.buildId,
   };
 }
 

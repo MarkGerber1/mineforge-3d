@@ -7,6 +7,8 @@ export interface RuntimeSnapshot {
   available: boolean;
   appEditEnabled: boolean;
   role: RuntimeRole;
+  sha?: string;
+  buildId?: string;
 }
 
 export const STATIC_RUNTIME: RuntimeSnapshot = {
@@ -27,6 +29,8 @@ export function parseRuntime(raw: unknown): RuntimeSnapshot | null {
     available: Boolean(o.available ?? o.ai),
     appEditEnabled: Boolean(o.appEditEnabled),
     role: o.role === "owner" || o.role === "user" ? o.role : "anonymous",
+    sha: typeof o.sha === "string" ? o.sha : undefined,
+    buildId: typeof o.buildId === "string" ? o.buildId : undefined,
   };
 }
 
