@@ -102,6 +102,9 @@ export function TopBar() {
         >
           AI
         </Button>
+        {store.grokOffline && (
+          <span className="hidden px-1 font-mono text-[9px] uppercase tracking-[0.12em] text-warn sm:inline">AI OFFLINE</span>
+        )}
         <div className="hidden px-2 font-mono text-[11px] text-muted lg:block">
           {store.saveState === "saving" ? "Saving…" : store.saveState === "saved" ? "Saved" : "Local"}
         </div>

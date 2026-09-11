@@ -26,9 +26,12 @@ export const grokEngineer = createServerFn({ method: "POST" })
         ok: false as const,
         offline: true,
         intent,
-        error: "AI OFFLINE — инженерное ядро, CAD и локальный Git работают без сети.",
+        error: "AI OFFLINE — инженерное ядро, CAD и локальный проект работают без сети.",
       };
     }
+
+    const { isAppEditEnabled } = await import("./privilege.server.ts");
+    const appEditOn = isAppEditEnabled();
 
     const tools = [
       {
@@ -97,11 +100,7 @@ export const grokEngineer = createServerFn({ method: "POST" })
         function: {
           name: "ask_reality_question",
           description: "Ask ONE short site-interview question. Do not claim geometry is verified.",
-          parameters: {
-            type: "object",
-            properties: { question: { type: "string" } },
-            required: ["question"],
-          },
+          parameters: { type: "object", properties: { question: { type: "string" } }, required: ["question"] },
         },
       },
       {
@@ -134,10 +133,11 @@ You are NOT the source of engineering numbers. Quote the Deterministic Engineeri
 Rules:
 - Never invent airflow, pressure, SAFE COUNT, electrical numbers.
 - Project edits: call propose_patch. User must APPLY.
-- Application edits: call propose_app_edit. Do not write that you already changed the app. If you cannot produce a real snippet, say APP EDIT needs a concrete file change.
-- Reality: never claim centimetre accuracy from one photo. Ask one necessary question. Findings are PHOTO_ESTIMATE until the user confirms. Visual realism never overrides geometry.
+- Application edits: ${appEditOn ? "call propose_app_edit. Do not write that you already changed the app. Isolated job + PROMOTE required." : "Application Edit is DISABLED. Do not pretend you can change the app source. Tell the user APP EDIT DISABLED."}
+- Reality: never claim centimetre accuracy from one photo. Ask one necessary question. Findings are PHOTO_ESTIMATE until the user confirms.
 - Answer in the user's language (Russian unless they write English).
 - Be concise, engineering, no marketing.
+- If you cannot reach tools or current project JSON, say so. Never fabricate a success.
 Selected object: ${data.selectedObjectId ?? "none"}
 Picked UI: ${data.pickedUi ?? "none"}
 ENGINEERING CORE:
@@ -184,10 +184,15 @@ ${data.projectJson.slice(0, 24000)}`;
           }),
         });
       } catch {
-        return { ok: false as const, offline: false, intent, error: "xAI timeout — CAD и Engineering Core работают без сети." };
+        return {
+          ok: false as const,
+          offline: false,
+          intent,
+          error: "AI OFFLINE — сеть xAI недоступна. CAD и Engineering Core работают.",
+        };
       }
       if (!res.ok) {
-        return { ok: false as const, offline: false, intent, error: `xAI API error ${res.status}` };
+        return { ok: false as const, offline: false, intent, error: `AI OFFLINE — xAI API error ${res.status}` };
       }
       const body = (await res.json()) as {
         choices: Array<{
@@ -211,8 +216,12 @@ ${data.projectJson.slice(0, 24000)}`;
               proposed = { summary: args.summary, detail: args.detail ?? "", patch: args.patch };
               toolResult = "Proposal recorded. User must APPLY.";
             } else if (call.function.name === "propose_app_edit") {
-              appEdit = JSON.parse(call.function.arguments);
-              toolResult = "App-edit proposal recorded. User must APPLY. Not written to disk.";
+              if (!appEditOn) {
+                toolResult = "APP EDIT DISABLED on this runtime.";
+              } else {
+                appEdit = JSON.parse(call.function.arguments);
+                toolResult = "App-edit proposal recorded. Isolated job required. Not written to stable.";
+              }
             } else if (call.function.name === "ask_reality_question") {
               const args = JSON.parse(call.function.arguments) as { question: string };
               realityQuestion = args.question;
@@ -238,12 +247,16 @@ ${data.projectJson.slice(0, 24000)}`;
       intent,
       text,
       proposedJson: proposed ? JSON.stringify(proposed) : "",
-      appEditJson: appEdit ? JSON.stringify(appEdit) : "",
+      appEditJson: appEditOn && appEdit ? JSON.stringify(appEdit) : "",
       realityQuestion: realityQuestion ?? "",
       findingJson: finding ? JSON.stringify(finding) : "",
     };
   });
 
 export const grokStatus = createServerFn({ method: "POST" }).handler(async () => {
-  return { available: Boolean(process.env.XAI_API_KEY) };
+  const { runtimeSnapshot, readRequestCookieHeader } = await import("./privilege.server.ts");
+  const cookieHeader = await readRequestCookieHeader();
+  return runtimeSnapshot({ cookieHeader });
 });
+
+export const runtimeHealth = grokStatus;

@@ -16,8 +16,12 @@
     "preview:stop": "node scripts/preview.mjs stop",
     "typecheck": "tsc --noEmit",
     "check:auth": "node scripts/check-auth-invariant.mjs",
-    "test": "node --test 'scripts/**/*.test.mjs' && node --experimental-strip-types --test src/lib/app-data/app-data.test.ts src/lib/app-data/readiness-schedule.test.ts src/lib/auth/gate-identity.test.ts src/lib/auth/sign-in-gate.test.ts && npm run test:oracle",
+    "test": "node --test 'scripts/**/*.test.mjs' && node --experimental-strip-types --test src/lib/app-data/app-data.test.ts src/lib/app-data/readiness-schedule.test.ts src/lib/auth/gate-identity.test.ts src/lib/auth/sign-in-gate.test.ts && npm run test:oracle && npm run test:security && npm run test:isolation",
     "test:oracle": "node --experimental-strip-types --test src/engineering/oracle/*.test.ts",
+    "test:security": "node --experimental-strip-types --test src/ai/privilege.test.ts src/ai/runtime-client.test.ts",
+    "test:isolation": "node --experimental-strip-types --test src/ai/jobs.test.ts",
+    "scan:secrets": "node scripts/scan-client-secrets.mjs",
+    "test:gate": "bash scripts/ci-gate.sh",
     "lint": "eslint .",
     "format": "prettier --write ."
   },

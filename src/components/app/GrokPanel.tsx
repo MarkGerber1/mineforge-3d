@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { grokEngineer, grokStatus } from "@/ai/grok";
+import { grokEngineer } from "@/ai/grok";
+import { loadRuntime } from "@/ai/runtime-client";
 import { routeIntent } from "@/ai/intent";
 import { Button } from "@/components/ui/button";
 import { useLiveResult, useProjectStore, type AppEditJob } from "@/project/store";
@@ -19,7 +20,7 @@ export function GrokPanel({ fill }: { fill?: boolean }) {
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    void grokStatus().then((s) => store.setGrokOffline(!s.available));
+    void loadRuntime().then((s) => store.setRuntime(s));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -35,6 +36,15 @@ export function GrokPanel({ fill }: { fill?: boolean }) {
     });
     store.pushGrok({ id: `u${Date.now()}`, role: "user", text: message });
     setText("");
+    if (store.runtime?.mode === "static" || store.runtime?.ai === false || store.grokOffline) {
+      store.setGrokOffline(true);
+      store.pushGrok({
+        id: `a${Date.now()}`,
+        role: "assistant",
+        text: "AI OFFLINE — нет server runtime / xAI. CAD, REQUESTED/SAFE и Twin работают локально.",
+      });
+      return;
+    }
     store.setGrokBusy(true);
     const summary = JSON.stringify({
       requested: result.capacity.requested,

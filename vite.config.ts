@@ -9,6 +9,8 @@ import { nitro } from "nitro/vite";
 // @ts-expect-error JS plugin alongside the TS vite config
 import { grokPwaPlugin } from "./scripts/grok-pwa-plugin.mjs";
 // @ts-expect-error JS plugin alongside the TS vite config
+import { appEditHttpPlugin } from "./scripts/app-edit-http-plugin.mjs";
+// @ts-expect-error JS plugin alongside the TS vite config
 import { appEnvPlugin } from "./scripts/app-env-plugin.mjs";
 import { isMigrationFile } from "./scripts/migration-plan.mjs";
 
@@ -161,6 +163,7 @@ export default defineConfig(({ command, isPreview }) => ({
     pgliteBootstrapPlugin(),
     // Before tanstackStart so /auth/popup never falls through to the SPA.
     authPopupPlugin(),
+    appEditHttpPlugin(),
     // Dev-only /__app-env, read by scripts/check-auth-invariant.mjs.
     appEnvPlugin(),
     // PWA head + ?install=1 tutorial page; runs before Start/Nitro.

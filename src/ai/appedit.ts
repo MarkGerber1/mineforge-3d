@@ -1,160 +1,145 @@
 import { createServerFn } from "@tanstack/react-start";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-import { readdir, readFile, writeFile, stat } from "node:fs/promises";
-import { join, normalize, relative, resolve } from "node:path";
 import { z } from "zod";
-import { isWritablePath } from "./paths.ts";
 
-const exec = promisify(execFile);
-const ROOT = resolve(process.cwd());
-
-function relSafe(p: string): string {
-  const abs = resolve(ROOT, p);
-  const rel = relative(ROOT, abs);
-  if (rel.startsWith("..") || normalize(rel).startsWith("..")) throw new Error("Path escapes workspace");
-  return rel.replace(/\\/g, "/");
-}
-
-async function git(args: string[]): Promise<{ ok: boolean; stdout: string; stderr: string }> {
-  try {
-    const { stdout, stderr } = await exec("git", args, { cwd: ROOT, timeout: 20000 });
-    return { ok: true, stdout: stdout.trim(), stderr: stderr.trim() };
-  } catch (e) {
-    const err = e as { stdout?: string; stderr?: string; message?: string };
-    return { ok: false, stdout: String(err.stdout ?? ""), stderr: String(err.stderr ?? err.message ?? "git failed") };
-  }
-}
-
-async function walk(dir: string, acc: string[] = []): Promise<string[]> {
-  const entries = await readdir(dir, { withFileTypes: true });
-  for (const e of entries) {
-    if (e.name === "node_modules" || e.name === ".git" || e.name.startsWith(".")) continue;
-    const p = join(dir, e.name);
-    if (e.isDirectory()) await walk(p, acc);
-    else acc.push(relative(ROOT, p).replace(/\\/g, "/"));
-  }
-  return acc;
-}
+const filesSchema = z.array(z.object({ path: z.string(), content: z.string().max(400_000) })).max(8);
 
 export const inspectRepo = createServerFn({ method: "POST" }).handler(async () => {
-  const files = (await walk(join(ROOT, "src"))).filter((f) => f.endsWith(".ts") || f.endsWith(".tsx") || f.endsWith(".css"));
-  const status = await git(["status", "-sb"]);
-  const branch = await git(["rev-parse", "--abbrev-ref", "HEAD"]);
-  const log = await git(["log", "-8", "--oneline"]);
-  return {
-    ok: true as const,
-    branch: branch.stdout || "unknown",
-    status: status.stdout,
-    log: log.stdout,
-    files: files.slice(0, 400),
-  };
+  const { requireOwner } = await import("./privilege.server.ts");
+  const gate = await requireOwner("inspect_repo");
+  if (!gate.ok) return { ok: false as const, status: gate.status, error: gate.error };
+  const { inspectRepoHandler } = await import("./jobs.server.ts");
+  return inspectRepoHandler();
 });
 
 export const searchCode = createServerFn({ method: "POST" })
   .validator((d: unknown) => z.object({ query: z.string().min(1).max(80) }).parse(d))
   .handler(async ({ data }) => {
-    const r = await git(["grep", "-n", "-I", "-e", data.query, "--", "src"]);
+    const { requireOwner } = await import("./privilege.server.ts");
+    const gate = await requireOwner("search_code", { body: data });
+    if (!gate.ok) return { ok: false as const, status: gate.status, error: gate.error, hits: [] as string[] };
+    const { git, stableSha } = await import("./jobs.server.ts");
+    void stableSha;
+    const root = process.env.APP_EDIT_ROOT || process.cwd();
+    const r = await git(["grep", "-n", "-I", "-e", data.query, "--", "src"], root);
     return { ok: true as const, hits: r.stdout.split("\n").filter(Boolean).slice(0, 40) };
   });
 
 export const readSourceFile = createServerFn({ method: "POST" })
   .validator((d: unknown) => z.object({ path: z.string().min(1).max(200) }).parse(d))
   .handler(async ({ data }) => {
-    const rel = relSafe(data.path);
-    if (!rel.startsWith("src/")) return { ok: false as const, error: "Only src/ is readable." };
-    const abs = join(ROOT, rel);
-    const st = await stat(abs).catch(() => null);
-    if (!st || !st.isFile()) return { ok: false as const, error: "Missing file" };
-    if (st.size > 200_000) return { ok: false as const, error: "File too large" };
-    const content = await readFile(abs, "utf8");
-    return { ok: true as const, path: rel, content };
+    const { requireOwner } = await import("./privilege.server.ts");
+    const gate = await requireOwner("read_source", { body: data });
+    if (!gate.ok) return { ok: false as const, status: gate.status, error: gate.error };
+    const { readSourceFileHandler } = await import("./jobs.server.ts");
+    return readSourceFileHandler(data.path);
   });
 
 export const writeSourceFiles = createServerFn({ method: "POST" })
   .validator((d: unknown) =>
-    z
-      .object({
-        files: z.array(z.object({ path: z.string(), content: z.string().max(400_000) })).max(8),
-        message: z.string().min(1).max(200),
-        branch: z.string().min(1).max(80),
-      })
-      .parse(d),
+    z.object({ files: filesSchema, message: z.string().min(1).max(200), branch: z.string().min(1).max(80), jobId: z.string().max(80).optional() }).parse(d),
   )
   .handler(async ({ data }) => {
-    for (const f of data.files) {
-      const rel = relSafe(f.path);
-      if (!isWritablePath(rel)) {
-        return { ok: false as const, error: `APP EDIT blocked: ${rel} is protected (Engineering Core).` };
-      }
-    }
-    const br = data.branch.replace(/[^a-zA-Z0-9/_-]/g, "-");
-    const cur = await git(["rev-parse", "--abbrev-ref", "HEAD"]);
-    if (cur.stdout === "main" || cur.stdout === "stable") {
-      const co = await git(["checkout", "-B", br]);
-      if (!co.ok) return { ok: false as const, error: co.stderr || "Cannot create branch" };
-    }
-    for (const f of data.files) {
-      const rel = relSafe(f.path);
-      const abs = join(ROOT, rel);
-      await writeFile(abs, f.content, "utf8");
-    }
-    await git(["add", "--", ...data.files.map((f) => relSafe(f.path))]);
-    const commit = await git(["commit", "-m", data.message]);
-    const diff = await git(["show", "--stat", "--oneline", "-1"]);
-    return {
-      ok: true as const,
-      branch: (await git(["rev-parse", "--abbrev-ref", "HEAD"])).stdout,
-      commit: commit.ok ? commit.stdout : "unstaged (nothing to commit)",
-      diff: diff.stdout,
-    };
+    const { requireOwner } = await import("./privilege.server.ts");
+    const gate = await requireOwner("write_source", { body: data });
+    if (!gate.ok) return { ok: false as const, status: gate.status, error: gate.error };
+    const { writeSourceFilesHandler } = await import("./jobs.server.ts");
+    return writeSourceFilesHandler(gate.actor, data);
   });
 
 export const rollbackChange = createServerFn({ method: "POST" })
   .validator((d: unknown) => z.object({ ref: z.string().min(1).max(80).optional() }).parse(d))
   .handler(async ({ data }) => {
-    const ref = data.ref ?? "main";
-    const r = await git(["checkout", ref, "--", "src/components", "src/styles.css", "src/ai/registry.ts", "src/ai/intent.ts"]);
-    if (!r.ok) return { ok: false as const, error: r.stderr || "rollback failed" };
-    return { ok: true as const, restored: ref };
+    const { requireOwner } = await import("./privilege.server.ts");
+    const gate = await requireOwner("rollback_stable", { body: data });
+    if (!gate.ok) return { ok: false as const, status: gate.status, error: gate.error };
+    const { rollbackStableHandler } = await import("./jobs.server.ts");
+    return rollbackStableHandler(gate.actor, data.ref);
   });
 
 export const runOracle = createServerFn({ method: "POST" }).handler(async () => {
-  try {
-    const { glob } = await import("node:fs/promises");
-    const files: string[] = [];
-    for await (const f of glob("src/engineering/oracle/*.test.ts", { cwd: ROOT })) files.push(f);
-    const { stdout, stderr } = await exec("node", ["--experimental-strip-types", "--test", ...files], {
-      cwd: ROOT,
-      timeout: 60000,
-      env: process.env,
-    });
-    const pass = /# fail\s+0/.test(stdout);
-    return { ok: pass, stdout: stdout.slice(-4000), stderr: stderr.slice(-1000) };
-  } catch (e) {
-    const err = e as { stdout?: string; stderr?: string };
-    return { ok: false, stdout: String(err.stdout ?? "").slice(-4000), stderr: String(err.stderr ?? "").slice(-1000) };
-  }
+  const { requireOwner } = await import("./privilege.server.ts");
+  const gate = await requireOwner("run_oracle");
+  if (!gate.ok) return { ok: false as const, status: gate.status, error: gate.error };
+  return { ok: false as const, error: "Oracle runs inside isolated job gates." };
 });
 
 export const createEditBranch = createServerFn({ method: "POST" })
   .validator((d: unknown) => z.object({ name: z.string().min(3).max(60) }).parse(d))
   .handler(async ({ data }) => {
-    const name = `ai-edit/${data.name.replace(/[^a-zA-Z0-9/_-]/g, "-")}`;
-    const r = await git(["checkout", "-B", name]);
-    return { ok: r.ok, branch: name, error: r.ok ? "" : r.stderr };
+    const { requireOwner } = await import("./privilege.server.ts");
+    const gate = await requireOwner("create_edit_branch", { body: data });
+    if (!gate.ok) return { ok: false as const, status: gate.status, error: gate.error, branch: "" };
+    const { createEditBranchHandler } = await import("./jobs.server.ts");
+    const res = await createEditBranchHandler(gate.actor, data.name);
+    return { ok: res.ok, branch: res.branch ?? res.job?.branch ?? "", error: res.error ?? "", job: res.job };
   });
 
 export const runTypecheck = createServerFn({ method: "POST" }).handler(async () => {
+  const { requireOwner } = await import("./privilege.server.ts");
+  const gate = await requireOwner("run_typecheck");
+  if (!gate.ok) return { ok: false as const, status: gate.status, error: gate.error };
+  return { ok: false as const, stdout: "", stderr: "Typecheck runs inside isolated job gates." };
+});
+
+export const createAppEditJob = createServerFn({ method: "POST" })
+  .validator((d: unknown) =>
+    z
+      .object({
+        request: z.string().min(1).max(400),
+        files: filesSchema.optional(),
+        name: z.string().max(40).optional(),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data }) => {
+    const { requireOwner } = await import("./privilege.server.ts");
+    const gate = await requireOwner("create_edit_job", { body: data });
+    if (!gate.ok) return { ok: false as const, status: gate.status, error: gate.error };
+    const { createIsolatedJob } = await import("./jobs.server.ts");
+    return createIsolatedJob(gate.actor, data);
+  });
+
+export const promoteAppEditJob = createServerFn({ method: "POST" })
+  .validator((d: unknown) => z.object({ jobId: z.string().min(1).max(80) }).parse(d))
+  .handler(async ({ data }) => {
+    const { requireOwner } = await import("./privilege.server.ts");
+    const gate = await requireOwner("promote_job", { body: data });
+    if (!gate.ok) return { ok: false as const, status: gate.status, error: gate.error };
+    const { promoteJobHandler } = await import("./jobs.server.ts");
+    return promoteJobHandler(gate.actor, data.jobId);
+  });
+
+export const rejectAppEditJob = createServerFn({ method: "POST" })
+  .validator((d: unknown) => z.object({ jobId: z.string().min(1).max(80) }).parse(d))
+  .handler(async ({ data }) => {
+    const { requireOwner } = await import("./privilege.server.ts");
+    const gate = await requireOwner("reject_job", { body: data });
+    if (!gate.ok) return { ok: false as const, status: gate.status, error: gate.error };
+    const { rejectJobHandler } = await import("./jobs.server.ts");
+    return rejectJobHandler(gate.actor, data.jobId);
+  });
+
+export const ownerLogin = createServerFn({ method: "POST" })
+  .validator((d: unknown) => z.object({ passphrase: z.string().min(1).max(200), role: z.string().optional(), isOwner: z.boolean().optional() }).parse(d))
+  .handler(async ({ data }) => {
+    const { loginWithPassphrase, cookieSetHeader } = await import("./privilege.server.ts");
+    const gate = loginWithPassphrase(data.passphrase);
+    if (!gate.ok) return { ok: false as const, status: gate.status, error: gate.error };
+    try {
+      const { setCookie } = await import("@tanstack/react-start/server");
+      setCookie("mf_priv", gate.token!, { httpOnly: true, sameSite: "lax", path: "/", maxAge: 28800 });
+    } catch {
+      void cookieSetHeader;
+    }
+    return { ok: true as const, role: gate.actor.role };
+  });
+
+export const ownerLogout = createServerFn({ method: "POST" }).handler(async () => {
   try {
-    const { stdout, stderr } = await exec("npx", ["tsc", "--noEmit"], { cwd: ROOT, timeout: 120000, env: process.env });
-    return { ok: true as const, stdout: stdout.slice(-2000), stderr: stderr.slice(-1000) };
-  } catch (e) {
-    const err = e as { stdout?: string; stderr?: string; message?: string };
-    return {
-      ok: false as const,
-      stdout: String(err.stdout ?? "").slice(-2000),
-      stderr: String(err.stderr ?? err.message ?? "").slice(-1000),
-    };
+    const { setCookie } = await import("@tanstack/react-start/server");
+    setCookie("mf_priv", "", { httpOnly: true, sameSite: "lax", path: "/", maxAge: 0 });
+  } catch {
+    /* tests */
   }
+  return { ok: true as const };
 });

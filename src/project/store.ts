@@ -11,6 +11,7 @@ import { saveProject } from "./persistence.ts";
 import { applyFailure, type FailureKind } from "../ai/failure.ts";
 import type { GrokScope } from "../ai/intent.ts";
 import { emptyReality, type AsBuiltObject, type RealityFinding } from "../engineering/types.ts";
+import type { RuntimeSnapshot } from "../ai/runtime-client.ts";
 
 export type CadTool = "select" | "pan" | "measure" | "door" | "intake" | "exhaust" | "rack" | "fan";
 export type SheetState = "closed" | "half" | "full";
@@ -21,9 +22,14 @@ export interface AppEditJob {
   request: string;
   branch: string;
   files: Array<{ path: string; instruction: string; oldSnippet?: string; newSnippet?: string }>;
-  status: "proposed" | "applied" | "rejected" | "rolled_back";
+  status: "proposed" | "applied" | "rejected" | "rolled_back" | "failed" | "preview" | "promoted";
   at: number;
   diff?: string;
+  jobId?: string;
+  previewUrl?: string;
+  gates?: { typecheck?: boolean; tests?: boolean; build?: boolean };
+  stableSha?: string;
+  jobCommitSha?: string;
 }
 
 export interface HistoryEntry {
@@ -74,6 +80,7 @@ interface ProjectStore {
   grok: GrokMessage[];
   grokBusy: boolean;
   grokOffline: boolean;
+  runtime: RuntimeSnapshot | null;
   proposed: ProposedChange | null;
   scenarios: Array<{ id: string; name: string; project: Project }>;
   command: string;
@@ -125,6 +132,7 @@ interface ProjectStore {
   pushGrok(msg: GrokMessage): void;
   setGrokBusy(v: boolean): void;
   setGrokOffline(v: boolean): void;
+  setRuntime(r: RuntimeSnapshot): void;
   setCommand(v: string): void;
   dismissFirstRun(): void;
   setWhyOpen(v: boolean): void;
@@ -190,6 +198,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   ],
   grokBusy: false,
   grokOffline: false,
+  runtime: null,
   proposed: null,
   scenarios: [],
   command: "",
@@ -418,6 +427,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
   setGrokBusy: (grokBusy) => set({ grokBusy }),
   setGrokOffline: (grokOffline) => set({ grokOffline }),
+  setRuntime: (runtime) => set({ runtime, grokOffline: !runtime.ai }),
   setCommand: (command) => set({ command }),
   dismissFirstRun: () => set({ firstRun: false }),
   setWhyOpen: (whyOpen) => set({ whyOpen }),

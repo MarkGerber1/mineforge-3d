@@ -1,0 +1,23 @@
+name: batch1-gate
+on:
+  pull_request:
+  push:
+    branches: [main, repair/batch-1]
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install
+        run: npm ci --legacy-peer-deps
+      - name: Mandatory gate
+        run: bash scripts/ci-gate.sh
+        env:
+          APP_EDIT_ENABLED: "true"
+          APP_EDIT_OWNER_SECRET: ci-owner-not-a-production-secret
+          APP_EDIT_USER_SECRET: ci-user-not-a-production-secret
+          APP_EDIT_SESSION_SECRET: ci-session-not-a-production-secret
