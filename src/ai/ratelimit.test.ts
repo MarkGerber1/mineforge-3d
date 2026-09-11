@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it, beforeEach } from "node:test";
 import { allow, resetRateLimits, setRateLimitNow, LIMITS, clientIpFromHeaders } from "./ratelimit.server.ts";
 import { handleAppEditHttp } from "./http.server.ts";
-import { executeGrokEngineer, getGrokProviderCalls, resetGrokProviderCalls } from "./grok.ts";
+import { executeGrokEngineer, getGrokProviderCalls, resetGrokProviderCalls } from "./grok-engine.server.ts";
 
 describe("rate limiter", () => {
   beforeEach(() => {
