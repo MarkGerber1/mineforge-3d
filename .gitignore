@@ -16,3 +16,4 @@ attachments/
 screenshots/*.png
 screenshots/*.json
 routeTree.gen.ts
+qa-evidence/

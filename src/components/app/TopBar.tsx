@@ -89,6 +89,13 @@ export function TopBar() {
           <Layers className="size-4" />
         </Button>
         <Button
+          className="hidden h-8 px-2.5 text-[12px] md:inline-flex"
+          variant={store.sheet !== "closed" && store.sheetTab === "app" ? "default" : "outline"}
+          onClick={() => store.openSheet("app", store.sheet !== "closed" && store.sheetTab === "app" ? "closed" : "half")}
+        >
+          App
+        </Button>
+        <Button
           className="h-9 min-w-10 px-2.5 text-[12px] md:hidden"
           variant={store.sheet !== "closed" && store.sheetTab === "grok" ? "default" : "outline"}
           onClick={() => store.openSheet("grok", store.sheet === "closed" ? "half" : "closed")}

@@ -166,20 +166,26 @@ ${data.projectJson.slice(0, 24000)}`;
     let text = "";
 
     for (let round = 0; round < 5; round++) {
-      const res = await fetch("https://api.x.ai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: "grok-4.5",
-          messages,
-          tools,
-          temperature: 0.2,
-          max_tokens: 1100,
-        }),
-      });
+      let res: Response;
+      try {
+        res = await fetch("https://api.x.ai/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+          },
+          signal: AbortSignal.timeout(20000),
+          body: JSON.stringify({
+            model: "grok-4.5",
+            messages,
+            tools,
+            temperature: 0.2,
+            max_tokens: 1100,
+          }),
+        });
+      } catch {
+        return { ok: false as const, offline: false, intent, error: "xAI timeout — CAD и Engineering Core работают без сети." };
+      }
       if (!res.ok) {
         return { ok: false as const, offline: false, intent, error: `xAI API error ${res.status}` };
       }

@@ -48,7 +48,7 @@ export function GrokPanel({ fill }: { fill?: boolean }) {
       fanPass: result.fan.pass,
       warnings: result.warnings.map((w) => w.title),
       missing: result.missing.filter((m) => !m.complete).map((m) => m.key),
-      critic: critiqueProject(store.project, result).map((c) => c.title),
+      critic: critiqueProject(store.live(), result).map((c) => c.title),
     });
     const reality = store.project.reality ?? emptyReality();
     try {

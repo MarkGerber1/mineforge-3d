@@ -407,7 +407,7 @@ export function Inspector({ hideGrok }: { hideGrok?: boolean }) {
         <div className="mt-3">
           <div className="mb-1 text-[10px] uppercase tracking-[0.12em] text-muted">Проверь мой проект</div>
           <div className="space-y-1 text-[11px] text-muted">
-            {critiqueProject(store.project, result).map((c) => (
+            {critiqueProject(project, result).map((c) => (
               <div key={c.id}>
                 <span className="text-fg">{c.severity}</span> · {c.title}
               </div>
