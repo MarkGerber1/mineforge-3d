@@ -15,5 +15,4 @@ attachments/
 .node_modules.lock
 screenshots/*.png
 screenshots/*.json
-routeTree.gen.ts
 qa-evidence/
