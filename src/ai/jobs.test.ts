@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, writeFile, readFile, symlink, rm } from "node:fs/promis
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { describe, it, before, after } from "node:test";
@@ -19,6 +20,7 @@ import { handleAppEditHttp } from "./http.server.ts";
 import { PRIV_COOKIE } from "./privilege.server.ts";
 
 const exec = promisify(execFile);
+const PROJECT_NODE_MODULES = join(fileURLToPath(new URL("../..", import.meta.url)), "node_modules");
 const OWNER = { sub: "owner", role: "owner" as const };
 const USER = { sub: "user", role: "user" as const };
 
@@ -74,7 +76,7 @@ async function makeFixture() {
     }),
   );
   const nm = join(dir, "node_modules");
-  if (!existsSync(nm)) await symlink("/workspace/node_modules", nm);
+  if (!existsSync(nm) && existsSync(PROJECT_NODE_MODULES)) await symlink(PROJECT_NODE_MODULES, nm);
   await exec("git", ["add", "-A"], { cwd: dir });
   await exec("git", ["commit", "-m", "init"], { cwd: dir });
   return dir;
@@ -184,7 +186,17 @@ describe("Application Edit isolation pipeline", { concurrency: 1 }, () => {
       name: "pro1",
       files: [{ path: "src/components/Panel.ts", content: 'export const Panel = "promoted";\n' }],
     });
-    assert.equal(res.job!.status, "preview");
+    assert.equal(
+      res.job!.status,
+      "preview",
+      JSON.stringify({
+        status: res.job!.status,
+        err: res.job!.error,
+        typecheck: res.job!.gates.typecheck,
+        tests: res.job!.gates.tests,
+        build: res.job!.gates.build,
+      }).slice(0, 1800),
+    );
     const previewed = res.job!.jobCommitSha!;
     const promo = await promoteJobHandler(OWNER, res.job!.id);
     assert.equal(promo.ok, true);
