@@ -35,6 +35,9 @@ def rewrite_html(text: str) -> str:
 def rewrite_js(text: str) -> str:
     text = text.replace("return`/`+e", f"return`{prefix}/`+e")
     text = text.replace("return '/' + e", f"return '{prefix}/' + e")
+    # TanStack Start hydration overwrites getRouter() basepath with empty.
+    text = text.replace("basepath:``", "basepath:`/mineforge-3d`")
+    text = text.replace('basepath:""', 'basepath:"/mineforge-3d"')
     text = text.replace("e.update({basepath:``})", "e.update({basepath:`/mineforge-3d`})")
     text = text.replace('e.update({basepath:""})', 'e.update({basepath:"/mineforge-3d"})')
     text = text.replace("href:`/favicon.svg`", f"href:`{prefix}/favicon.svg`")

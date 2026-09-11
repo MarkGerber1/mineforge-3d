@@ -1,4 +1,6 @@
-/** GitHub Pages is served at /mineforge-3d/; Grok preview is at /. */
+/** GitHub Pages is served at /mineforge-3d/; Grok preview is at /.
+ * Pages snapshot rewrite also patches TanStack Start's empty basepath overwrite.
+ */
 export function resolveBasepath(
   pathname = typeof window !== "undefined" ? window.location.pathname : "/",
   envBase = typeof import.meta !== "undefined" ? String((import.meta as { env?: { BASE_URL?: string } }).env?.BASE_URL || "/") : "/",
