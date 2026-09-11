@@ -10,13 +10,13 @@ This file is the evidence package. It does not contain secrets.
 | --- | --- |
 | Branch | `repair/batch-1` (fast-forwarded to `main`) |
 | Stable/base SHA | `9e22bbd706d479be41b2dd79433cd697f40d2a71` |
-| Candidate SHA | `cb342ef8c9938993a94950504469a1f1ed55e864` |
+| Candidate SHA | `8a87fae640b857855f4c3203d6781bc98c510d60` |
 | Worktree | `/workspace` |
 | Canonical server runtime | Grok Build live preview (full-stack). Health: `GET /api/runtime` → `{ "mode": "server" }` |
 | Public static CAD | https://markgerber1.github.io/mineforge-3d/ (Option B — no server, AI OFFLINE) |
 | Source | https://github.com/MarkGerber1/mineforge-3d |
 
-`CANDIDATE_SHA` = this commit on `repair/batch-1` / `main`.
+Implementation SHA `8a87fae640b857855f4c3203d6781bc98c510d60` on `repair/batch-1` (and `main` after fast-forward). This evidence file may have a follow-up docs stamp on top of that commit.
 
 ## Architecture (Task 1–3)
 
