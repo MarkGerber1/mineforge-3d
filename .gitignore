@@ -10,7 +10,8 @@ dist
 .env.*
 /tmp
 artifacts
-.grok/
+.grok/*
+!.grok/app-env.json
 attachments/
 .node_modules.lock
 screenshots/*.png

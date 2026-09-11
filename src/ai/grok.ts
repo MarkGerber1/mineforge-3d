@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { routeIntent } from "./intent.ts";
+import { allow, LIMITS, clientIpFromRequest } from "./ratelimit.server.ts";
 
 const inputSchema = z.object({
   message: z.string().min(1).max(4000),
@@ -12,122 +13,147 @@ const inputSchema = z.object({
   images: z.array(z.string().max(1_500_000)).max(3).optional(),
 });
 
-export const grokEngineer = createServerFn({ method: "POST" })
-  .validator((d: unknown) => inputSchema.parse(d))
-  .handler(async ({ data }) => {
-    const apiKey = process.env.XAI_API_KEY;
-    const intent = routeIntent(data.message, {
-      hasPhotos: Boolean(data.images?.length) || data.realitySummary.includes("photos:"),
-      pickedUi: Boolean(data.pickedUi),
-    });
+export type GrokInput = z.infer<typeof inputSchema>;
 
-    if (!apiKey) {
-      return {
-        ok: false as const,
-        offline: true,
-        intent,
-        error: "AI OFFLINE — инженерное ядро, CAD и локальный проект работают без сети.",
-      };
-    }
+let grokProviderCalls = 0;
+export function resetGrokProviderCalls(): void {
+  grokProviderCalls = 0;
+}
+export function getGrokProviderCalls(): number {
+  return grokProviderCalls;
+}
 
-    const { isAppEditEnabled } = await import("./privilege.server.ts");
-    const appEditOn = isAppEditEnabled();
+export async function executeGrokEngineer(
+  data: GrokInput,
+  opts: { ip?: string; fetchImpl?: typeof fetch } = {},
+) {
+  const intent = routeIntent(data.message, {
+    hasPhotos: Boolean(data.images?.length) || data.realitySummary.includes("photos:"),
+    pickedUi: Boolean(data.pickedUi),
+  });
 
-    const tools = [
-      {
-        type: "function",
-        function: {
-          name: "get_project_state",
-          description: "Canonical project snapshot already provided. Do not invent numbers.",
-          parameters: { type: "object", properties: {} },
-        },
+  const ip = opts.ip ?? (await clientIpFromRequest());
+  const lim = allow(`grok:${ip}`, LIMITS.grok);
+  if (!lim.ok) {
+    return {
+      ok: false as const,
+      offline: false,
+      rateLimited: true as const,
+      retryAfter: lim.retryAfter,
+      intent,
+      error: "Too Many Requests",
+    };
+  }
+
+  const apiKey = process.env.XAI_API_KEY;
+
+  if (!apiKey) {
+    return {
+      ok: false as const,
+      offline: true,
+      intent,
+      error: "AI OFFLINE — инженерное ядро, CAD и локальный проект работают без сети.",
+    };
+  }
+
+  const { isAppEditEnabled } = await import("./privilege.server.ts");
+  const appEditOn = isAppEditEnabled();
+
+  const tools = [
+    {
+      type: "function",
+      function: {
+        name: "get_project_state",
+        description: "Canonical project snapshot already provided. Do not invent numbers.",
+        parameters: { type: "object", properties: {} },
       },
-      {
-        type: "function",
-        function: {
-          name: "identify_bottleneck",
-          description: "Return Engineering Core bottleneck / SAFE from result summary.",
-          parameters: { type: "object", properties: {} },
-        },
+    },
+    {
+      type: "function",
+      function: {
+        name: "identify_bottleneck",
+        description: "Return Engineering Core bottleneck / SAFE from result summary.",
+        parameters: { type: "object", properties: {} },
       },
-      {
-        type: "function",
-        function: {
-          name: "propose_patch",
-          description: "Propose a project patch. Never claim it is applied.",
-          parameters: {
-            type: "object",
-            properties: {
-              summary: { type: "string" },
-              detail: { type: "string" },
-              patch: { type: "object" },
-            },
-            required: ["summary", "patch"],
+    },
+    {
+      type: "function",
+      function: {
+        name: "propose_patch",
+        description: "Propose a project patch. Never claim it is applied.",
+        parameters: {
+          type: "object",
+          properties: {
+            summary: { type: "string" },
+            detail: { type: "string" },
+            patch: { type: "object" },
           },
+          required: ["summary", "patch"],
         },
       },
-      {
-        type: "function",
-        function: {
-          name: "propose_app_edit",
-          description:
-            "Propose a source change to MINEFORGE UI. Must name files under src/components. Engineering core is forbidden. Never claim applied.",
-          parameters: {
-            type: "object",
-            properties: {
-              summary: { type: "string" },
-              branch: { type: "string" },
-              files: {
-                type: "array",
-                items: {
-                  type: "object",
-                  properties: {
-                    path: { type: "string" },
-                    instruction: { type: "string" },
-                    oldSnippet: { type: "string" },
-                    newSnippet: { type: "string" },
-                  },
-                  required: ["path", "instruction"],
+    },
+    {
+      type: "function",
+      function: {
+        name: "propose_app_edit",
+        description:
+          "Propose a source change to MINEFORGE UI. Must name files under src/components. Engineering core is forbidden. Never claim applied.",
+        parameters: {
+          type: "object",
+          properties: {
+            summary: { type: "string" },
+            branch: { type: "string" },
+            files: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  path: { type: "string" },
+                  instruction: { type: "string" },
+                  oldSnippet: { type: "string" },
+                  newSnippet: { type: "string" },
                 },
+                required: ["path", "instruction"],
               },
             },
-            required: ["summary", "files"],
           },
+          required: ["summary", "files"],
         },
       },
-      {
-        type: "function",
-        function: {
-          name: "ask_reality_question",
-          description: "Ask ONE short site-interview question. Do not claim geometry is verified.",
-          parameters: { type: "object", properties: { question: { type: "string" } }, required: ["question"] },
-        },
+    },
+    {
+      type: "function",
+      function: {
+        name: "ask_reality_question",
+        description: "Ask ONE short site-interview question. Do not claim geometry is verified.",
+        parameters: { type: "object", properties: { question: { type: "string" } }, required: ["question"] },
       },
-      {
-        type: "function",
-        function: {
-          name: "propose_finding",
-          description: "Propose a detected as-built object. User must ADD / ADJUST / IGNORE.",
-          parameters: {
-            type: "object",
-            properties: {
-              kind: { type: "string" },
-              summary: { type: "string" },
-              confidence: { type: "string" },
-              x: { type: "number" },
-              y: { type: "number" },
-              z: { type: "number" },
-              widthM: { type: "number" },
-              heightM: { type: "number" },
-              depthM: { type: "number" },
-            },
-            required: ["kind", "summary", "confidence"],
+    },
+    {
+      type: "function",
+      function: {
+        name: "propose_finding",
+        description: "Propose a detected as-built object. User must ADD / ADJUST / IGNORE.",
+        parameters: {
+          type: "object",
+          properties: {
+            kind: { type: "string" },
+            summary: { type: "string" },
+            confidence: { type: "string" },
+            x: { type: "number" },
+            y: { type: "number" },
+            z: { type: "number" },
+            widthM: { type: "number" },
+            heightM: { type: "number" },
+            depthM: { type: "number" },
           },
+          required: ["kind", "summary", "confidence"],
         },
       },
-    ];
+    },
+  ];
 
-    const system = `You are the single Grok Assistant inside MINEFORGE 3D.
+  const system = `You are the single Grok Assistant inside MINEFORGE 3D.
 Intent: ${intent.type}  Scope: ${intent.scope}
 You are NOT the source of engineering numbers. Quote the Deterministic Engineering Core.
 Rules:
@@ -147,111 +173,117 @@ ${data.realitySummary}
 PROJECT JSON:
 ${data.projectJson.slice(0, 24000)}`;
 
-    type ContentPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
-    const userContent: ContentPart[] = [{ type: "text", text: data.message }];
-    for (const url of data.images ?? []) {
-      if (url.startsWith("data:image/")) userContent.push({ type: "image_url", image_url: { url } });
-    }
+  type ContentPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
+  const userContent: ContentPart[] = [{ type: "text", text: data.message }];
+  for (const url of data.images ?? []) {
+    if (url.startsWith("data:image/")) userContent.push({ type: "image_url", image_url: { url } });
+  }
 
-    type Msg = { role: string; content: string | ContentPart[] | null; tool_calls?: unknown; tool_call_id?: string };
-    const messages: Msg[] = [
-      { role: "system", content: system },
-      { role: "user", content: userContent },
-    ];
+  type Msg = { role: string; content: string | ContentPart[] | null; tool_calls?: unknown; tool_call_id?: string };
+  const messages: Msg[] = [
+    { role: "system", content: system },
+    { role: "user", content: userContent },
+  ];
 
-    let proposed: { summary: string; detail: string; patch: unknown } | null = null;
-    let appEdit: unknown = null;
-    let realityQuestion: string | null = null;
-    let finding: unknown = null;
-    let text = "";
+  let proposed: { summary: string; detail: string; patch: unknown } | null = null;
+  let appEdit: unknown = null;
+  let realityQuestion: string | null = null;
+  let finding: unknown = null;
+  let text = "";
+  const fetchImpl = opts.fetchImpl ?? fetch;
 
-    for (let round = 0; round < 5; round++) {
-      let res: Response;
-      try {
-        res = await fetch("https://api.x.ai/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey}`,
-          },
-          signal: AbortSignal.timeout(20000),
-          body: JSON.stringify({
-            model: "grok-4.5",
-            messages,
-            tools,
-            temperature: 0.2,
-            max_tokens: 1100,
-          }),
-        });
-      } catch {
-        return {
-          ok: false as const,
-          offline: false,
-          intent,
-          error: "AI OFFLINE — сеть xAI недоступна. CAD и Engineering Core работают.",
-        };
-      }
-      if (!res.ok) {
-        return { ok: false as const, offline: false, intent, error: `AI OFFLINE — xAI API error ${res.status}` };
-      }
-      const body = (await res.json()) as {
-        choices: Array<{
-          message: {
-            content?: string | null;
-            tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
-          };
-        }>;
+  for (let round = 0; round < 5; round++) {
+    let res: Response;
+    try {
+      grokProviderCalls += 1;
+      res = await fetchImpl("https://api.x.ai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        signal: AbortSignal.timeout(20000),
+        body: JSON.stringify({
+          model: "grok-4.5",
+          messages,
+          tools,
+          temperature: 0.2,
+          max_tokens: 1100,
+        }),
+      });
+    } catch {
+      return {
+        ok: false as const,
+        offline: false,
+        intent,
+        error: "AI OFFLINE — сеть xAI недоступна. CAD и Engineering Core работают.",
       };
-      const msg = body.choices[0]?.message;
-      if (!msg) break;
-      if (msg.tool_calls?.length) {
-        messages.push({ role: "assistant", content: msg.content ?? null, tool_calls: msg.tool_calls });
-        for (const call of msg.tool_calls) {
-          let toolResult = "";
-          try {
-            if (call.function.name === "get_project_state") toolResult = data.projectJson.slice(0, 20000);
-            else if (call.function.name === "identify_bottleneck") toolResult = data.resultSummary;
-            else if (call.function.name === "propose_patch") {
-              const args = JSON.parse(call.function.arguments) as { summary: string; detail?: string; patch: unknown };
-              proposed = { summary: args.summary, detail: args.detail ?? "", patch: args.patch };
-              toolResult = "Proposal recorded. User must APPLY.";
-            } else if (call.function.name === "propose_app_edit") {
-              if (!appEditOn) {
-                toolResult = "APP EDIT DISABLED on this runtime.";
-              } else {
-                appEdit = JSON.parse(call.function.arguments);
-                toolResult = "App-edit proposal recorded. Isolated job required. Not written to stable.";
-              }
-            } else if (call.function.name === "ask_reality_question") {
-              const args = JSON.parse(call.function.arguments) as { question: string };
-              realityQuestion = args.question;
-              toolResult = "Question queued.";
-            } else if (call.function.name === "propose_finding") {
-              finding = JSON.parse(call.function.arguments);
-              toolResult = "Finding queued as PHOTO_ESTIMATE. User must ADD / IGNORE.";
-            } else toolResult = "Unknown tool.";
-          } catch {
-            toolResult = "Invalid tool JSON.";
-          }
-          messages.push({ role: "tool", content: toolResult, tool_call_id: call.id });
-        }
-        continue;
-      }
-      text = msg.content ?? "";
-      break;
     }
-
-    return {
-      ok: true as const,
-      offline: false,
-      intent,
-      text,
-      proposedJson: proposed ? JSON.stringify(proposed) : "",
-      appEditJson: appEditOn && appEdit ? JSON.stringify(appEdit) : "",
-      realityQuestion: realityQuestion ?? "",
-      findingJson: finding ? JSON.stringify(finding) : "",
+    if (!res.ok) {
+      return { ok: false as const, offline: false, intent, error: `AI OFFLINE — xAI API error ${res.status}` };
+    }
+    const body = (await res.json()) as {
+      choices: Array<{
+        message: {
+          content?: string | null;
+          tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
+        };
+      }>;
     };
-  });
+    const msg = body.choices[0]?.message;
+    if (!msg) break;
+    if (msg.tool_calls?.length) {
+      messages.push({ role: "assistant", content: msg.content ?? null, tool_calls: msg.tool_calls });
+      for (const call of msg.tool_calls) {
+        let toolResult = "";
+        try {
+          if (call.function.name === "get_project_state") toolResult = data.projectJson.slice(0, 20000);
+          else if (call.function.name === "identify_bottleneck") toolResult = data.resultSummary;
+          else if (call.function.name === "propose_patch") {
+            const args = JSON.parse(call.function.arguments) as { summary: string; detail?: string; patch: unknown };
+            proposed = { summary: args.summary, detail: args.detail ?? "", patch: args.patch };
+            toolResult = "Proposal recorded. User must APPLY.";
+          } else if (call.function.name === "propose_app_edit") {
+            if (!appEditOn) {
+              toolResult = "APP EDIT DISABLED on this runtime.";
+            } else {
+              appEdit = JSON.parse(call.function.arguments);
+              toolResult = "App-edit proposal recorded. Isolated job required. Not written to stable.";
+            }
+          } else if (call.function.name === "ask_reality_question") {
+            const args = JSON.parse(call.function.arguments) as { question: string };
+            realityQuestion = args.question;
+            toolResult = "Question queued.";
+          } else if (call.function.name === "propose_finding") {
+            finding = JSON.parse(call.function.arguments);
+            toolResult = "Finding queued as PHOTO_ESTIMATE. User must ADD / IGNORE.";
+          } else toolResult = "Unknown tool.";
+        } catch {
+          toolResult = "Invalid tool JSON.";
+        }
+        messages.push({ role: "tool", content: toolResult, tool_call_id: call.id });
+      }
+      continue;
+    }
+    text = msg.content ?? "";
+    break;
+  }
+
+  return {
+    ok: true as const,
+    offline: false,
+    intent,
+    text,
+    proposedJson: proposed ? JSON.stringify(proposed) : "",
+    appEditJson: appEditOn && appEdit ? JSON.stringify(appEdit) : "",
+    realityQuestion: realityQuestion ?? "",
+    findingJson: finding ? JSON.stringify(finding) : "",
+  };
+}
+
+export const grokEngineer = createServerFn({ method: "POST" })
+  .validator((d: unknown) => inputSchema.parse(d))
+  .handler(async ({ data }) => executeGrokEngineer(data));
 
 export const grokStatus = createServerFn({ method: "POST" }).handler(async () => {
   const { runtimeSnapshot, readRequestCookieHeader } = await import("./privilege.server.ts");

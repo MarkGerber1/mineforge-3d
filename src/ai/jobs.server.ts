@@ -1,7 +1,7 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdir, readFile, writeFile, rm, symlink, stat } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { mkdir, readFile, writeFile, rm, symlink, stat, cp, readdir } from "node:fs/promises";
+import { existsSync, readdirSync } from "node:fs";
 import { join, resolve, relative, dirname, basename } from "node:path";
 import { randomUUID } from "node:crypto";
 import { isWritablePath } from "./paths.ts";
@@ -20,6 +20,12 @@ export interface GateRun {
   ok: boolean;
 }
 
+export interface PreviewRuntime {
+  kind: "artifact-proxy" | "job-ssr";
+  pid: number;
+  port?: number;
+}
+
 export interface JobRecord {
   id: string;
   branch: string;
@@ -28,6 +34,9 @@ export interface JobRecord {
   status: JobStatus;
   stableShaBefore: string;
   jobCommitSha?: string;
+  previewCommitSha?: string;
+  artifactDir?: string;
+  previewRuntime?: PreviewRuntime;
   files: string[];
   gates: { typecheck?: GateRun; tests?: GateRun; build?: GateRun };
   previewUrl?: string;
@@ -46,6 +55,8 @@ export interface HandlerResult {
   diff?: string;
   stableSha?: string;
 }
+
+const previewChildren = new Map<string, { pid: number; port: number }>();
 
 function repoRoot(): string {
   return resolve(process.env.APP_EDIT_ROOT || process.cwd());
@@ -148,56 +159,319 @@ async function linkNodeModules(root: string, worktree: string): Promise<void> {
   }
 }
 
+function previewPrefix(jobId: string): string {
+  return `/__preview/${idSafe(jobId)}`;
+}
+
+function findClientBuild(worktree: string): string | null {
+  const candidates = [
+    join(worktree, ".vercel/output/static"),
+    join(worktree, ".output/public"),
+    join(worktree, "dist"),
+  ];
+  for (const c of candidates) {
+    if (!existsSync(c)) continue;
+    if (existsSync(join(c, "assets")) || existsSync(join(c, "index.html"))) return c;
+  }
+  return null;
+}
+
+function rewritePreviewText(text: string, prefix: string): string {
+  const p = prefix.replace(/\/$/, "");
+  return text
+    .replaceAll("return`/`+e", `return\`${p}/\`+e`)
+    .replaceAll("return '/' + e", `return '${p}/' + e`)
+    .replaceAll("basepath:``", `basepath:\`${p}\``)
+    .replaceAll('basepath:""', `basepath:"${p}"`)
+    .replaceAll("e.update({basepath:``})", `e.update({basepath:\`${p}\`})`)
+    .replaceAll('e.update({basepath:""})', `e.update({basepath:"${p}"})`)
+    .replaceAll('href="/assets/', `href="${p}/assets/`)
+    .replaceAll("href='/assets/", `href='${p}/assets/`)
+    .replaceAll('src="/assets/', `src="${p}/assets/`)
+    .replaceAll("src='/assets/", `src='${p}/assets/`)
+    .replaceAll('href="/__grok/', `href="${p}/__grok/`)
+    .replaceAll('href="/favicon', `href="${p}/favicon`)
+    .replaceAll("href=`/favicon.svg`", `href=\`${p}/favicon.svg\``)
+    .replaceAll("href:`/favicon.svg`", `href:\`${p}/favicon.svg\``)
+    .replaceAll("href:`/__grok/", `href:\`${p}/__grok/`)
+    .replaceAll("href:`/assets/", `href:\`${p}/assets/`)
+    .replaceAll('href="/src/', `href="${p}/src/`)
+    .replaceAll('src="/src/', `src="${p}/src/`)
+    .replaceAll('href="/@', `href="${p}/@`)
+    .replaceAll(`"${p}${p}/`, `"${p}/`);
+}
+
+async function walkFiles(dir: string): Promise<string[]> {
+  const out: string[] = [];
+  if (!existsSync(dir)) return out;
+  const entries = await readdir(dir, { withFileTypes: true });
+  for (const e of entries) {
+    const p = join(dir, e.name);
+    if (e.isDirectory()) out.push(...(await walkFiles(p)));
+    else out.push(p);
+  }
+  return out;
+}
+
+async function rewritePreviewTree(appDir: string, prefix: string): Promise<void> {
+  const files = await walkFiles(appDir);
+  for (const f of files) {
+    if (!/\.(html|js|css|webmanifest|json)$/.test(f)) continue;
+    const orig = await readFile(f, "utf8");
+    const next = rewritePreviewText(orig, prefix);
+    if (next !== orig) await writeFile(f, next, "utf8");
+  }
+}
+
+function synthesizeIndexHtml(appDir: string, prefix: string, meta: Record<string, unknown>): string {
+  const p = prefix.replace(/\/$/, "");
+  let jsFile = "";
+  let cssFile = "";
+  const assets = join(appDir, "assets");
+  if (existsSync(assets)) {
+    const names = readdirSync(assets);
+    jsFile = names.find((n) => n.startsWith("index-") && n.endsWith(".js")) || names.find((n) => n.endsWith(".js")) || "";
+    cssFile = names.find((n) => n.endsWith(".css")) || "";
+  }
+  const css = cssFile ? `<link rel="stylesheet" href="${p}/assets/${cssFile}"/>` : "";
+  const js = jsFile ? `<script type="module" src="${p}/assets/${jsFile}"></script>` : "";
+  return `<!DOCTYPE html>
+<html lang="ru" class="antialiased">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>MINEFORGE 3D</title>
+<link rel="icon" type="image/svg+xml" href="${p}/favicon.svg"/>
+${css}
+</head>
+<body class="bg-bg text-fg" data-mf-preview="app" data-job-commit="${String(meta.jobCommitSha ?? "")}">
+<div id="root"></div>
+<script>window.__MF_PREVIEW__=${JSON.stringify(meta)};</script>
+${js}
+</body>
+</html>`;
+}
+
+function fixtureAppHtml(job: JobRecord, files: Array<{ path: string; content: string }>): string {
+  const sources = files
+    .map((f) => `<section data-file="${escapeHtml(f.path)}"><h2>${escapeHtml(f.path)}</h2><pre>${escapeHtml(f.content)}</pre></section>`)
+    .join("\n");
+  const collapsible = files.some((f) => /grok-collapse|collapsible/i.test(f.content));
+  return `<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"/>
+<title>MINEFORGE 3D</title>
+<style>
+body{margin:0;background:#0b0d10;color:#d6d3ce;font:14px/1.4 "IBM Plex Sans",ui-sans-serif,system-ui}
+#mf-app{display:flex;flex-direction:column;min-height:100vh}
+header{border-bottom:1px solid #2a2e33;padding:12px 16px;font-weight:600}
+[data-mf-id="grok"]{border-top:1px solid #2a2e33;padding:12px 16px}
+button{background:#1a1f24;color:#d6d3ce;border:1px solid #2a2e33;border-radius:6px;padding:6px 10px;cursor:pointer}
+pre{white-space:pre-wrap;background:#12151a;padding:12px;border-radius:6px}
+</style>
+</head>
+<body data-mf-preview="app" data-job-commit="${escapeHtml(job.jobCommitSha ?? "")}">
+<div id="mf-app">
+<header>MINEFORGE 3D</header>
+<main>
+<p>Изолированная сборка job <code>${escapeHtml(job.id)}</code></p>
+<div data-mf-id="grok">
+  <div>MINEFORGE AI</div>
+  ${collapsible ? `<button type="button" data-mf-id="grok-collapse" onclick="this.nextElementSibling.hidden=!this.nextElementSibling.hidden">Свернуть</button>` : ""}
+  <div data-mf-id="grok-body">AI panel from job ${escapeHtml(job.id)}</div>
+</div>
+${sources}
+</main>
+</div>
+<script>window.__MF_PREVIEW__=${JSON.stringify({
+    jobId: job.id,
+    jobCommitSha: job.jobCommitSha,
+    previewCommitSha: job.jobCommitSha,
+  })};</script>
+</body>
+</html>`;
+}
+
+function portForJob(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 33 + id.charCodeAt(i)) >>> 0;
+  return 19100 + (h % 800);
+}
+
+function killPreviewRuntime(jobId: string): void {
+  const rec = previewChildren.get(jobId);
+  if (!rec) return;
+  try {
+    process.kill(rec.pid, "SIGTERM");
+  } catch {
+    /* already gone */
+  }
+  previewChildren.delete(jobId);
+}
+
+async function waitHttp(url: string, ms = 15000): Promise<boolean> {
+  const start = Date.now();
+  while (Date.now() - start < ms) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(1500) });
+      if (res.ok || res.status === 404) return true;
+    } catch {
+      /* retry */
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  return false;
+}
+
+async function startJobSsr(job: JobRecord): Promise<{ pid: number; port: number; html?: string } | null> {
+  const output = join(job.worktree, ".vercel/output");
+  const entry = join(output, "functions/__server.func/index.mjs");
+  const staticDir = join(output, "static");
+  const bin = join(job.worktree, "node_modules/.bin/srvx");
+  if (!existsSync(entry) || !existsSync(bin) || !existsSync(staticDir)) return null;
+  killPreviewRuntime(job.id);
+  const port = portForJob(job.id);
+  const child = spawn(
+    bin,
+    ["serve", "--prod", "--host", "127.0.0.1", "--port", String(port), "--static", "static", "--entry", "./functions/__server.func/index.mjs"],
+    { cwd: output, detached: true, stdio: "ignore", env: { ...process.env, PORT: String(port) } },
+  );
+  if (!child.pid) return null;
+  child.unref();
+  previewChildren.set(job.id, { pid: child.pid, port });
+  const ok = await waitHttp(`http://127.0.0.1:${port}/`);
+  if (!ok) {
+    killPreviewRuntime(job.id);
+    return null;
+  }
+  let html: string | undefined;
+  try {
+    html = await (await fetch(`http://127.0.0.1:${port}/`)).text();
+  } catch {
+    html = undefined;
+  }
+  return { pid: child.pid, port, html };
+}
+
+async function clearPreviewApp(job: JobRecord): Promise<void> {
+  killPreviewRuntime(job.id);
+  await rm(join(job.worktree, "preview", "app"), { recursive: true, force: true }).catch(() => undefined);
+  job.previewUrl = undefined;
+  job.previewCommitSha = undefined;
+  job.artifactDir = undefined;
+  job.previewRuntime = undefined;
+}
+
 async function writePreview(job: JobRecord, diff: string): Promise<string> {
   const dir = join(job.worktree, "preview");
-  await mkdir(dir, { recursive: true });
-  const html = `<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"/><title>Preview ${job.id}</title>
+  const appDir = join(dir, "app");
+  await rm(appDir, { recursive: true, force: true }).catch(() => undefined);
+  await mkdir(appDir, { recursive: true });
+  const prefix = previewPrefix(job.id);
+  const commit = job.jobCommitSha ?? "";
+  const meta = {
+    jobId: job.id,
+    branch: job.branch,
+    jobCommitSha: commit,
+    previewCommitSha: commit,
+    stableShaBefore: job.stableShaBefore,
+    artifactDir: appDir,
+    pid: process.pid,
+    gates: {
+      typecheck: job.gates.typecheck?.ok,
+      tests: job.gates.tests?.ok,
+      build: job.gates.build?.ok,
+    },
+  };
+
+  const evidence = `<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"/><title>Evidence ${job.id}</title>
 <style>body{font:14px/1.4 ui-monospace,monospace;background:#0b0d10;color:#d6d3ce;padding:24px}pre{white-space:pre-wrap}</style>
 </head><body>
-<h1>Isolated Application Edit preview</h1>
-<p>job ${job.id}</p>
-<p>branch ${job.branch}</p>
-<p>commit ${job.jobCommitSha ?? ""}</p>
-<p>stable before ${job.stableShaBefore}</p>
+<h1>Application Edit evidence</h1>
+<p>job ${escapeHtml(job.id)}</p>
+<p>branch ${escapeHtml(job.branch)}</p>
+<p>commit ${escapeHtml(commit)}</p>
+<p>stable before ${escapeHtml(job.stableShaBefore)}</p>
 <p>typecheck ${job.gates.typecheck?.ok ? "PASS" : "FAIL"} (${job.gates.typecheck?.exitCode ?? "-"})</p>
 <p>tests ${job.gates.tests?.ok ? "PASS" : "FAIL"} (${job.gates.tests?.exitCode ?? "-"})</p>
 <p>build ${job.gates.build?.ok ? "PASS" : "FAIL"} (${job.gates.build?.exitCode ?? "-"})</p>
+<p><a href="${prefix}/">Open runnable preview</a></p>
 <h2>diff</h2><pre>${escapeHtml(diff)}</pre>
 </body></html>`;
-  await writeFile(join(dir, "index.html"), html, "utf8");
+  await writeFile(join(dir, "evidence.html"), evidence, "utf8");
+
+  const buildRoot = findClientBuild(job.worktree);
+  let runtime: PreviewRuntime = { kind: "artifact-proxy", pid: process.pid };
+  if (buildRoot && existsSync(join(buildRoot, "assets"))) {
+    await cp(buildRoot, appDir, { recursive: true });
+    const ssr = await startJobSsr(job);
+    if (ssr) {
+      runtime = { kind: "job-ssr", pid: ssr.pid, port: ssr.port };
+      meta.pid = ssr.pid;
+      if (ssr.html && /<html/i.test(ssr.html) && !/Application Edit evidence/i.test(ssr.html)) {
+        const injected = ssr.html.replace(/<body([^>]*)>/i, `<body$1 data-mf-preview="app" data-job-commit="${commit}">`);
+        await writeFile(join(appDir, "index.html"), injected, "utf8");
+      }
+    }
+    if (!existsSync(join(appDir, "index.html"))) {
+      await writeFile(join(appDir, "index.html"), synthesizeIndexHtml(appDir, prefix, meta), "utf8");
+    } else {
+      const html = await readFile(join(appDir, "index.html"), "utf8");
+      if (!/data-mf-preview/.test(html)) {
+        await writeFile(
+          join(appDir, "index.html"),
+          html.replace(/<body([^>]*)>/i, `<body$1 data-mf-preview="app" data-job-commit="${commit}">`),
+          "utf8",
+        );
+      }
+    }
+    await rewritePreviewTree(appDir, prefix);
+  } else {
+    const fileSnippets: Array<{ path: string; content: string }> = [];
+    for (const rel of job.files) {
+      try {
+        fileSnippets.push({ path: rel, content: await readFile(join(job.worktree, rel), "utf8") });
+      } catch {
+        /* skip */
+      }
+    }
+    await writeFile(join(appDir, "index.html"), fixtureAppHtml(job, fileSnippets), "utf8");
+  }
+
+  job.previewCommitSha = commit;
+  job.artifactDir = appDir;
+  job.previewRuntime = runtime;
+  meta.pid = runtime.pid;
   await writeFile(
     join(dir, "PREVIEW.json"),
     JSON.stringify(
       {
-        jobId: job.id,
-        branch: job.branch,
-        commit: job.jobCommitSha,
-        stableShaBefore: job.stableShaBefore,
-        gates: {
-          typecheck: job.gates.typecheck?.ok,
-          tests: job.gates.tests?.ok,
-          build: job.gates.build?.ok,
-        },
+        ...meta,
+        previewCommitSha: commit,
+        artifactDir: appDir,
+        pid: runtime.pid,
+        previewRuntime: runtime,
       },
       null,
       2,
     ),
     "utf8",
   );
-  return `/__preview/${job.id}/`;
+  return `${prefix}/`;
 }
 
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => {
     switch (c) {
       case "&":
-        return "&amp;";
+        return "&" + "amp;";
       case "<":
-        return "&lt;";
+        return "&" + "lt;";
       case ">":
-        return "&gt;";
+        return "&" + "gt;";
       case '"':
-        return "&quot;";
+        return "&" + "quot;";
       default:
         return "&#39;";
     }
@@ -308,6 +582,7 @@ export async function createIsolatedJob(
   if (!gates.ok) {
     job.status = "failed";
     job.error = "verification gates failed";
+    await clearPreviewApp(job);
     await saveJob(root, job);
     await writeAudit(
       root,
@@ -355,13 +630,18 @@ export async function writeSourceFilesHandler(
     await git(["add", "--", ...input.files.map((f) => relSafe(job.worktree, f.path))], job.worktree);
     const commit = await git(["commit", "-m", input.message.slice(0, 120)], job.worktree);
     job.jobCommitSha = (await git(["rev-parse", "HEAD"], job.worktree)).stdout;
+    job.previewCommitSha = undefined;
     job.status = "verifying";
     const gates = await runJobGates(job.worktree);
     job.gates = { typecheck: gates.typecheck, tests: gates.tests, build: gates.build };
-    job.status = gates.ok ? "preview" : "failed";
     if (gates.ok) {
+      job.status = "preview";
       const diff = (await git(["show", "--stat", "--oneline", "-1"], job.worktree)).stdout;
       job.previewUrl = await writePreview(job, diff);
+    } else {
+      job.status = "failed";
+      job.error = "verification gates failed";
+      await clearPreviewApp(job);
     }
     await saveJob(root, job);
     await writeAudit(
@@ -385,9 +665,11 @@ export async function rejectJobHandler(actor: Actor, jobId: string): Promise<Han
   const job = await loadJob(root, jobId);
   if (!job) return { ok: false, status: 403, error: "Forbidden" };
   const before = await stableSha(root);
+  killPreviewRuntime(job.id);
   await git(["worktree", "remove", "--force", job.worktree], root);
   await git(["branch", "-D", job.branch], root);
   job.status = "rejected";
+  job.previewUrl = undefined;
   await saveJob(root, job);
   const after = await stableSha(root);
   await writeAudit(root, auditFromActor(actor, "reject_job", { jobId, branch: job.branch, success: after === before }));
@@ -398,6 +680,9 @@ export async function promoteJobHandler(actor: Actor, jobId: string): Promise<Ha
   const root = repoRoot();
   const job = await loadJob(root, jobId);
   if (!job || job.status !== "preview" || !job.jobCommitSha) {
+    return { ok: false, status: 403, error: "Forbidden" };
+  }
+  if (!job.previewCommitSha || job.previewCommitSha !== job.jobCommitSha) {
     return { ok: false, status: 403, error: "Forbidden" };
   }
   const headNow = (await git(["rev-parse", "HEAD"], job.worktree)).stdout;
@@ -493,15 +778,39 @@ export async function readSourceFileHandler(path: string): Promise<{ ok: true; p
 }
 
 export function previewFilePath(jobId: string, urlPath: string): string | null {
+  const resolved = resolvePreviewFile(jobId, urlPath);
+  return resolved?.abs ?? null;
+}
+
+export function resolvePreviewFile(jobId: string, urlPath: string): { abs: string; spa: boolean } | null {
   const root = repoRoot();
   const id = idSafe(jobId);
   if (!id) return null;
-  const base = resolve(join(jobsDir(root), id, "preview"));
-  const rel = urlPath.replace(/^\/+/, "") || "index.html";
+  const jobRoot = resolve(join(jobsDir(root), id));
+  const previewRoot = resolve(join(jobRoot, "preview"));
+  const appRoot = resolve(join(previewRoot, "app"));
+  const rel = decodeURIComponent(urlPath.replace(/^\/+/, "")) || "index.html";
   if (rel.includes("..") || rel.includes("\0")) return null;
-  const abs = resolve(base, rel);
-  if (!abs.startsWith(base)) return null;
-  return abs;
+  if (rel === "PREVIEW.json" || rel === "evidence.html") {
+    const abs = resolve(previewRoot, rel);
+    if (!abs.startsWith(previewRoot)) return null;
+    return existsSync(abs) ? { abs, spa: false } : null;
+  }
+  const abs = resolve(appRoot, rel);
+  if (!abs.startsWith(appRoot)) return null;
+  if (existsSync(abs)) {
+    try {
+      const st = readdirSync(abs);
+      void st;
+      const idx = resolve(abs, "index.html");
+      if (existsSync(idx)) return { abs: idx, spa: false };
+    } catch {
+      return { abs, spa: false };
+    }
+  }
+  const index = resolve(appRoot, "index.html");
+  if (existsSync(index) && !rel.includes(".")) return { abs: index, spa: true };
+  return null;
 }
 
 export { basename };

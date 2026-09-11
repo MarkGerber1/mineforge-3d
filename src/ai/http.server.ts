@@ -11,13 +11,14 @@ import {
   createEditBranchHandler,
   createIsolatedJob,
   loadJob,
-  previewFilePath,
+  resolvePreviewFile,
   promoteJobHandler,
   rejectJobHandler,
   rollbackStableHandler,
   writeSourceFilesHandler,
 } from "./jobs.server.ts";
 import { writeAudit, auditFromActor } from "./audit.server.ts";
+import { allow, LIMITS, clientIpFromHeaders } from "./ratelimit.server.ts";
 
 const ROOT = () => process.env.APP_EDIT_ROOT || process.cwd();
 
@@ -26,6 +27,14 @@ function json(status: number, body: unknown, extraHeaders?: Record<string, strin
     status,
     headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...(extraHeaders ?? {}) },
   });
+}
+
+function tooMany(retryAfter: number): Response {
+  return json(
+    429,
+    { ok: false, status: 429, error: "Too Many Requests", retryAfter },
+    { "retry-after": String(retryAfter) },
+  );
 }
 
 function denied(gate: { status: 401 | 403; error: string; actor: Actor; code: string }, action: string): Response {
@@ -59,10 +68,28 @@ async function requireMut(req: Request, action: string, body: unknown) {
   return authorizeMutation(action, { cookieHeader: cookieHeader(req), body, headers: { cookie: cookieHeader(req) } });
 }
 
+function mimeFor(file: string): string {
+  if (file.endsWith(".html")) return "text/html; charset=utf-8";
+  if (file.endsWith(".js") || file.endsWith(".mjs")) return "text/javascript; charset=utf-8";
+  if (file.endsWith(".css")) return "text/css; charset=utf-8";
+  if (file.endsWith(".json")) return "application/json; charset=utf-8";
+  if (file.endsWith(".svg")) return "image/svg+xml";
+  if (file.endsWith(".png")) return "image/png";
+  if (file.endsWith(".jpg") || file.endsWith(".jpeg")) return "image/jpeg";
+  if (file.endsWith(".webp")) return "image/webp";
+  if (file.endsWith(".woff2")) return "font/woff2";
+  if (file.endsWith(".woff")) return "font/woff";
+  if (file.endsWith(".wasm")) return "application/wasm";
+  if (file.endsWith(".webmanifest")) return "application/manifest+json";
+  if (file.endsWith(".map")) return "application/json";
+  return "application/octet-stream";
+}
+
 export async function handleAppEditHttp(req: Request): Promise<Response | null> {
   const url = new URL(req.url);
   const path = url.pathname;
   const method = req.method.toUpperCase();
+  const ip = clientIpFromHeaders(req.headers);
 
   if (method === "GET" && (path === "/api/runtime" || path === "/api/runtime/")) {
     return json(200, runtimeSnapshot({ cookieHeader: cookieHeader(req) }));
@@ -71,18 +98,17 @@ export async function handleAppEditHttp(req: Request): Promise<Response | null> 
   if (method === "GET" && path.startsWith("/__preview/")) {
     const rest = path.slice("/__preview/".length);
     const [jobId, ...fileParts] = rest.split("/");
-    const file = previewFilePath(jobId || "", fileParts.join("/") || "index.html");
+    const rel = fileParts.join("/") || "index.html";
+    const file = resolvePreviewFile(jobId || "", rel);
     if (!file) return json(404, { ok: false, error: "Not found" });
     try {
-      const st = await stat(file);
+      const st = await stat(file.abs);
       if (!st.isFile()) return json(404, { ok: false, error: "Not found" });
-      const buf = await readFile(file);
-      const type = file.endsWith(".html")
-        ? "text/html; charset=utf-8"
-        : file.endsWith(".json")
-          ? "application/json; charset=utf-8"
-          : "application/octet-stream";
-      return new Response(buf, { status: 200, headers: { "content-type": type, "cache-control": "no-store" } });
+      const buf = await readFile(file.abs);
+      return new Response(buf, {
+        status: 200,
+        headers: { "content-type": mimeFor(file.abs), "cache-control": "no-store" },
+      });
     } catch {
       return json(404, { ok: false, error: "Not found" });
     }
@@ -91,6 +117,8 @@ export async function handleAppEditHttp(req: Request): Promise<Response | null> 
   if (!path.startsWith("/api/app-edit")) return null;
 
   if (method === "POST" && (path === "/api/app-edit/login" || path === "/api/app-edit/login/")) {
+    const lim = allow(`login:${ip}`, LIMITS.login);
+    if (!lim.ok) return tooMany(lim.retryAfter);
     const body = (await readJson(req)) as { passphrase?: string; role?: string; isOwner?: boolean };
     const gate = loginWithPassphrase(String(body.passphrase ?? ""));
     if (!gate.ok) {
@@ -116,6 +144,9 @@ export async function handleAppEditHttp(req: Request): Promise<Response | null> 
   }
 
   if (method !== "POST") return json(405, { ok: false, error: "Method not allowed" });
+
+  const mutLim = allow(`mutate:${ip}`, LIMITS.mutate);
+  if (!mutLim.ok) return tooMany(mutLim.retryAfter);
 
   const body = await readJson(req);
 

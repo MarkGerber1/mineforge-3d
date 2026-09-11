@@ -143,7 +143,30 @@ describe("Application Edit isolation pipeline", { concurrency: 1 }, () => {
     assert.equal(g.build?.ok, true, g.build?.stderr);
     assert.equal(res.job!.status, "preview");
     assert.ok(res.job!.previewUrl);
-    assert.ok(existsSync(join(res.job!.worktree, "preview", "index.html")));
+    assert.ok(existsSync(join(res.job!.worktree, "preview", "app", "index.html")));
+    const appHtml = await readFile(join(res.job!.worktree, "preview", "app", "index.html"), "utf8");
+    assert.match(appHtml, /data-mf-preview="app"/);
+    assert.match(appHtml, /MINEFORGE/);
+    assert.doesNotMatch(appHtml, /Isolated Application Edit preview/);
+    const previewMeta = JSON.parse(await readFile(join(res.job!.worktree, "preview", "PREVIEW.json"), "utf8")) as {
+      jobCommitSha: string;
+      previewCommitSha: string;
+      artifactDir: string;
+      pid: number;
+    };
+    assert.equal(previewMeta.jobCommitSha, res.job!.jobCommitSha);
+    assert.equal(previewMeta.previewCommitSha, res.job!.jobCommitSha);
+    assert.equal(res.job!.previewCommitSha, res.job!.jobCommitSha);
+    assert.ok(previewMeta.artifactDir);
+    assert.equal(typeof previewMeta.pid, "number");
+    const served = await handleAppEditHttp(new Request(`http://app.test/__preview/${res.job!.id}/`));
+    assert.equal(served!.status, 200);
+    assert.match(served!.headers.get("content-type") ?? "", /text\/html/);
+    assert.match(await served!.text(), /data-mf-preview="app"/);
+    const metaRes = await handleAppEditHttp(new Request(`http://app.test/__preview/${res.job!.id}/PREVIEW.json`));
+    assert.equal(metaRes!.status, 200);
+    const metaBody = (await metaRes!.json()) as { jobCommitSha: string; previewCommitSha: string };
+    assert.equal(metaBody.jobCommitSha, metaBody.previewCommitSha);
     assert.equal(await stableSha(dir), before);
     console.log(
       `EVIDENCE TEST C/E job=${res.job!.id} typecheck=${g.typecheck?.exitCode} tests=${g.tests?.exitCode} build=${g.build?.exitCode} preview=${res.job!.previewUrl} cmd_typecheck=${g.typecheck?.command} cmd_tests=${g.tests?.command} cmd_build=${g.build?.command}`,
@@ -160,6 +183,8 @@ describe("Application Edit isolation pipeline", { concurrency: 1 }, () => {
     assert.equal(res.job!.status, "failed");
     assert.equal(res.job!.gates.typecheck?.ok, false);
     assert.ok((res.job!.gates.typecheck?.exitCode ?? 0) !== 0);
+    assert.equal(res.job!.previewUrl, undefined);
+    assert.equal(existsSync(join(res.job!.worktree, "preview", "app", "index.html")), false);
     const promo = await promoteJobHandler(OWNER, res.job!.id);
     assert.equal(promo.ok, false);
     assert.equal(await stableSha(dir), before);
