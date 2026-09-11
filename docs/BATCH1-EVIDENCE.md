@@ -1,120 +1,80 @@
-# MINEFORGE 3D — Repair Batch 1 Correction Pass 2 evidence
+# MINEFORGE 3D — Repair Batch 1 Correction Pass 3 evidence
 
-**BATCH STATUS:** NOT READY FOR INDEPENDENT RETEST
+**BATCH STATUS:** BLOCKED_BY_EXTERNAL_CREDENTIAL
 
-Tasks 2 and 3 are implemented and tested. Task 1 replaced `*.trycloudflare.com`
-as the *named* public hostname, but the replacement is a Cloudflare **temporary**
-`workers.dev` Worker (`mineforge3d.continuous-impatiens.workers.dev`) that:
-
-- is not `*.trycloudflare.com`;
-- reuses the same hostname across process restart;
-- served Grok e2e (room 9.37×6.21×3.14, S21 Pro, 27 / 127 kW then 24 / 113 kW)
-  from a real browser before the post-restart bot-management challenge;
-- after origin-hop restart + Worker redeploy, Playwright and curl received
-  Cloudflare 403 “security verification”;
-- unclaimed temporary accounts expire in ~60 minutes.
-
-That is **not** a durable production identity. Do not treat this pass as Batch 1
-PASSED. Independent retest of Task 1 should reject until a claimed named
-Cloudflare Tunnel, grok.me publish, or other persistent HTTPS host is in place.
-
-This file does not contain secrets.
+This file is the evidence package. It does not contain secrets.
 
 A git commit cannot contain its own hash. Authoritative identity of this
-candidate is `git rev-parse HEAD` on `repair/batch-1` and the
-`CANDIDATE_SHA=` / `GATE PASS CANDIDATE_SHA=` lines printed by
-`scripts/ci-gate.sh` on that same commit.
+candidate is `git rev-parse HEAD` on `repair/batch-1` / `origin/main` after
+the protected merge, and the `CANDIDATE_SHA=` / `GATE PASS CANDIDATE_SHA=`
+lines printed by `scripts/ci-gate.sh` on that same commit.
+
+Pass 2 freeze (accepted mechanisms): `ff41fb9ecbac006232f2bdf4510e49c6005a973f`
 
 ## Identity
 
 | Field | Value |
 | --- | --- |
 | Branch | `repair/batch-1` |
-| Base / previous Pass 1 SHA | `4bb5265650a66c1d4c0aa1f0da0911edba3cbbb0` |
+| Previous freeze | `ff41fb9ecbac006232f2bdf4510e49c6005a973f` |
 | GitHub | https://github.com/MarkGerber1/mineforge-3d |
-| Named full-stack hostname | https://mineforge3d.continuous-impatiens.workers.dev |
-| Deployment type | Cloudflare Worker reverse-proxy (requested name `mineforge3d`) in front of the live full-stack process |
+| Canonical full-stack URL | **unset** — no claimed Named Tunnel token |
 | Static Pages (Option B) | https://markgerber1.github.io/mineforge-3d/ |
 
-## Task 1 — stable canonical full-stack runtime
+## Task 1 — durable production host
 
-| AC | Result | Evidence |
-| --- | --- | --- |
-| AC-1 hostname not trycloudflare | PASS (name) | `https://mineforge3d.continuous-impatiens.workers.dev` |
-| AC-2 restart durability | PARTIAL | Same hostname after killing the app + origin hop and running `startup.sh`. After redeploy, that hostname returned **403** (CF bot management). Unpublished origin hop still served `/api/runtime` JSON. |
-| AC-3 GET /api/runtime | PASS then FAIL | Before restart, Playwright: HTTP 200 JSON `mode=server` `sha=4bb5265…` `ai=true`. After restart: 403 challenge on the Worker. |
-| AC-4 current Project State | PASS (pre-restart) | Inspector 9.37 × 6.21 × 3.14, S21 Pro, requested 27, 127 kW. Grok: «9.37 × 6.21 × 3.14», `bitmain-s21-pro`, 27, **127 000 W**. |
-| AC-5 stale-state | PASS (pre-restart) | Power 127→113 kW, count 27→24, no reload. Grok: **113 000 W**, `requestedCount` **24**. |
-| AC-6 AI outage | PASS (process) | Provider key unset, restart. `/api/runtime` `{ai:false,available:false}`. UI **AI OFFLINE**. CAD Ширина committed to **7.77**. Key restored; `{ai:true}`. |
-| AC-7 deployed SHA | PASS | `/api/runtime` includes `sha` and `buildId` from git HEAD / `MF_DEPLOY_SHA`. |
+**BLOCKED_BY_EXTERNAL_CREDENTIAL**
 
-GitHub Pages remains Option B static.
+Tried and rejected as canonical:
 
-## Task 2 — trusted client identity for rate limiting
+- Cloudflare Quick Tunnel (`*.trycloudflare.com`) — ephemeral hostname
+- `wrangler deploy --temporary` `*.workers.dev` — temporary account, bot challenge, ~60 min lifetime
+- grok.me slugs — 404, app not published
+- Vercel CLI — no credentials; `*-xai-org.vercel.app` SSO-gated
+- GitHub Pages — Option B static only
 
-Implementation: [`src/ai/ratelimit.server.ts`](../src/ai/ratelimit.server.ts)
+No `CLOUDFLARE_TUNNEL_TOKEN`, no `cert.pem`, no Vercel token, no claimed CF account.
 
-Algorithm:
+Ingress script now starts a Named Tunnel **only** when the token is present.
+It no longer deploys a temporary Worker or Quick Tunnel as public identity.
 
-- `RATE_LIMIT_TRUST=cloudflare|vercel|test|local|auto` (unknown value → `local`).
-- **cloudflare:** `CF-Connecting-IP` only, `node:net.isIP`, max 45 chars. `X-Forwarded-For` and `X-Real-IP` ignored.
-- **vercel:** `x-real-ip` then `x-vercel-forwarded-for`. First XFF ignored.
-- **test:** `x-mf-test-ip` only.
-- **local / auto:** ignore all client-supplied proxy headers → `local`. Auto does **not** trust spoofable CF headers.
-- Invalid/missing → bounded `unknown` bucket. Oversized keys fail-closed. Same policy for Grok, login, mutation.
+**Owner action (one):** provide a Cloudflare Named Tunnel token
+(`CLOUDFLARE_TUNNEL_TOKEN`) and the persistent public hostname it serves
+(`CANONICAL_FULLSTACK_URL`, DNS-routed in a claimed Cloudflare account).
+Not a Quick Tunnel. Not a temporary `workers.dev` account.
 
-| AC | Result |
-| --- | --- |
-| AC-1 CF-Connecting-IP beats XFF | PASS |
-| AC-2 XFF rotation, one bucket, then 429 | PASS |
-| AC-3 two CF IPs isolated | PASS |
-| AC-4 spoofed X-Real-IP ignored | PASS |
-| AC-5 invalid IP → `unknown`, not attacker string | PASS |
-| AC-6 Grok threshold does not call xAI | PASS (`getGrokProviderCalls()===0`) |
-| AC-7 login, rotating XFF, 429 | PASS |
-| AC-8 mutation, rotating XFF, 429 | PASS |
-| AC-9 window expiry | PASS |
+## Tasks 2–3 (Pass 2, accepted, not reworked)
 
-Tests: [`src/ai/ratelimit.test.ts`](../src/ai/ratelimit.test.ts) (existing allow/deny/login/mutate/Grok tests retained and updated off first-XFF).
+Rate-limit identity: CF-Connecting-IP in Cloudflare mode. XFF rotation does
+not reset the bucket. Invalid IP → bounded `unknown`. Grok provider is not
+called after threshold.
 
-## Task 3 — real preview fail-closed
+Application Edit preview: real SSR/build or fail-closed. `fixtureAppHtml`
+removed. evidence.html is not the preview. PROMOTE requires matching SHAs.
 
-`fixtureAppHtml` is **removed** from [`src/ai/jobs.server.ts`](../src/ai/jobs.server.ts). Production path is `materializePreview`:
+## Task 4 — Application Edit production policy
 
-1. write `evidence.html` (not preview);
-2. require build artifacts with `assets`;
-3. require `.vercel/output/functions/__server.func/index.mjs` + `srvx`;
-4. start job-ssr and health-check;
-5. only then `status=preview` and `previewUrl=/__preview/<id>/`.
+This process: persistent filesystem + git + worktrees + child processes.
+`APP_EDIT_ENABLED=true` (workspace, `GROK_PROJECT_ID` unset). Gates remain.
 
-Missing artifact / missing SSR / startup fail / health fail → `status=failed`, `previewUrl=undefined`, PROMOTE blocked.
+Serverless / grok.me: `GROK_PROJECT_ID` set → flag stays off. UI:
+“Application Edit unavailable on this deployment — APP EDIT DISABLED.”
 
-Isolation fixture build emits real `.vercel/output/static` + SSR `fetch` handler.
+## Task 5 — rate-limit topology
 
-| AC | Result | Evidence |
-| --- | --- | --- |
-| AC-1 normal job | PASS | TEST C/E status `preview`, HTML `data-mf-preview="app"` + `MINEFORGE`, `previewCommitSha === jobCommitSha` |
-| AC-2 missing artifact | PASS | job `missart` rematerialize `missing-build-artifact`, no `preview/app/index.html`, PROMOTE denied |
-| AC-3 missing SSR | PASS | job `nossr` `missing-ssr-entry`, PROMOTE denied |
-| AC-4 startup failure | PASS | job `boomssr` crashing SSR entry → `preview-runtime-failed`, PROMOTE denied |
-| AC-5 commit mismatch | PASS | tampered `previewCommitSha`, PROMOTE denied, stable SHA unchanged |
-| AC-6 evidence ≠ preview | PASS | `evidence.html` 200, no `data-mf-preview="app"`; `previewUrl` is `/__preview/<id>/` |
+`PRODUCTION_INSTANCE_MODEL=single-instance` (also on `/api/runtime` as
+`instanceModel`). One Node process, one Named Tunnel hop. In-memory limiter
+is the matching store. No second instance to give a client a fresh budget.
 
-Compile-fail / REJECT / PROMOTE / ROLLBACK regression: TEST D, F, G/H, I still pass.
+## Task 6 — protected main release
 
-## Task 4 — freeze
+See PR created in this pass. Merge without bypass. Required check `gate`.
 
-See `git rev-parse HEAD` after this commit. Full gate: `bash scripts/ci-gate.sh` (typecheck, **full `npm test`**, secrets, build, secrets). GitHub workflow `batch1-gate.yml` job `gate` on `repair/batch-1` and `main`.
+## Forbidden as canonical (still)
 
-Main protection must remain: required check `gate`, `enforce_admins` true. Negative PRs #1–#5 stay open / unmerged.
+`*.trycloudflare.com`, temporary `workers.dev`, localhost, Codespaces,
+workspace-only preview, SSO, anti-bot challenge pages.
 
-## Known remaining issues inside Batch 1
+## STOP
 
-1. **Task 1 is not a durable production runtime.** Named hostname is a Cloudflare temporary Worker. Unclaimed lifetime ~60 minutes. Post-restart bot-management 403. Origin hop is still a Quick Tunnel (unpublished, not canonical).
-2. grok.me is not published (project id exists; Publish is a Grok UI action). Vercel `*-xai-org.vercel.app` is SSO-gated.
-3. Named Cloudflare Tunnel (`cert.pem` / `TUNNEL_TOKEN`) is not available in this workspace.
-4. Rate limiter is in-memory (single instance). Multi-instance needs a shared store.
-5. Application Edit requires the live full-stack process with git worktrees. A serverless-only host must disable App Edit honestly.
-6. Temporary Worker claim URL is credential-equivalent and is **not** stored in this public evidence file.
-
-STOP. Do not start Batch 2 (Reality Sync, photo calibration, As-Built, collision/ceiling, mobile, video).
+Do not start Batch 2. Independent Acceptance Retest of Batch 1 is still required.
