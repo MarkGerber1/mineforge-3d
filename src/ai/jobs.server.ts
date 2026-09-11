@@ -252,45 +252,9 @@ ${js}
 </html>`;
 }
 
-function fixtureAppHtml(job: JobRecord, files: Array<{ path: string; content: string }>): string {
-  const sources = files
-    .map((f) => `<section data-file="${escapeHtml(f.path)}"><h2>${escapeHtml(f.path)}</h2><pre>${escapeHtml(f.content)}</pre></section>`)
-    .join("\n");
-  const collapsible = files.some((f) => /grok-collapse|collapsible/i.test(f.content));
-  return `<!DOCTYPE html>
-<html lang="ru">
-<head>
-<meta charset="utf-8"/>
-<title>MINEFORGE 3D</title>
-<style>
-body{margin:0;background:#0b0d10;color:#d6d3ce;font:14px/1.4 "IBM Plex Sans",ui-sans-serif,system-ui}
-#mf-app{display:flex;flex-direction:column;min-height:100vh}
-header{border-bottom:1px solid #2a2e33;padding:12px 16px;font-weight:600}
-[data-mf-id="grok"]{border-top:1px solid #2a2e33;padding:12px 16px}
-button{background:#1a1f24;color:#d6d3ce;border:1px solid #2a2e33;border-radius:6px;padding:6px 10px;cursor:pointer}
-pre{white-space:pre-wrap;background:#12151a;padding:12px;border-radius:6px}
-</style>
-</head>
-<body data-mf-preview="app" data-job-commit="${escapeHtml(job.jobCommitSha ?? "")}">
-<div id="mf-app">
-<header>MINEFORGE 3D</header>
-<main>
-<p>Изолированная сборка job <code>${escapeHtml(job.id)}</code></p>
-<div data-mf-id="grok">
-  <div>MINEFORGE AI</div>
-  ${collapsible ? `<button type="button" data-mf-id="grok-collapse" onclick="this.nextElementSibling.hidden=!this.nextElementSibling.hidden">Свернуть</button>` : ""}
-  <div data-mf-id="grok-body">AI panel from job ${escapeHtml(job.id)}</div>
-</div>
-${sources}
-</main>
-</div>
-<script>window.__MF_PREVIEW__=${JSON.stringify({
-    jobId: job.id,
-    jobCommitSha: job.jobCommitSha,
-    previewCommitSha: job.jobCommitSha,
-  })};</script>
-</body>
-</html>`;
+function healthTimeoutMs(): number {
+  const n = Number(process.env.MF_PREVIEW_HEALTH_MS);
+  return Number.isFinite(n) && n >= 500 && n <= 60_000 ? n : 15_000;
 }
 
 function portForJob(id: string): number {
@@ -310,7 +274,7 @@ function killPreviewRuntime(jobId: string): void {
   previewChildren.delete(jobId);
 }
 
-async function waitHttp(url: string, ms = 15000): Promise<boolean> {
+async function waitHttp(url: string, ms = healthTimeoutMs()): Promise<boolean> {
   const start = Date.now();
   while (Date.now() - start < ms) {
     try {
@@ -354,6 +318,14 @@ async function startJobSsr(job: JobRecord): Promise<{ pid: number; port: number;
   return { pid: child.pid, port, html };
 }
 
+export function stopJobPreview(jobId: string): void {
+  killPreviewRuntime(jobId);
+}
+
+export function stopAllJobPreviews(): void {
+  for (const id of [...previewChildren.keys()]) killPreviewRuntime(id);
+}
+
 async function clearPreviewApp(job: JobRecord): Promise<void> {
   killPreviewRuntime(job.id);
   await rm(join(job.worktree, "preview", "app"), { recursive: true, force: true }).catch(() => undefined);
@@ -363,28 +335,15 @@ async function clearPreviewApp(job: JobRecord): Promise<void> {
   job.previewRuntime = undefined;
 }
 
-async function writePreview(job: JobRecord, diff: string): Promise<string> {
+export async function materializePreview(
+  job: JobRecord,
+  diff = "",
+): Promise<{ ok: boolean; previewUrl?: string; error?: string }> {
   const dir = join(job.worktree, "preview");
   const appDir = join(dir, "app");
-  await rm(appDir, { recursive: true, force: true }).catch(() => undefined);
-  await mkdir(appDir, { recursive: true });
+  await mkdir(dir, { recursive: true });
   const prefix = previewPrefix(job.id);
   const commit = job.jobCommitSha ?? "";
-  const meta = {
-    jobId: job.id,
-    branch: job.branch,
-    jobCommitSha: commit,
-    previewCommitSha: commit,
-    stableShaBefore: job.stableShaBefore,
-    artifactDir: appDir,
-    pid: process.pid,
-    gates: {
-      typecheck: job.gates.typecheck?.ok,
-      tests: job.gates.tests?.ok,
-      build: job.gates.build?.ok,
-    },
-  };
-
   const evidence = `<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8"/><title>Evidence ${job.id}</title>
 <style>body{font:14px/1.4 ui-monospace,monospace;background:#0b0d10;color:#d6d3ce;padding:24px}pre{white-space:pre-wrap}</style>
 </head><body>
@@ -396,53 +355,87 @@ async function writePreview(job: JobRecord, diff: string): Promise<string> {
 <p>typecheck ${job.gates.typecheck?.ok ? "PASS" : "FAIL"} (${job.gates.typecheck?.exitCode ?? "-"})</p>
 <p>tests ${job.gates.tests?.ok ? "PASS" : "FAIL"} (${job.gates.tests?.exitCode ?? "-"})</p>
 <p>build ${job.gates.build?.ok ? "PASS" : "FAIL"} (${job.gates.build?.exitCode ?? "-"})</p>
-<p><a href="${prefix}/">Open runnable preview</a></p>
+<p>This page is evidence, not the runnable application preview.</p>
 <h2>diff</h2><pre>${escapeHtml(diff)}</pre>
 </body></html>`;
   await writeFile(join(dir, "evidence.html"), evidence, "utf8");
 
-  const buildRoot = findClientBuild(job.worktree);
-  let runtime: PreviewRuntime = { kind: "artifact-proxy", pid: process.pid };
-  if (buildRoot && existsSync(join(buildRoot, "assets"))) {
-    await cp(buildRoot, appDir, { recursive: true });
-    const ssr = await startJobSsr(job);
-    if (ssr) {
-      runtime = { kind: "job-ssr", pid: ssr.pid, port: ssr.port };
-      meta.pid = ssr.pid;
-      if (ssr.html && /<html/i.test(ssr.html) && !/Application Edit evidence/i.test(ssr.html)) {
-        const injected = ssr.html.replace(/<body([^>]*)>/i, `<body$1 data-mf-preview="app" data-job-commit="${commit}">`);
-        await writeFile(join(appDir, "index.html"), injected, "utf8");
-      }
-    }
-    if (!existsSync(join(appDir, "index.html"))) {
-      await writeFile(join(appDir, "index.html"), synthesizeIndexHtml(appDir, prefix, meta), "utf8");
-    } else {
-      const html = await readFile(join(appDir, "index.html"), "utf8");
-      if (!/data-mf-preview/.test(html)) {
-        await writeFile(
-          join(appDir, "index.html"),
-          html.replace(/<body([^>]*)>/i, `<body$1 data-mf-preview="app" data-job-commit="${commit}">`),
-          "utf8",
-        );
-      }
-    }
-    await rewritePreviewTree(appDir, prefix);
-  } else {
-    const fileSnippets: Array<{ path: string; content: string }> = [];
-    for (const rel of job.files) {
-      try {
-        fileSnippets.push({ path: rel, content: await readFile(join(job.worktree, rel), "utf8") });
-      } catch {
-        /* skip */
-      }
-    }
-    await writeFile(join(appDir, "index.html"), fixtureAppHtml(job, fileSnippets), "utf8");
+  await rm(appDir, { recursive: true, force: true }).catch(() => undefined);
+
+  if (!commit) {
+    await clearPreviewApp(job);
+    job.error = "missing-job-commit";
+    return { ok: false, error: job.error };
   }
 
+  const buildRoot = findClientBuild(job.worktree);
+  if (!buildRoot || !existsSync(join(buildRoot, "assets"))) {
+    await clearPreviewApp(job);
+    job.error = "missing-build-artifact";
+    return { ok: false, error: job.error };
+  }
+
+  const entry = join(job.worktree, ".vercel/output/functions/__server.func/index.mjs");
+  const bin = join(job.worktree, "node_modules/.bin/srvx");
+  if (!existsSync(entry)) {
+    await clearPreviewApp(job);
+    job.error = "missing-ssr-entry";
+    return { ok: false, error: job.error };
+  }
+  if (!existsSync(bin)) {
+    await clearPreviewApp(job);
+    job.error = "missing-ssr-runtime";
+    return { ok: false, error: job.error };
+  }
+
+  await mkdir(appDir, { recursive: true });
+  await cp(buildRoot, appDir, { recursive: true });
+
+  const ssr = await startJobSsr(job);
+  if (!ssr) {
+    await clearPreviewApp(job);
+    job.error = "preview-runtime-failed";
+    return { ok: false, error: job.error };
+  }
+
+  const meta = {
+    jobId: job.id,
+    branch: job.branch,
+    jobCommitSha: commit,
+    previewCommitSha: commit,
+    stableShaBefore: job.stableShaBefore,
+    artifactDir: appDir,
+    pid: ssr.pid,
+    gates: {
+      typecheck: job.gates.typecheck?.ok,
+      tests: job.gates.tests?.ok,
+      build: job.gates.build?.ok,
+    },
+  };
+
+  if (ssr.html && /<html/i.test(ssr.html) && !/Application Edit evidence/i.test(ssr.html)) {
+    const injected = ssr.html.replace(/<body([^>]*)>/i, `<body$1 data-mf-preview="app" data-job-commit="${commit}">`);
+    await writeFile(join(appDir, "index.html"), injected, "utf8");
+  } else if (!existsSync(join(appDir, "index.html"))) {
+    await writeFile(join(appDir, "index.html"), synthesizeIndexHtml(appDir, prefix, meta), "utf8");
+  } else {
+    const html = await readFile(join(appDir, "index.html"), "utf8");
+    if (!/data-mf-preview/.test(html)) {
+      await writeFile(
+        join(appDir, "index.html"),
+        html.replace(/<body([^>]*)>/i, `<body$1 data-mf-preview="app" data-job-commit="${commit}">`),
+        "utf8",
+      );
+    }
+  }
+  await rewritePreviewTree(appDir, prefix);
+
+  const runtime: PreviewRuntime = { kind: "job-ssr", pid: ssr.pid, port: ssr.port };
   job.previewCommitSha = commit;
   job.artifactDir = appDir;
   job.previewRuntime = runtime;
-  meta.pid = runtime.pid;
+  job.previewUrl = `${prefix}/`;
+  job.error = undefined;
   await writeFile(
     join(dir, "PREVIEW.json"),
     JSON.stringify(
@@ -458,7 +451,7 @@ async function writePreview(job: JobRecord, diff: string): Promise<string> {
     ),
     "utf8",
   );
-  return `${prefix}/`;
+  return { ok: true, previewUrl: job.previewUrl };
 }
 
 function escapeHtml(s: string): string {
@@ -596,8 +589,15 @@ export async function createIsolatedJob(
     );
     return { ok: true, job, diff, stableSha: before, error: job.error };
   }
-  job.status = "preview";
-  job.previewUrl = await writePreview(job, diff);
+  const preview = await materializePreview(job, diff);
+  if (!preview.ok) {
+    job.status = "failed";
+    job.previewUrl = undefined;
+    job.previewCommitSha = undefined;
+  } else {
+    job.status = "preview";
+    job.previewUrl = preview.previewUrl;
+  }
   await saveJob(root, job);
   await writeAudit(
     root,
@@ -635,9 +635,16 @@ export async function writeSourceFilesHandler(
     const gates = await runJobGates(job.worktree);
     job.gates = { typecheck: gates.typecheck, tests: gates.tests, build: gates.build };
     if (gates.ok) {
-      job.status = "preview";
       const diff = (await git(["show", "--stat", "--oneline", "-1"], job.worktree)).stdout;
-      job.previewUrl = await writePreview(job, diff);
+      const preview = await materializePreview(job, diff);
+      if (!preview.ok) {
+        job.status = "failed";
+        job.previewUrl = undefined;
+        job.previewCommitSha = undefined;
+      } else {
+        job.status = "preview";
+        job.previewUrl = preview.previewUrl;
+      }
     } else {
       job.status = "failed";
       job.error = "verification gates failed";
