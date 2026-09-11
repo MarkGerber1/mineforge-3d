@@ -92,7 +92,7 @@ export async function handleAppEditHttp(req: Request): Promise<Response | null> 
   const ip = clientIpFromHeaders(req.headers);
 
   if (method === "GET" && (path === "/api/runtime" || path === "/api/runtime/")) {
-    return json(200, runtimeSnapshot({ cookieHeader: cookieHeader(req) }));
+    return new Response("<html>broken runtime</html>", { status: 500, headers: { "content-type": "text/html" } });
   }
 
   if (method === "GET" && path.startsWith("/__preview/")) {
