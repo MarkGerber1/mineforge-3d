@@ -4,11 +4,14 @@ MINEFORGE 3D has **one architecture** and **two public surfaces**.
 
 ## Full-stack server runtime (canonical for Grok AI + Application Edit)
 
+`CANONICAL_FULLSTACK_URL=https://samuel-developments-floyd-native.trycloudflare.com`
+
 Browser → frontend → server functions / `/api/*` → xAI (`XAI_API_KEY`, server-only)
 and isolated git jobs (owner session required).
 
-This is the Grok Build live preview. There is no claimed `*.grok.me` URL unless
-a later publish actually creates one. Health:
+This is a Cloudflare quick tunnel in front of the live Grok Build full-stack
+process. It is independently reachable over HTTPS. It is **not** `*.grok.me`
+and it has **no uptime SLA** (trycloudflare ephemeral tunnel). Health:
 
 `GET /api/runtime` → `{ "mode": "server", "ai": true|false, "appEditEnabled": true|false, "role": ... }`
 
@@ -30,6 +33,8 @@ create-branch, write-source, commit, rollback, create-job, promote, reject, insp
 
 Standard CAD users do not authenticate. They use Project / CAD / Engineering / 2D / 3D / IndexedDB.
 
+Rate limits (server-side, in-memory, fail-closed): Grok 20/60s, login 8/60s, App Edit mutations 30/60s. Multi-instance production needs a shared store; this single-instance preview uses process memory.
+
 ## Static CAD surface (GitHub Pages) — Option B
 
 URL: https://markgerber1.github.io/mineforge-3d/
@@ -42,6 +47,8 @@ No server. `GET /api/runtime` is not JSON (static host fallback). The client ent
 
 GitHub Pages is mounted at `/mineforge-3d/`. The client resolves that basepath at runtime.
 Asset URLs in the Pages snapshot are rewritten to `/mineforge-3d/…`.
+
+**Do not treat GitHub Pages as the Grok / full-stack host.**
 
 ## Rule
 
