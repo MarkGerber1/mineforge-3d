@@ -98,6 +98,27 @@ async function storeEval<T>(page: Page, fn: () => T): Promise<T> {
   return page.evaluate(fn);
 }
 
+async function editSouthWidth(page: Page, meters: string): Promise<void> {
+  await mf(page, "cad").waitFor();
+  const dim = mf(page, "dim-south");
+  await dim.waitFor({ state: "visible", timeout: 10000 });
+  await page.waitForTimeout(200);
+  await dim.click({ timeout: 8000 });
+  try {
+    await mf(page, "dim-input").waitFor({ timeout: 4000 });
+  } catch {
+    await dim.click({ force: true });
+    await mf(page, "dim-input").waitFor({ timeout: 8000 });
+  }
+  await mf(page, "dim-input").fill(meters);
+  await mf(page, "dim-ok").click();
+  await page.waitForFunction(
+    (m) => (window as unknown as { __MF_STORE__: { getState: () => { project: { room: { widthM: number } } } } }).__MF_STORE__.getState().project.room.widthM === Number(m),
+    meters,
+    { timeout: 8000 },
+  );
+}
+
 describe("MOB-01 375×812 no page horizontal overflow", () => {
   it("main workspace fits", async () => {
     const { ctx, page } = await openPhone("375x812");
@@ -137,11 +158,7 @@ describe("MOB-03 touch 2D selection/edit/Undo works", () => {
   it("dimension edit then undo", async () => {
     const { ctx, page } = await openPhone("390x844");
     try {
-      await mf(page, "cad").waitFor();
-      await mf(page, "dim-south").tap();
-      await mf(page, "dim-input").waitFor({ timeout: 8000 });
-      await mf(page, "dim-input").fill("7.51");
-      await mf(page, "dim-ok").tap();
+      await editSouthWidth(page, "7.51");
       const w1 = await storeEval(
         page,
         () => (window as unknown as { __MF_STORE__: { getState: () => { project: { room: { widthM: number } } } } }).__MF_STORE__.getState().project.room.widthM,
@@ -245,10 +262,7 @@ describe("MOB-07 Undo/Redo restores Engineering result", () => {
   it("redo after undo restores width", async () => {
     const { ctx, page } = await openPhone("390x844");
     try {
-      await mf(page, "dim-south").tap();
-      await mf(page, "dim-input").waitFor({ timeout: 8000 });
-      await mf(page, "dim-input").fill("7.51");
-      await mf(page, "dim-ok").tap();
+      await editSouthWidth(page, "7.51");
       await mf(page, "undo").tap();
       await mf(page, "redo").tap();
       const w = await storeEval(
