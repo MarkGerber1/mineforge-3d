@@ -126,6 +126,11 @@ function seekVideo(video: HTMLVideoElement, timeSec: number, signal: AbortSignal
     video.addEventListener("error", onErr);
     const dur = Number.isFinite(video.duration) ? video.duration : timeSec;
     const t = Math.min(Math.max(0, timeSec), Math.max(0, dur - 1e-3));
+    if (Math.abs(video.currentTime - t) < 1e-3) {
+      cleanup();
+      resolve();
+      return;
+    }
     try {
       video.currentTime = t;
     } catch (e) {
@@ -135,7 +140,26 @@ function seekVideo(video: HTMLVideoElement, timeSec: number, signal: AbortSignal
   });
 }
 
-function captureFrame(video: HTMLVideoElement): { dataUrl: string; widthPx: number; heightPx: number } | null {
+function waitPresented(video: HTMLVideoElement, ms = 350): Promise<void> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+    const rvfc = (
+      video as HTMLVideoElement & { requestVideoFrameCallback?: (cb: () => void) => void }
+    ).requestVideoFrameCallback;
+    if (typeof rvfc === "function") rvfc.call(video, () => done());
+    requestAnimationFrame(() => requestAnimationFrame(() => done()));
+    window.setTimeout(done, ms);
+  });
+}
+
+function captureFrame(
+  video: HTMLVideoElement,
+): { dataUrl: string; widthPx: number; heightPx: number; luma: number } | null {
   const vw = video.videoWidth;
   const vh = video.videoHeight;
   if (!(vw > 0) || !(vh > 0)) return null;
@@ -145,9 +169,11 @@ function captureFrame(video: HTMLVideoElement): { dataUrl: string; widthPx: numb
   const canvas = document.createElement("canvas");
   canvas.width = w;
   canvas.height = h;
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) return null;
   ctx.drawImage(video, 0, 0, w, h);
+  const pix = ctx.getImageData(Math.max(0, Math.floor(w / 2)), Math.max(0, Math.floor(h / 2)), 1, 1).data;
+  const luma = pix[0] + pix[1] + pix[2];
   let dataUrl: string;
   try {
     dataUrl = canvas.toDataURL("image/jpeg", 0.82);
@@ -158,7 +184,29 @@ function captureFrame(video: HTMLVideoElement): { dataUrl: string; widthPx: numb
   ctx.clearRect(0, 0, w, h);
   canvas.width = 0;
   canvas.height = 0;
-  return { dataUrl, widthPx: w, heightPx: h };
+  return { dataUrl, widthPx: w, heightPx: h, luma };
+}
+
+async function capturePresented(
+  video: HTMLVideoElement,
+  signal: AbortSignal,
+): Promise<{ dataUrl: string; widthPx: number; heightPx: number; luma: number } | null> {
+  let last: { dataUrl: string; widthPx: number; heightPx: number; luma: number } | null = null;
+  for (let i = 0; i < 8; i++) {
+    if (signal.aborted) return null;
+    await waitPresented(video);
+    last = captureFrame(video);
+    if (last && last.luma > 12) return last;
+    try {
+      await video.play();
+      await waitPresented(video);
+      video.pause();
+    } catch {
+      /* muted play is best-effort */
+    }
+    await new Promise((r) => window.setTimeout(r, 40));
+  }
+  return last;
 }
 
 export async function extractVideoFrames(
@@ -192,8 +240,13 @@ export async function extractVideoFrames(
   const video = document.createElement("video");
   video.preload = "auto";
   video.muted = true;
+  video.defaultMuted = true;
   video.playsInline = true;
   video.setAttribute("playsinline", "true");
+  video.setAttribute("muted", "");
+  video.controls = false;
+  video.style.cssText = "position:fixed;left:-10000px;top:0;width:80px;height:45px;opacity:0.01;pointer-events:none;";
+  document.body.appendChild(video);
   video.src = url;
   video.load();
 
@@ -207,16 +260,27 @@ export async function extractVideoFrames(
     if (!(durationMs > 0)) return fail("VIDEO_ZERO_DURATION");
     if (!(video.videoWidth > 0) || !(video.videoHeight > 0)) return fail("VIDEO_DECODE_FAILED");
 
+    try {
+      await video.play();
+      await waitPresented(video);
+      video.pause();
+    } catch {
+      /* decoder prime is best-effort */
+    }
+
     const stamps = sampleTimestampsMs(durationMs);
     if (!stamps.length) return fail("VIDEO_DECODE_FAILED");
 
     const frames: ExtractedFrame[] = [];
+    const seen = new Set<string>();
     for (const ts of stamps) {
       if (signal.aborted) return fail("VIDEO_CANCELLED");
       await seekVideo(video, ts / 1000, signal);
       if (signal.aborted) return fail("VIDEO_CANCELLED");
-      const cap = captureFrame(video);
-      if (!cap) continue;
+      const cap = await capturePresented(video, signal);
+      if (!cap || cap.luma <= 12) continue;
+      if (seen.has(cap.dataUrl)) continue;
+      seen.add(cap.dataUrl);
       const id = nid("frame");
       frames.push({
         dataUrl: cap.dataUrl,
@@ -232,7 +296,7 @@ export async function extractVideoFrames(
       });
     }
 
-    if (!frames.length) return fail("VIDEO_DECODE_FAILED");
+    if (frames.length < 2) return fail("VIDEO_DECODE_FAILED");
 
     const videoMeta: RealityVideoMeta = {
       ...base,
@@ -250,8 +314,10 @@ export async function extractVideoFrames(
     if (signal.aborted || (e instanceof DOMException && e.name === "AbortError")) return fail("VIDEO_CANCELLED");
     return fail("VIDEO_DECODE_FAILED");
   } finally {
+    video.pause();
     video.removeAttribute("src");
     video.load();
+    video.remove();
     revokeTracked(url);
   }
 }
