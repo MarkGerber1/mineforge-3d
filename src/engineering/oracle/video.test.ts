@@ -23,6 +23,13 @@ describe("VIDEO-01 policy: mime is classified by canPlayType, not extension", ()
     assert.equal(byExt.ok, false);
     if (!byExt.ok) assert.equal(byExt.code, "VIDEO_UNSUPPORTED");
   });
+  it("codec-parameterized webm maybe is ok when bare container is empty", () => {
+    const r = classifyVideoFile({ size: 1000, type: "video/webm", name: "x.webm" }, (m) =>
+      m.includes("vp8") ? "maybe" : "",
+    );
+    assert.equal(r.ok, true);
+    if (r.ok) assert.match(r.mime, /vp8/);
+  });
 });
 
 describe("VIDEO-02 sampling timestamps are distinct", () => {

@@ -79,3 +79,11 @@ ADD pipeline; video cannot mutate engineering before confirmation.
 
 Oracle 85/85 (VIDEO-01…12). Physical iPhone and public host remain deferred.
 No Batch 5 in this drop.
+
+## REPAIR BATCH 4 CORRECTION — WebKit positive video proof
+
+Known-good fixture is VP8 WebM. Playwright WebKit CI must actually decode it
+and produce distinct JPEG stills. Fail-closed corrupt video stays a separate
+test. Evidence JSON is a CI artifact. Chromium iPhone viewport is not a
+substitute for this proof.
+

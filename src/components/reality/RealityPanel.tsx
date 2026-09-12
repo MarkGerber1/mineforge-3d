@@ -104,7 +104,7 @@ export function RealityPanel() {
   const onFiles = async (files: FileList | null) => {
     if (!files?.length) return;
     for (const file of [...files].slice(0, 6)) {
-      if (file.type.startsWith("video/") || /\.(mp4|mov|webm|m4v)$/i.test(file.name)) {
+      if (file.type.startsWith("video/") || /\.(mp4|mov|webm|m4v|ogv|ogg)$/i.test(file.name)) {
         await ingestVideo(file);
         continue;
       }
@@ -155,7 +155,7 @@ export function RealityPanel() {
       <input
         ref={fileRef}
         type="file"
-        accept="image/*,video/*,.mp4,.mov,.webm,.m4v"
+        accept="image/*,video/*,.mp4,.mov,.webm,.m4v,.ogv"
         multiple
         className="hidden"
         data-mf-id="reality-file"

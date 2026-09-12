@@ -1,9 +1,11 @@
 /**
  * Playwright WebKit iPhone E2E. Fail-closed if WebKit cannot launch.
- * MOB-01…10 and video ingest through the DOM.
+ * MOB-01…10, fail-closed negative video, and strict positive WebKit decode.
  */
 import assert from "node:assert/strict";
-import { spawn, type ChildProcess } from "node:child_process";
+import { createHash } from "node:crypto";
+import { execSync, spawn, type ChildProcess } from "node:child_process";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, before, describe, it } from "node:test";
@@ -12,9 +14,9 @@ import { webkit, devices, type Browser, type BrowserContext, type Page } from "p
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const BASE = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:8080";
 const PHOTO = join(ROOT, "tests/fixtures/photo/south.jpg");
-const VIDEO_MP4 = join(ROOT, "tests/fixtures/video/frames-rgb.mp4");
 const VIDEO_WEBM = join(ROOT, "tests/fixtures/video/frames-rgb.webm");
 const CORRUPT = join(ROOT, "tests/fixtures/video/corrupt.mp4");
+const EVIDENCE_PATH = join(ROOT, "test-results/batch4-webkit-video.json");
 const PORTRAIT = join(ROOT, "tests/fixtures/photo/portrait.jpg");
 const LANDSCAPE = join(ROOT, "tests/fixtures/photo/landscape.jpg");
 
@@ -117,6 +119,23 @@ async function editSouthWidth(page: Page, meters: string): Promise<void> {
     meters,
     { timeout: 8000 },
   );
+}
+
+function gitSha(): string {
+  try {
+    return (process.env.GITHUB_SHA || execSync("git rev-parse HEAD", { cwd: ROOT }).toString().trim()).slice(0, 40);
+  } catch {
+    return "unknown";
+  }
+}
+
+function sha256File(path: string): string {
+  return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+function writeEvidence(obj: Record<string, unknown>): void {
+  mkdirSync(join(ROOT, "test-results"), { recursive: true });
+  writeFileSync(EVIDENCE_PATH, JSON.stringify(obj, null, 2));
 }
 
 describe("MOB-01 375×812 no page horizontal overflow", () => {
@@ -332,79 +351,473 @@ describe("MOB-10 Safe-area/mobile controls remain accessible", () => {
   });
 });
 
-describe("VIDEO mobile ingest", () => {
-  it("real fixture decodes or fails closed; corrupt is explicit", async () => {
+describe("WEBKIT VIDEO NEGATIVE fail-closed", () => {
+  it("corrupt fixture is VIDEO_UNSUPPORTED or VIDEO_DECODE_FAILED; geometry unchanged", async () => {
     const { ctx, page } = await openPhone("430x932");
     try {
+      const before = await storeEval(page, () => {
+        const s = (window as unknown as { __MF_STORE__: { getState: () => { project: { openings: unknown[]; reality?: { asBuilt: unknown[] } }; result: { capacity: { safe: number | null } } } } }).__MF_STORE__.getState();
+        return { openings: s.project.openings.length, asBuilt: s.project.reality?.asBuilt.length ?? 0, safe: s.result.capacity.safe };
+      });
       await mf(page, "toolbar-reality").tap();
       await mf(page, "reality-file").setInputFiles(CORRUPT);
       await page.waitForFunction(() => {
         const s = (window as unknown as { __MF_STORE__: { getState: () => { videoJob: { status: string; error?: string } } } }).__MF_STORE__.getState();
         return s.videoJob.status === "failed";
       }, null, { timeout: 10000 });
-      const corruptState = await storeEval(page, () => {
-        const s = (window as unknown as { __MF_STORE__: { getState: () => { videoJob: { status: string; error?: string }; project: { openings: unknown[]; reality?: { photos: unknown[]; videos?: unknown[] } } } } }).__MF_STORE__.getState();
+      const after = await storeEval(page, () => {
+        const s = (window as unknown as { __MF_STORE__: { getState: () => { videoJob: { status: string; error?: string }; project: { openings: unknown[]; reality?: { photos: unknown[]; videos?: unknown[]; asBuilt: unknown[] } }; result: { capacity: { safe: number | null } } } } }).__MF_STORE__.getState();
         return {
           job: s.videoJob,
-          photos: s.project.reality?.photos.length ?? 0,
           openings: s.project.openings.length,
+          asBuilt: s.project.reality?.asBuilt.length ?? 0,
+          photos: s.project.reality?.photos.length ?? 0,
+          videos: s.project.reality?.videos?.length ?? 0,
+          safe: s.result.capacity.safe,
         };
       });
-      assert.equal(corruptState.job.status, "failed");
-      assert.ok(corruptState.job.error === "VIDEO_UNSUPPORTED" || corruptState.job.error === "VIDEO_DECODE_FAILED");
+      assert.equal(after.job.status, "failed");
+      assert.ok(after.job.error === "VIDEO_UNSUPPORTED" || after.job.error === "VIDEO_DECODE_FAILED");
+      assert.equal(after.openings, before.openings);
+      assert.equal(after.asBuilt, before.asBuilt);
+      assert.equal(after.safe, before.safe);
+      assert.equal(after.videos, 0);
+    } finally {
+      await ctx.close();
+    }
+  });
+});
 
-      const beforeOpenings = corruptState.openings;
-      await mf(page, "reality-file").setInputFiles(VIDEO_MP4);
+describe("WEBKIT VIDEO POSITIVE decode + Reality + Undo", () => {
+  it("known-good VP8 WebM MUST decode; frames distinct; PENDING→ADD→Undo", async () => {
+    const evidence: Record<string, unknown> = {
+      gitSha: gitSha(),
+      githubSha: process.env.GITHUB_SHA ?? null,
+      browser: "WebKit",
+      playwrightWebkitVersion: browser.version(),
+      viewport: { width: 430, height: 932 },
+      fixture: "frames-rgb.webm",
+      fixtureMime: "video/webm",
+      fixtureCodec: "VP8",
+      fixtureContainer: "webm",
+      fixtureSha256: sha256File(VIDEO_WEBM),
+      processingResult: "NOT_STARTED",
+      pass: false,
+    };
+    const { ctx, page } = await openPhone("430x932");
+    try {
+      evidence.canPlayType = await page.evaluate(() => {
+        const hook = (window as unknown as { __MF_VIDEO__?: { probeCanPlay: () => Record<string, string> } }).__MF_VIDEO__;
+        if (hook?.probeCanPlay) return hook.probeCanPlay();
+        const v = document.createElement("video");
+        return {
+          "video/webm": v.canPlayType("video/webm"),
+          'video/webm; codecs="vp8"': v.canPlayType('video/webm; codecs="vp8"'),
+        };
+      });
+
+      const webmPlay = evidence.canPlayType as Record<string, string>;
+      const webmClaimed =
+        webmPlay["video/webm"] === "probably" ||
+        webmPlay["video/webm"] === "maybe" ||
+        webmPlay['video/webm; codecs="vp8"'] === "probably" ||
+        webmPlay['video/webm; codecs="vp8"'] === "maybe" ||
+        webmPlay['video/webm; codecs="vp8.0"'] === "probably" ||
+        webmPlay['video/webm; codecs="vp8.0"'] === "maybe";
+      evidence.webkitClaimsWebm = webmClaimed;
+      if (!webmClaimed) {
+        evidence.processingResult = "VIDEO_UNSUPPORTED";
+        evidence.pass = false;
+        writeEvidence(evidence);
+        assert.fail(
+          `WebKit canPlayType does not claim VP8/WebM. Probe=${JSON.stringify(webmPlay)}. NOT READY — no genuine WebKit-decodable fixture claimed by this runtime.`,
+        );
+      }
+
+      const beforeSnap = await storeEval(page, () => {
+        const s = (
+          window as unknown as {
+            __MF_STORE__: {
+              getState: () => {
+                project: {
+                  openings: unknown[];
+                  room: unknown;
+                  racks: Array<{ id: string; x: number; y: number; widthM: number; depthM: number; heightM: number }>;
+                  reality?: { asBuilt?: Array<{ id: string; x: number; y: number; z: number; widthM: number; heightM: number; depthM: number }> };
+                };
+                result: { capacity: { safe: number | null }; geometry: { floorAreaM2: number } };
+              };
+            };
+          }
+        ).__MF_STORE__.getState();
+        const fp = JSON.stringify({
+          room: s.project.room,
+          openings: s.project.openings,
+          racks: s.project.racks.map((r) => ({ id: r.id, x: r.x, y: r.y, widthM: r.widthM, depthM: r.depthM, heightM: r.heightM })),
+          asBuilt: (s.project.reality?.asBuilt ?? []).map((o) => ({
+            id: o.id,
+            x: o.x,
+            y: o.y,
+            z: o.z,
+            widthM: o.widthM,
+            heightM: o.heightM,
+            depthM: o.depthM,
+          })),
+        });
+        return {
+          openings: s.project.openings.length,
+          fp,
+          safe: s.result.capacity.safe,
+          area: s.result.geometry.floorAreaM2,
+        };
+      });
+      evidence.canonicalBefore = beforeSnap;
+
+      await mf(page, "toolbar-reality").tap();
+      await mf(page, "reality-file").setInputFiles(VIDEO_WEBM);
       await page.waitForFunction(() => {
         const s = (window as unknown as { __MF_STORE__: { getState: () => { videoJob: { status: string } } } }).__MF_STORE__.getState();
         return s.videoJob.status !== "processing";
-      }, null, { timeout: 20000 });
-      let after = await storeEval(page, () => {
-        const s = (window as unknown as { __MF_STORE__: { getState: () => { videoJob: { status: string; error?: string }; project: { openings: unknown[]; reality?: { photos: Array<{ timestampMs?: number; sourceVideoId?: string }>; videos?: Array<{ durationMs: number; persistRaw: boolean; frameIds: string[] }> } } } } }).__MF_STORE__.getState();
-        const photos = s.project.reality?.photos ?? [];
+      }, null, { timeout: 25000 });
+
+      const decoded = await storeEval(page, () => {
+        const s = (
+          window as unknown as {
+            __MF_STORE__: {
+              getState: () => {
+                videoJob: { status: string; error?: string; errorText?: string };
+                project: {
+                  openings: unknown[];
+                  reality?: {
+                    photos: Array<{
+                      id: string;
+                      kind?: string;
+                      sourceVideoId?: string;
+                      timestampMs?: number;
+                      widthPx?: number;
+                      heightPx?: number;
+                      notes?: string;
+                    }>;
+                    videos?: Array<{
+                      id: string;
+                      name: string;
+                      mime: string;
+                      durationMs: number;
+                      widthPx: number;
+                      heightPx: number;
+                      status: string;
+                      persistRaw: boolean;
+                      frameIds: string[];
+                      selectedFrameIds: string[];
+                      error?: string;
+                    }>;
+                  };
+                };
+              };
+            };
+            __MF_VIDEO__?: { liveObjectUrlCount: () => number };
+          }
+        ).__MF_STORE__.getState();
         const videos = s.project.reality?.videos ?? [];
+        const photos = s.project.reality?.photos ?? [];
         return {
           job: s.videoJob,
           openings: s.project.openings.length,
-          photos: photos.length,
-          videos: videos.map((v) => ({ durationMs: v.durationMs, persistRaw: v.persistRaw, n: v.frameIds.length })),
-          stamps: photos.map((p) => p.timestampMs).filter((t) => t != null),
+          videos,
+          photos,
           urls: (window as unknown as { __MF_VIDEO__?: { liveObjectUrlCount: () => number } }).__MF_VIDEO__?.liveObjectUrlCount() ?? -1,
         };
       });
-      assert.equal(after.openings, beforeOpenings);
-      if (!after.videos.length) {
-        await mf(page, "reality-file").setInputFiles(VIDEO_WEBM);
-        await page.waitForFunction(() => {
-          const s = (window as unknown as { __MF_STORE__: { getState: () => { videoJob: { status: string } } } }).__MF_STORE__.getState();
-          return s.videoJob.status !== "processing";
-        }, null, { timeout: 20000 });
-        after = await storeEval(page, () => {
-          const s = (window as unknown as { __MF_STORE__: { getState: () => { videoJob: { status: string; error?: string }; project: { openings: unknown[]; reality?: { photos: Array<{ timestampMs?: number }>; videos?: Array<{ durationMs: number; persistRaw: boolean; frameIds: string[] }> } } } } }).__MF_STORE__.getState();
-          const photos = s.project.reality?.photos ?? [];
-          const videos = s.project.reality?.videos ?? [];
-          return {
-            job: s.videoJob,
-            openings: s.project.openings.length,
-            photos: photos.length,
-            videos: videos.map((v) => ({ durationMs: v.durationMs, persistRaw: v.persistRaw, n: v.frameIds.length })),
-            stamps: photos.map((p) => p.timestampMs).filter((t) => t != null),
-            urls: (window as unknown as { __MF_VIDEO__?: { liveObjectUrlCount: () => number } }).__MF_VIDEO__?.liveObjectUrlCount() ?? -1,
-          };
+
+      evidence.processingResult = decoded.job.status === "idle" && decoded.videos[0]?.status === "ready" ? "READY" : decoded.job.error ?? decoded.job.status;
+      evidence.job = decoded.job;
+      evidence.decodedDurationMs = decoded.videos[0]?.durationMs ?? 0;
+      evidence.decodedWidth = decoded.videos[0]?.widthPx ?? 0;
+      evidence.decodedHeight = decoded.videos[0]?.heightPx ?? 0;
+      evidence.extractedFrameCount = decoded.videos[0]?.frameIds.length ?? 0;
+      evidence.persistRaw = decoded.videos[0]?.persistRaw ?? null;
+      evidence.liveObjectUrls = decoded.urls;
+
+      assert.notEqual(decoded.job.status, "failed", `known-good WebM MUST decode, got ${decoded.job.error}`);
+      assert.notEqual(decoded.job.error, "VIDEO_UNSUPPORTED");
+      assert.notEqual(decoded.job.error, "VIDEO_DECODE_FAILED");
+      assert.ok(decoded.videos.length >= 1, "no video metadata attached");
+      const video = decoded.videos[0];
+      assert.equal(video.status, "ready");
+      assert.ok(video.durationMs > 0);
+      assert.ok(video.widthPx > 0);
+      assert.ok(video.heightPx > 0);
+      assert.ok(video.frameIds.length >= 2);
+      assert.equal(video.persistRaw, false);
+      assert.equal(decoded.openings, beforeSnap.openings);
+      assert.equal(decoded.urls, 0);
+
+      const stamps = decoded.photos.map((p) => p.timestampMs).filter((t): t is number => t != null);
+      evidence.timestampsMs = stamps;
+      assert.ok(new Set(stamps).size >= 2, `timestamps not distinct: ${stamps.join(",")}`);
+
+      for (const p of decoded.photos) {
+        assert.equal(p.kind, "video-frame");
+        assert.equal(p.sourceVideoId, video.id);
+        assert.ok(p.timestampMs != null);
+        assert.ok((p.widthPx ?? 0) > 0);
+        assert.ok((p.heightPx ?? 0) > 0);
+        assert.match(p.notes ?? "", /VIDEO_FRAME_ESTIMATE/);
+        assert.doesNotMatch(p.notes ?? "", /FIELD_MEASUREMENT/);
+      }
+
+      const fingerprints = await page.evaluate(async (ids: string[]) => {
+        const load = (id: string) =>
+          new Promise<string | null>((resolve, reject) => {
+            const req = indexedDB.open("mineforge", 2);
+            req.onerror = () => reject(req.error);
+            req.onsuccess = () => {
+              const db = req.result;
+              const tx = db.transaction("media", "readonly");
+              const g = tx.objectStore("media").get(id);
+              g.onsuccess = () => resolve((g.result as string) ?? null);
+              g.onerror = () => reject(g.error);
+            };
+          });
+        const sha = async (s: string) => {
+          const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+          return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+        };
+        const pixel = async (dataUrl: string) => {
+          const img = new Image();
+          await new Promise<void>((res, rej) => {
+            img.onload = () => res();
+            img.onerror = () => rej(new Error("img"));
+            img.src = dataUrl;
+          });
+          const c = document.createElement("canvas");
+          c.width = img.naturalWidth;
+          c.height = img.naturalHeight;
+          const ctx = c.getContext("2d");
+          if (!ctx) return { r: 0, g: 0, b: 0 };
+          ctx.drawImage(img, 0, 0);
+          const p = ctx.getImageData(Math.floor(c.width / 2), Math.floor(c.height / 2), 1, 1).data;
+          return { r: p[0], g: p[1], b: p[2] };
+        };
+        const out: Array<{ id: string; sha256: string; pixel: { r: number; g: number; b: number }; bytes: number }> = [];
+        for (const id of ids) {
+          const data = await load(id);
+          if (!data || !data.startsWith("data:image/")) throw new Error(`missing JPEG for ${id}`);
+          out.push({ id, sha256: await sha(data), pixel: await pixel(data), bytes: data.length });
+        }
+        return out;
+      }, video.frameIds);
+
+      evidence.frameFingerprints = fingerprints;
+      assert.ok(fingerprints.length >= 2);
+      assert.notEqual(fingerprints[0].sha256, fingerprints[1].sha256, "frame hashes identical — extraction is not real distinct stills");
+      assert.ok(
+        fingerprints[0].pixel.r !== fingerprints[1].pixel.r ||
+          fingerprints[0].pixel.g !== fingerprints[1].pixel.g ||
+          fingerprints[0].pixel.b !== fingerprints[1].pixel.b,
+        `center pixels identical ${JSON.stringify(fingerprints[0].pixel)} vs ${JSON.stringify(fingerprints[1].pixel)}`,
+      );
+
+      const selectedId = video.selectedFrameIds[0] ?? video.frameIds[0];
+      const selectedPhoto = decoded.photos.find((p) => p.id === selectedId);
+      evidence.selectedFrameId = selectedId;
+      evidence.selectedTimestampMs = selectedPhoto?.timestampMs ?? null;
+      await page.evaluate((id) => {
+        (window as unknown as { __MF_STORE__: { getState: () => { setActivePhoto: (id: string) => void } } }).__MF_STORE__.getState().setActivePhoto(id);
+      }, selectedId);
+
+      await mf(page, "annotator-img").waitFor({ timeout: 15000 });
+      await mf(page, "wall-south").tap();
+      await mf(page, "kind-point").tap();
+      await mf(page, "cal-length").fill("2");
+      const img = mf(page, "annotator-img");
+      const box = await img.boundingBox();
+      assert.ok(box && box.width > 20 && box.height > 20);
+      await img.tap({ position: { x: box.width * 0.08, y: box.height * 0.5 } });
+      await page.waitForTimeout(80);
+      await img.tap({ position: { x: box.width * 0.33, y: box.height * 0.5 } });
+      await page.waitForFunction(() => {
+        const s = (window as unknown as { __MF_STORE__: { getState: () => { project: { reality?: { photos: Array<{ calibration?: { lengthM: number } }> } } } } }).__MF_STORE__.getState();
+        const ph = s.project.reality?.photos.find((p) => p.calibration);
+        return (ph?.calibration?.lengthM ?? null) === 2;
+      }, null, { timeout: 8000 });
+
+      await mf(page, "kind-door").tap();
+      await img.tap({ position: { x: box.width * 0.4, y: box.height * 0.8 } });
+      await page.waitForTimeout(80);
+      await img.tap({ position: { x: box.width * 0.55, y: box.height * 0.8 } });
+      await page.waitForFunction(() => {
+        const s = (window as unknown as { __MF_STORE__: { getState: () => { project: { reality?: { findings: Array<{ status: string }> } } } } }).__MF_STORE__.getState();
+        return (s.project.reality?.findings.filter((f) => f.status === "PENDING").length ?? 0) >= 1;
+      }, null, { timeout: 8000 });
+
+      const pendingSnap = await storeEval(page, () => {
+        const s = (
+          window as unknown as {
+            __MF_STORE__: {
+              getState: () => {
+                project: {
+                  openings: unknown[];
+                  room: unknown;
+                  racks: Array<{ id: string; x: number; y: number; widthM: number; depthM: number; heightM: number }>;
+                  reality?: {
+                    findings: Array<{ status: string; kind: string }>;
+                    asBuilt?: Array<{ id: string; x: number; y: number; z: number; widthM: number; heightM: number; depthM: number }>;
+                  };
+                };
+                result: { capacity: { safe: number | null } };
+              };
+            };
+          }
+        ).__MF_STORE__.getState();
+        const fp = JSON.stringify({
+          room: s.project.room,
+          openings: s.project.openings,
+          racks: s.project.racks.map((r) => ({ id: r.id, x: r.x, y: r.y, widthM: r.widthM, depthM: r.depthM, heightM: r.heightM })),
+          asBuilt: (s.project.reality?.asBuilt ?? []).map((o) => ({
+            id: o.id,
+            x: o.x,
+            y: o.y,
+            z: o.z,
+            widthM: o.widthM,
+            heightM: o.heightM,
+            depthM: o.depthM,
+          })),
         });
-      }
-      if (after.videos.length) {
-        assert.equal(after.videos[0].persistRaw, false);
-        assert.ok(after.videos[0].n >= 2);
-        assert.ok(after.videos[0].n <= 6);
-        const uniq = new Set(after.stamps);
-        assert.ok(uniq.size >= 2);
-        assert.equal(after.urls, 0);
-      } else {
-        assert.equal(after.job.status, "failed");
-        assert.ok(after.job.error === "VIDEO_UNSUPPORTED" || after.job.error === "VIDEO_DECODE_FAILED");
-        assert.equal(after.openings, beforeOpenings);
-      }
+        return {
+          fp,
+          openings: s.project.openings.length,
+          pending: s.project.reality?.findings.filter((f) => f.status === "PENDING").length ?? 0,
+          safe: s.result.capacity.safe,
+        };
+      });
+      evidence.pendingProof = pendingSnap;
+      assert.ok(pendingSnap.pending >= 1);
+      assert.equal(pendingSnap.fp, beforeSnap.fp, "canonical geometry mutated before ADD");
+      assert.equal(pendingSnap.safe, beforeSnap.safe);
+
+      evidence.engineeringBefore = { safe: beforeSnap.safe, area: beforeSnap.area };
+
+      await mf(page, "add-to-model").tap();
+      await page.waitForFunction((n) => {
+        const s = (window as unknown as { __MF_STORE__: { getState: () => { project: { openings: Array<{ type: string }> } } } }).__MF_STORE__.getState();
+        return s.project.openings.length > n && s.project.openings.some((o) => o.type === "DOOR");
+      }, beforeSnap.openings, { timeout: 8000 });
+
+      const afterAdd = await storeEval(page, () => {
+        const s = (
+          window as unknown as {
+            __MF_STORE__: {
+              getState: () => {
+                project: {
+                  openings: Array<{ type: string }>;
+                  room: unknown;
+                  racks: Array<{ id: string; x: number; y: number; widthM: number; depthM: number; heightM: number }>;
+                  reality?: { asBuilt?: Array<{ id: string; x: number; y: number; z: number; widthM: number; heightM: number; depthM: number }> };
+                };
+                result: { capacity: { safe: number | null }; geometry: { floorAreaM2: number } };
+              };
+            };
+          }
+        ).__MF_STORE__.getState();
+        const fp = JSON.stringify({
+          room: s.project.room,
+          openings: s.project.openings,
+          racks: s.project.racks.map((r) => ({ id: r.id, x: r.x, y: r.y, widthM: r.widthM, depthM: r.depthM, heightM: r.heightM })),
+          asBuilt: (s.project.reality?.asBuilt ?? []).map((o) => ({
+            id: o.id,
+            x: o.x,
+            y: o.y,
+            z: o.z,
+            widthM: o.widthM,
+            heightM: o.heightM,
+            depthM: o.depthM,
+          })),
+        });
+        return { fp, openings: s.project.openings.map((o) => o.type), safe: s.result.capacity.safe, area: s.result.geometry.floorAreaM2 };
+      });
+      evidence.canonicalAfterAdd = afterAdd;
+      evidence.engineeringAfter = { safe: afterAdd.safe, area: afterAdd.area };
+      assert.notEqual(afterAdd.fp, beforeSnap.fp);
+      assert.ok(afterAdd.openings.includes("DOOR"));
+
+      await mf(page, "undo").tap();
+      await page.waitForFunction((fp) => {
+        const s = (
+          window as unknown as {
+            __MF_STORE__: {
+              getState: () => {
+                project: {
+                  openings: unknown[];
+                  room: unknown;
+                  racks: Array<{ id: string; x: number; y: number; widthM: number; depthM: number; heightM: number }>;
+                  reality?: { asBuilt?: Array<{ id: string; x: number; y: number; z: number; widthM: number; heightM: number; depthM: number }> };
+                };
+              };
+            };
+          }
+        ).__MF_STORE__.getState();
+        const cur = JSON.stringify({
+          room: s.project.room,
+          openings: s.project.openings,
+          racks: s.project.racks.map((r) => ({ id: r.id, x: r.x, y: r.y, widthM: r.widthM, depthM: r.depthM, heightM: r.heightM })),
+          asBuilt: (s.project.reality?.asBuilt ?? []).map((o) => ({
+            id: o.id,
+            x: o.x,
+            y: o.y,
+            z: o.z,
+            widthM: o.widthM,
+            heightM: o.heightM,
+            depthM: o.depthM,
+          })),
+        });
+        return cur === fp;
+      }, beforeSnap.fp, { timeout: 8000 });
+
+      const afterUndo = await storeEval(page, () => {
+        const s = (
+          window as unknown as {
+            __MF_STORE__: {
+              getState: () => {
+                project: {
+                  openings: unknown[];
+                  room: unknown;
+                  racks: Array<{ id: string; x: number; y: number; widthM: number; depthM: number; heightM: number }>;
+                  reality?: { asBuilt?: Array<{ id: string; x: number; y: number; z: number; widthM: number; heightM: number; depthM: number }> };
+                };
+                result: { capacity: { safe: number | null }; geometry: { floorAreaM2: number } };
+              };
+            };
+          }
+        ).__MF_STORE__.getState();
+        const fp = JSON.stringify({
+          room: s.project.room,
+          openings: s.project.openings,
+          racks: s.project.racks.map((r) => ({ id: r.id, x: r.x, y: r.y, widthM: r.widthM, depthM: r.depthM, heightM: r.heightM })),
+          asBuilt: (s.project.reality?.asBuilt ?? []).map((o) => ({
+            id: o.id,
+            x: o.x,
+            y: o.y,
+            z: o.z,
+            widthM: o.widthM,
+            heightM: o.heightM,
+            depthM: o.depthM,
+          })),
+        });
+        return { fp, openings: s.project.openings.length, safe: s.result.capacity.safe, area: s.result.geometry.floorAreaM2 };
+      });
+      evidence.engineeringAfterUndo = afterUndo;
+      assert.equal(afterUndo.fp, beforeSnap.fp);
+      assert.equal(afterUndo.safe, beforeSnap.safe);
+      assert.equal(afterUndo.area, beforeSnap.area);
+
+      evidence.pass = true;
+      writeEvidence(evidence);
+    } catch (e) {
+      evidence.pass = false;
+      evidence.error = e instanceof Error ? e.message : String(e);
+      writeEvidence(evidence);
+      throw e;
     } finally {
       await ctx.close();
     }

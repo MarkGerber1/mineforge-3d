@@ -23,3 +23,10 @@ jobs:
           APP_EDIT_OWNER_SECRET: ci-owner-not-a-production-secret
           APP_EDIT_USER_SECRET: ci-user-not-a-production-secret
           APP_EDIT_SESSION_SECRET: ci-session-not-a-production-secret
+      - name: Upload WebKit video evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: batch4-webkit-video-evidence
+          path: test-results/batch4-webkit-video.json
+          if-no-files-found: warn

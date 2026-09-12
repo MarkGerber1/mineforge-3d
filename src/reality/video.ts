@@ -31,12 +31,6 @@ function revokeTracked(url: string): void {
   liveUrls.delete(url);
 }
 
-if (typeof window !== "undefined") {
-  (window as unknown as { __MF_VIDEO__: { liveObjectUrlCount: typeof liveObjectUrlCount } }).__MF_VIDEO__ = {
-    liveObjectUrlCount,
-  };
-}
-
 export interface ExtractedFrame {
   photo: RealityPhotoMeta;
   dataUrl: string;
@@ -58,6 +52,29 @@ function canPlayMime(mime: string): string {
   } catch {
     return "";
   }
+}
+
+export function probeCanPlay(): Record<string, string> {
+  const mimes = [
+    "video/webm",
+    'video/webm; codecs="vp8"',
+    'video/webm; codecs="vp8.0"',
+    "video/mp4",
+    'video/mp4; codecs="avc1.42E01E"',
+    "video/ogg",
+    'video/ogg; codecs="theora"',
+    "video/quicktime",
+  ];
+  const out: Record<string, string> = {};
+  for (const m of mimes) out[m] = canPlayMime(m);
+  return out;
+}
+
+if (typeof window !== "undefined") {
+  (window as unknown as { __MF_VIDEO__: { liveObjectUrlCount: typeof liveObjectUrlCount; probeCanPlay: typeof probeCanPlay } }).__MF_VIDEO__ = {
+    liveObjectUrlCount,
+    probeCanPlay,
+  };
 }
 
 function waitEvent(target: EventTarget, ok: string, err: string, ms: number): Promise<void> {
@@ -176,11 +193,16 @@ export async function extractVideoFrames(
   video.preload = "auto";
   video.muted = true;
   video.playsInline = true;
+  video.setAttribute("playsinline", "true");
   video.src = url;
+  video.load();
 
   try {
     await waitEvent(video, "loadedmetadata", "error", 12000);
     if (signal.aborted) return fail("VIDEO_CANCELLED");
+    if (!Number.isFinite(video.duration) || video.duration <= 0) {
+      await waitEvent(video, "durationchange", "error", 4000).catch(() => undefined);
+    }
     const durationMs = (Number.isFinite(video.duration) ? video.duration : 0) * 1000;
     if (!(durationMs > 0)) return fail("VIDEO_ZERO_DURATION");
     if (!(video.videoWidth > 0) || !(video.videoHeight > 0)) return fail("VIDEO_DECODE_FAILED");
