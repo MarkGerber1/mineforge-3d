@@ -141,7 +141,16 @@ export function calculateAll(project: Project, catalogs: Catalogs): EngineeringR
       id: `asbuilt-${h.id}-${h.objectId}`,
       severity: "CRITICAL",
       objectId: h.id,
-      title: "Rack / as-built collision",
+      title: "Rack / as-built XYZ collision",
+      detail: h.reason,
+    });
+  }
+  for (const h of racks.ceilingHits) {
+    warnings.push({
+      id: `ceil-${h.id}`,
+      severity: "CRITICAL",
+      objectId: h.id,
+      title: "Ceiling envelope",
       detail: h.reason,
     });
   }
@@ -255,19 +264,19 @@ export function calculateAll(project: Project, catalogs: Catalogs): EngineeringR
         display: `${geometry.floorAreaM2.toFixed(3)} m²`,
       },
     ],
-    maxByRack: project.racks.length ? racks.totalCapacity : spaceN,
+    maxByRack: project.racks.length ? racks.usableCapacity : spaceN,
     rackKnown: true,
     rackDetail: project.racks.length
-      ? `${racks.totalCapacity} ASIC on ${project.racks.length} rack(s).`
+      ? `${racks.usableCapacity} usable ASIC on ${project.racks.length} rack(s) (${racks.totalCapacity} shelf capacity, ${racks.totalCapacity - racks.usableCapacity} blocked by 3D conflict).`
       : "No racks placed — using theoretical space packing.",
     rackTrace: racks.perRackCapacity.map((r) => ({
       id: r.id,
       label: `Rack ${r.id}`,
       formula: "floor(usableShelfWidth / asicWidth) × shelves",
-      inputs: { perShelf: r.perShelf, total: r.total },
-      raw: r.total,
+      inputs: { perShelf: r.perShelf, total: r.total, blocked: r.blocked ? 1 : 0 },
+      raw: r.blocked ? 0 : r.total,
       unit: "ASIC",
-      display: String(r.total),
+      display: r.blocked ? `${r.total} BLOCKED` : String(r.total),
     })),
     maxByUser: null,
     userKnown: false,

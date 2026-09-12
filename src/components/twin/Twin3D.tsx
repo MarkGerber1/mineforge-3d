@@ -2,6 +2,7 @@ import { Canvas } from "@react-three/fiber";
 import { Grid, OrbitControls, PerspectiveCamera } from "@react-three/drei";
 import { useEffect, useMemo, useState } from "react";
 import type { ThreeEvent } from "@react-three/fiber";
+import { DoubleSide } from "three";
 import { useLiveProject, useLiveResult, useProjectStore } from "@/project/store";
 import { openingWorldRect, rackAabb } from "@/engineering/geometry";
 import type { Project } from "@/engineering/types";
@@ -35,6 +36,27 @@ function RoomShell({ project }: { project: Project }) {
         <meshStandardMaterial color="#3a4656" transparent opacity={0.82} />
       </mesh>
     </group>
+  );
+}
+
+/** Physical ceiling plane at y = room.heightM. Hide is visual only. */
+function Ceiling({ project, visible }: { project: Project; visible: boolean }) {
+  const w = project.room.widthM;
+  const d = project.room.depthM;
+  const h = project.room.heightM;
+  if (!visible) return null;
+  return (
+    <mesh rotation={[Math.PI / 2, 0, 0]} position={[w / 2, h, d / 2]} receiveShadow>
+      <planeGeometry args={[w, d]} />
+      <meshStandardMaterial
+        color="#1a222c"
+        transparent
+        opacity={0.55}
+        side={DoubleSide}
+        roughness={0.9}
+        metalness={0.05}
+      />
+    </mesh>
   );
 }
 
@@ -80,7 +102,10 @@ function Racks({ project }: { project: Project }) {
         const cz = (bb.y1 + bb.y2) / 2;
         const ww = bb.x2 - bb.x1;
         const dd = bb.y2 - bb.y1;
-        const warn = result.racks.collisions.some((c) => c.a === r.id || c.b === r.id);
+        const warn =
+          result.racks.collisions.some((c) => c.a === r.id || c.b === r.id) ||
+          result.racks.asBuiltHits.some((h) => h.id === r.id) ||
+          result.racks.ceilingHits.some((h) => h.id === r.id);
         const isSel = selected.includes(r.id);
         const cold =
           r.airflowToward === "south"
@@ -210,7 +235,6 @@ function TempEstimate({ project }: { project: Project }) {
         <meshStandardMaterial color="#c47a52" transparent opacity={0.4} />
       </mesh>
       <group position={[project.room.widthM / 2, 0.02, project.room.depthM / 2]}>
-        {/* ESTIMATE marker via a thin plane */}
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}>
           <planeGeometry args={[1.6, 0.3]} />
           <meshBasicMaterial color="#c4a35a" transparent opacity={0.35} />
@@ -226,6 +250,7 @@ export function Twin3D() {
   const project = useLiveProject();
   const store = useProjectStore();
   const [mounted, setMounted] = useState(false);
+  const [showCeiling, setShowCeiling] = useState(true);
   useEffect(() => setMounted(true), []);
   const camPos = useMemo(() => {
     const span = Math.max(project.room.widthM, project.room.depthM, 6);
@@ -260,6 +285,7 @@ export function Twin3D() {
           fadeDistance={40}
         />
         <RoomShell project={project} />
+        <Ceiling project={project} visible={showCeiling} />
         <Openings project={project} />
         <Racks project={project} />
         {(project.reality?.asBuilt ?? []).map((obj) => {
@@ -281,6 +307,16 @@ export function Twin3D() {
       <div className="pointer-events-none absolute left-3 top-3 rounded-[8px] border border-border bg-panel/90 px-2 py-1 font-mono text-[11px] text-muted">
         1:1 Digital Twin · {project.room.widthM.toFixed(3)} × {project.room.depthM.toFixed(3)} × {project.room.heightM.toFixed(3)} m
       </div>
+      <button
+        type="button"
+        data-mf-id="ceiling-toggle"
+        data-mf-ceiling={project.room.heightM.toFixed(3)}
+        data-mf-ceiling-visible={showCeiling ? "1" : "0"}
+        className="absolute right-3 bottom-3 rounded-[8px] border border-border bg-panel/90 px-2 py-1 font-mono text-[11px] text-muted hover:text-fg"
+        onClick={() => setShowCeiling((v) => !v)}
+      >
+        Потолок {project.room.heightM.toFixed(3)} m · {showCeiling ? "скрыть" : "показать"}
+      </button>
     </div>
   );
 }

@@ -23,19 +23,21 @@ Date: 2026-09-11
 | Failure simulation (clone, no mutate) | PASS |
 | Reality as-built → collision warnings | PASS |
 | Reality calibration / Sync → canonical geometry | PASS |
+| Reality 3D AABB / ceiling / vent consequence / AI pipeline | PASS |
 | Mobile workspace (not shrunk desktop) | PASS |
 
 ## UNIT TESTS
 
 Oracle suite: `src/engineering/oracle/*.test.ts`
 
-TOTAL: 55  
-PASSED: 55  
+TOTAL: 71  
+PASSED: 71  
 FAILED: 0
 
 | Test ID | Subsystem | Status |
 |---|---|---|
 | GEO-01 … GEO-06 | Geometry / CAD | PASS |
+| GEO-3D-01 … GEO-3D-04 | True 3D AABB / ceiling envelope | PASS |
 | ELEC-01 … ELEC-06 | Electrical | PASS |
 | THERM-01 … THERM-07 | Heat / airflow | PASS |
 | AIR-01 … AIR-05 | Duct / shaft / pressure | PASS |
@@ -46,6 +48,7 @@ FAILED: 0
 | INT-01 … INT-04 | Intent + writable paths | PASS |
 | FAIL-01 … FAIL-02 | Failure sim clone | PASS |
 | REAL-01 … REAL-12 | Provenance, calibration, Sync → openings/as-built/wall, undo, persistence | PASS |
+| REAL-13 … REAL-24 | 3D collision consequence, vent opening, AI Reality fail-closed, undo/redo | PASS |
 
 ## E2E / UX
 
@@ -72,5 +75,6 @@ SAFE computed by the engine. Floor loading UNKNOWN → confidence PRELIMINARY.
 ## CURRENT PHASE
 
 Repair Batch 1 PASSED under owner revised release policy (SHA `8f5c9c0`).
-Repair Batch 2 — Reality geometry pipeline (calibration → findings → canonical state).
+Repair Batch 2 — Reality geometry pipeline (SHA `7c9f25a`).
+Repair Batch 3 — Reality → Engineering + true 3D vertical geometry.
 PUBLIC PRODUCTION DEPLOYMENT deferred to FINAL RELEASE.

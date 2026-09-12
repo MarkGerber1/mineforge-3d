@@ -53,3 +53,13 @@ Known-distance A–B calibration (m/px) in Engineering Core. Annotations produce
 PENDING findings; ADD TO MODEL writes openings / as-built / wall length into
 canonical Project State. 2D and 3D consume the same boxes. Undo/persistence
 unchanged. REAL-01…12.
+
+## REPAIR BATCH 3 — Reality → Engineering + true 3D
+
+`Aabb3` XYZ collision (plan overlap + Z-separation is not a hit). Ceiling is a
+real envelope at `room.heightM`; Twin3D draws that plane (hide is visual-only).
+Confirmed as-built / exhaust openings feed Engineering Core: blocked rack
+capacity, ventilation network, SAFE when that constraint is the bottleneck.
+AI Reality uses `parseAiFinding` — same PENDING → ADD pipeline, fail-closed
+incomplete geometry, no invented coordinates. GEO-3D-01…04, REAL-13…24.
+Oracle 71/71. Public host still deferred. No Batch 4 in this drop.

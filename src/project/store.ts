@@ -531,3 +531,8 @@ export function useLiveProject(): Project {
 export function useLiveResult(): EngineeringResult {
   return useProjectStore((s) => s.previewResult ?? s.result);
 }
+
+if (typeof window !== "undefined") {
+  (window as unknown as { __MF_STORE__: typeof useProjectStore }).__MF_STORE__ = useProjectStore;
+}
+
