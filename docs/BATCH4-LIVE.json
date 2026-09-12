@@ -1,0 +1,79 @@
+{
+  "engine": "chromium-iphone-viewport",
+  "webkitLocal": "UNAVAILABLE_MISSING_SYSTEM_LIBS",
+  "physicalIphone": "DEFERRED_TO_FINAL_RELEASE",
+  "pass": 16,
+  "fail": 0,
+  "results": [
+    {
+      "name": "375×812 no page horizontal overflow",
+      "ok": true,
+      "detail": "{\"w\":375,\"h\":812,\"sw\":375}"
+    },
+    {
+      "name": "375×812 2D CAD present",
+      "ok": true
+    },
+    {
+      "name": "375×812 Reality sheet",
+      "ok": true
+    },
+    {
+      "name": "375×812 Grok sheet",
+      "ok": true
+    },
+    {
+      "name": "375×812 Undo visible 44px",
+      "ok": true
+    },
+    {
+      "name": "390×844 2D dim + Undo/Redo",
+      "ok": true,
+      "detail": "{\"w0\":8,\"w1\":7.51,\"w2\":7.51}"
+    },
+    {
+      "name": "390×844 photo A–B + PENDING + ADD door",
+      "ok": true,
+      "detail": "{\"openings\":[\"DOOR\",\"INTAKE\",\"EXHAUST\",\"DOOR\"],\"safe\":36}"
+    },
+    {
+      "name": "390×844 no page overflow",
+      "ok": true
+    },
+    {
+      "name": "430×932 3D twin + ceiling toggle",
+      "ok": true
+    },
+    {
+      "name": "430×932 Reality compare Проект/Факт/Δ",
+      "ok": true
+    },
+    {
+      "name": "video corrupt fail-closed",
+      "ok": true,
+      "detail": "{\"status\":\"failed\",\"error\":\"VIDEO_DECODE_FAILED\",\"errorText\":\"VIDEO DECODE FAILED — кадр не прочитан.\"}"
+    },
+    {
+      "name": "430×932 real video frames or explicit fail",
+      "ok": true,
+      "detail": "{\"job\":{\"status\":\"idle\",\"videoId\":\"vid_4_mtz03xx5\"},\"openings\":3,\"videos\":[{\"name\":\"frames-rgb.mp4\",\"mime\":\"video/mp4\",\"durationMs\":4000,\"persistRaw\":false,\"n\":5,\"selected\":[\"frame_5_mtz03xy7\"]}],\"stamps\":[{\"id\":\"frame_5_mtz03xy7\",\"ts\":0,\"src\":\"vid_4_mtz03xx5\",\"w\":320,\"h\":180,\"kind\":\"video-frame\"},{\"id\":\"frame_6_mtz03xy9\",\"ts\":1000,\"src\":\"vid_4_mtz03xx5\",\"w\":320,\"h\":180,\"kind\":\"video-frame\"},{\"id\":\"frame_7_mtz03xye\",\"ts\":2000,\"src\":\"vid_4_mtz03xx5\",\"w\":320,\"h\":180,\"kind\":\"video-frame\"},{\"id\":\"frame_8_mtz03xyh\",\"ts\":3000,\"src\":\"vid_4_mtz03xx5\",\"w\":320,\"h\":180,\"kind\":\"video-frame\"},{\"id\":\"frame_9_mtz03xyl\",\"ts\":4000,\"src\":\"vid_4_mtz03xx5\",\"w\":320,\"h\":180,\"kind\":\"video-frame\"}],\"urls\":0}"
+    },
+    {
+      "name": "video timestamps distinct",
+      "ok": true,
+      "detail": "[0,1000,2000,3000,4000]"
+    },
+    {
+      "name": "video provenance sourceVideoId",
+      "ok": true
+    },
+    {
+      "name": "AI OFFLINE badge",
+      "ok": true
+    },
+    {
+      "name": "430×932 no page overflow",
+      "ok": true
+    }
+  ]
+}

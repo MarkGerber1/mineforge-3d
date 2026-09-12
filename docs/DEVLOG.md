@@ -62,4 +62,20 @@ Confirmed as-built / exhaust openings feed Engineering Core: blocked rack
 capacity, ventilation network, SAFE when that constraint is the bottleneck.
 AI Reality uses `parseAiFinding` — same PENDING → ADD pipeline, fail-closed
 incomplete geometry, no invented coordinates. GEO-3D-01…04, REAL-13…24.
-Oracle 71/71. Public host still deferred. No Batch 4 in this drop.
+Oracle 71/71. Public host still deferred.
+
+## REPAIR BATCH 4 — iPhone mobile E2E + real video evidence
+
+Mobile is a separate workspace (CAD + HUD + 44px toolbar + sheet), not a
+shrunk desktop. Undo/Redo visible. Safe-area + keyboard offset. Playwright
+WebKit iPhone profiles 375×812 / 390×844 / 430×932 are a mandatory CI gate
+(fail-closed if WebKit cannot install or launch).
+
+Video: real `<video>` + seek + canvas JPEG stills. `canPlayType`, not
+extension. Bounded 5-sample / 6-frame cap. `VIDEO_FRAME_ESTIMATE`. Raw video
+is never persisted. Grok receives selected stills + timestamps, not a video
+file. Fail-closed VIDEO_* codes. Object URLs revoked. Same Reality PENDING →
+ADD pipeline; video cannot mutate engineering before confirmation.
+
+Oracle 85/85 (VIDEO-01…12). Physical iPhone and public host remain deferred.
+No Batch 5 in this drop.

@@ -95,7 +95,8 @@ export function PhotoAnnotator({ photoId }: { photoId: string }) {
           <button
             key={k.id}
             type="button"
-            className={`rounded-[6px] px-2 py-1 text-[10px] uppercase ${kind === k.id ? "bg-raised text-fg" : "text-muted"}`}
+            data-mf-id={`kind-${k.id}`}
+            className={`h-11 min-w-[44px] rounded-[8px] px-2 text-[11px] uppercase ${kind === k.id ? "bg-raised text-fg" : "text-muted"}`}
             onClick={() => setKind(k.id)}
           >
             {k.label}
@@ -104,6 +105,7 @@ export function PhotoAnnotator({ photoId }: { photoId: string }) {
       </div>
       <div
         className="relative min-h-0 flex-1 overflow-hidden bg-bg"
+        data-mf-id="annotator"
         style={{ touchAction: "none" }}
         onPointerDown={(e) => {
           pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -129,10 +131,10 @@ export function PhotoAnnotator({ photoId }: { photoId: string }) {
           }
         }}
       >
-        <div className="flex h-full w-full items-center justify-center overflow-hidden">
-          <div className="relative inline-block max-h-full max-w-full" style={{ transform: `scale(${scale})`, transformOrigin: "center center" }}>
+        <div className="flex h-full min-h-[140px] w-full items-center justify-center overflow-hidden">
+          <div className="relative flex h-full max-h-full w-full items-center justify-center" style={{ transform: `scale(${scale})`, transformOrigin: "center center" }}>
             {src ? (
-              <img ref={imgRef} src={src} alt={photo.name} className="max-h-[48vh] max-w-full object-contain" draggable={false} />
+              <img ref={imgRef} src={src} alt={photo.name} className="max-h-full max-w-full object-contain" draggable={false} data-mf-id="annotator-img" />
             ) : (
               <div className="flex h-40 items-center justify-center text-[12px] text-muted">Загрузка…</div>
             )}
@@ -171,7 +173,8 @@ export function PhotoAnnotator({ photoId }: { photoId: string }) {
         <input
           suppressHydrationWarning
           inputMode="decimal"
-          className="h-9 flex-1 rounded-[6px] border border-border bg-bg px-2 font-mono text-[12px]"
+          className="h-11 flex-1 rounded-[6px] border border-border bg-bg px-2 font-mono text-[12px]"
+          data-mf-id="cal-length"
           placeholder={kind === "point" ? "A–B = 2,43 m (замер)" : "длина, если известна"}
           value={len}
           onChange={(e) => setLen(e.target.value)}

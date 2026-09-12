@@ -6,7 +6,7 @@ export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElem
     <input
       suppressHydrationWarning
       className={cn(
-        "h-8 w-full rounded-[var(--radius-sm)] border border-border bg-bg px-2 text-[13px] text-fg outline-none placeholder:text-subtle focus:border-cold/60 focus:ring-1 focus:ring-cold/40",
+        "h-11 w-full rounded-[var(--radius-sm)] border border-border bg-bg px-2 text-[13px] text-fg outline-none placeholder:text-subtle focus:border-cold/60 focus:ring-1 focus:ring-cold/40 md:h-8",
         className,
       )}
       {...props}

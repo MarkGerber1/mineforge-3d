@@ -205,7 +205,8 @@ export type DimProvenance =
   | "USER_CONFIRMED"
   | "FIELD_MEASUREMENT"
   | "IMPORTED"
-  | "CALCULATED";
+  | "CALCULATED"
+  | "VIDEO_FRAME_ESTIMATE";
 
 export type AsBuiltKind = "beam" | "column" | "obstruction" | "duct" | "other";
 
@@ -254,6 +255,38 @@ export interface RealityPhotoMeta {
   heightPx?: number;
   calibration?: PhotoCalibration;
   markers: PhotoMarker[];
+  /** photo = still; video-frame = extracted still from a video. */
+  kind?: "photo" | "video-frame";
+  sourceVideoId?: string;
+  sourceFilename?: string;
+  timestampMs?: number;
+  extractionMethod?: "video-seek-canvas";
+}
+
+export type VideoErrorCode =
+  | "VIDEO_UNSUPPORTED"
+  | "VIDEO_DECODE_FAILED"
+  | "VIDEO_TOO_LARGE"
+  | "VIDEO_ZERO_DURATION"
+  | "VIDEO_CANCELLED";
+
+export type VideoStatus = "processing" | "ready" | "failed" | "cancelled";
+
+/** Metadata only. Raw source video is NOT persisted (size policy). */
+export interface RealityVideoMeta {
+  id: string;
+  name: string;
+  mime: string;
+  createdAt: number;
+  durationMs: number;
+  widthPx: number;
+  heightPx: number;
+  status: VideoStatus;
+  error?: VideoErrorCode;
+  frameIds: string[];
+  selectedFrameIds: string[];
+  /** Always false — raw bytes are discarded after frame extraction. */
+  persistRaw: false;
 }
 
 export interface AsBuiltObject {
@@ -289,6 +322,7 @@ export interface RealityFinding {
 
 export interface RealityState {
   photos: RealityPhotoMeta[];
+  videos: RealityVideoMeta[];
   findings: RealityFinding[];
   asBuilt: AsBuiltObject[];
   compareMode: "as-designed" | "as-built" | "deviation";
@@ -296,7 +330,7 @@ export interface RealityState {
 }
 
 export function emptyReality(): RealityState {
-  return { photos: [], findings: [], asBuilt: [], compareMode: "as-designed", interview: [] };
+  return { photos: [], videos: [], findings: [], asBuilt: [], compareMode: "as-designed", interview: [] };
 }
 
 export interface Project {

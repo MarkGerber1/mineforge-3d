@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { TopBar } from "./TopBar";
 import { LeftSidebar } from "./LeftSidebar";
 import { Inspector } from "./Inspector";
@@ -11,6 +12,19 @@ import { UiPickOverlay } from "./UiPickOverlay";
 import { AppEditPanel } from "./AppEditPanel";
 import { RealityPanel } from "../reality/RealityPanel";
 import { useProjectStore } from "@/project/store";
+
+/** Tailwind `md` = 768. Avoid mounting desktop Inspector/Grok twice on iPhone. */
+function useMdUp(): boolean {
+  const [md, setMd] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 768px)");
+    const sync = () => setMd(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+  return md;
+}
 
 function DesktopAppEdit() {
   const store = useProjectStore();
@@ -51,6 +65,7 @@ function DesktopReality() {
 }
 
 export function AppShell() {
+  const md = useMdUp();
   return (
     <div className="app-shell relative min-w-0 overflow-hidden">
       <TopBar />
@@ -60,16 +75,18 @@ export function AppShell() {
           <CommandBar />
           <Workspace />
         </div>
-        <div className="hidden min-h-0 min-w-0 md:flex">
-          <Inspector />
-        </div>
+        {md ? (
+          <div className="hidden min-h-0 min-w-0 md:flex">
+            <Inspector />
+          </div>
+        ) : null}
       </div>
-      <BottomBar />
-      <MobileHud />
-      <MobileToolbar />
-      <BottomSheet />
-      <DesktopAppEdit />
-      <DesktopReality />
+      {md ? <BottomBar /> : null}
+      {md ? null : <MobileHud />}
+      {md ? null : <MobileToolbar />}
+      {md ? null : <BottomSheet />}
+      {md ? <DesktopAppEdit /> : null}
+      {md ? <DesktopReality /> : null}
       <UiPickOverlay />
     </div>
   );

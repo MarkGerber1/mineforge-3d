@@ -96,10 +96,7 @@
 
 @media (orientation: landscape) and (max-height: 520px) {
   .app-shell {
-    grid-template-rows: 40px minmax(0, 1fr) 40px 0px;
-  }
-  .mf-mobile-toolbar {
-    display: none;
+    grid-template-rows: 40px minmax(0, 1fr) 40px 44px;
   }
   .mf-mobile-hud {
     min-height: 40px;

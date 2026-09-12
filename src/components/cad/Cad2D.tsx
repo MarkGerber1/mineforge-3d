@@ -493,7 +493,7 @@ export function Cad2D() {
   const liveArea = result.geometry.floorAreaM2;
 
   return (
-    <div ref={wrapRef} className="relative h-full min-h-0 w-full overflow-hidden bg-bg" style={{ touchAction: "none" }} data-mf-id="cad">
+    <div ref={wrapRef} className="relative h-full min-h-0 w-full overflow-hidden bg-bg select-none" style={{ touchAction: "none", userSelect: "none" }} data-mf-id="cad">
       <svg
         width={w}
         height={h}
@@ -674,11 +674,27 @@ export function Cad2D() {
 
         {walls.map((wall) => {
           const a = toS((wall.x1 + wall.x2) / 2, (wall.y1 + wall.y2) / 2);
-          const label = wall.id === "south" || wall.id === "north" ? project.room.widthM : project.room.depthM;
+          const alongWidth = wall.id === "south" || wall.id === "north";
+          const label = alongWidth ? project.room.widthM : project.room.depthM;
+          const editWall: WallId = alongWidth ? "east" : "north";
           const ox = wall.id === "west" ? -44 : wall.id === "east" ? 44 : 0;
           const oy = wall.id === "south" ? -16 : wall.id === "north" ? -14 : 4;
           return (
             <g key={wall.id}>
+              <rect
+                x={a.sx + ox - 22}
+                y={a.sy + oy - 30}
+                width={44}
+                height={44}
+                fill="transparent"
+                data-mf-id={`dim-${wall.id}`}
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  setDimEdit({ wall: editWall, value: label.toFixed(3) });
+                }}
+                onPointerDown={(ev) => ev.stopPropagation()}
+                style={{ cursor: "text" }}
+              />
               <text
                 x={a.sx + ox}
                 y={a.sy + oy}
@@ -687,11 +703,7 @@ export function Cad2D() {
                 fontFamily="IBM Plex Mono, monospace"
                 textAnchor="middle"
                 className="tabular"
-                onDoubleClick={(ev) => {
-                  ev.stopPropagation();
-                  setDimEdit({ wall: wall.id, value: label.toFixed(3) });
-                }}
-                style={{ cursor: "text" }}
+                pointerEvents="none"
               >
                 {formatMeters(label)}
               </text>
@@ -751,14 +763,17 @@ export function Cad2D() {
         >
           <input
             autoFocus
-            className="h-8 w-40 rounded-[6px] border border-border bg-bg px-2 font-mono text-[13px] text-fg outline-none"
+            data-mf-id="dim-input"
+            className="h-11 w-40 rounded-[6px] border border-border bg-bg px-2 font-mono text-[13px] text-fg outline-none"
             value={dimEdit.value}
             onChange={(e) => setDimEdit({ ...dimEdit, value: e.target.value })}
             onKeyDown={(e) => {
               if (e.key === "Escape") setDimEdit(null);
             }}
-            onBlur={commitDim}
           />
+          <button type="submit" className="mt-1 h-11 w-full rounded-[6px] bg-raised text-[12px]" data-mf-id="dim-ok">
+            OK
+          </button>
         </form>
       )}
 

@@ -20,6 +20,7 @@
     "test:oracle": "node --experimental-strip-types --test src/engineering/oracle/*.test.ts",
     "test:security": "node --experimental-strip-types --test src/ai/privilege.test.ts src/ai/runtime-client.test.ts src/ai/ratelimit.test.ts",
     "test:isolation": "node --experimental-strip-types --test src/ai/jobs.test.ts",
+    "test:mobile": "node --experimental-strip-types --test --test-timeout=180000 src/e2e/*.test.ts",
     "scan:secrets": "node scripts/scan-client-secrets.mjs",
     "test:gate": "bash scripts/ci-gate.sh",
     "lint": "eslint .",
