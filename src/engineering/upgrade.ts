@@ -66,15 +66,16 @@ export function applyPatch(project: Project, patch: PartialProjectPatch): Projec
   if (patch.thermal) next = { ...next, thermal: { ...next.thermal, ...patch.thermal } };
   if (patch.fleet) next = { ...next, fleet: { ...next.fleet, ...patch.fleet } };
   if (patch.reality) {
-    const asBuilt = patch.reality.asBuilt ?? next.reality?.asBuilt ?? [];
+    const prev = next.reality ?? { photos: [], findings: [], asBuilt: [], compareMode: "as-designed" as const, interview: [] };
+    const asBuilt = patch.reality.asBuilt ?? prev.asBuilt;
     next = {
       ...next,
       reality: {
-        photos: next.reality?.photos ?? [],
-        findings: next.reality?.findings ?? [],
+        photos: patch.reality.photos ?? prev.photos,
+        findings: patch.reality.findings ?? prev.findings,
         asBuilt,
-        compareMode: patch.reality.compareMode ?? next.reality?.compareMode ?? "as-designed",
-        interview: next.reality?.interview ?? [],
+        compareMode: patch.reality.compareMode ?? prev.compareMode,
+        interview: patch.reality.interview ?? prev.interview,
       },
     };
   }

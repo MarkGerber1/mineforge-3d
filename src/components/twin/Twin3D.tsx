@@ -262,12 +262,17 @@ export function Twin3D() {
         <RoomShell project={project} />
         <Openings project={project} />
         <Racks project={project} />
-        {(project.reality?.asBuilt ?? []).map((obj) => (
-          <mesh key={obj.id} position={[obj.x + obj.widthM / 2, obj.z + obj.heightM / 2, obj.y + obj.depthM / 2]}>
-            <boxGeometry args={[obj.widthM, obj.heightM, obj.depthM]} />
-            <meshStandardMaterial color="#c4a35a" transparent opacity={0.55} />
-          </mesh>
-        ))}
+        {(project.reality?.asBuilt ?? []).map((obj) => {
+          const mode = project.reality?.compareMode ?? "as-designed";
+          if (mode === "as-designed") return null;
+          const opacity = mode === "as-built" ? 0.65 : 0.45;
+          return (
+            <mesh key={obj.id} position={[obj.x + obj.widthM / 2, obj.z + obj.heightM / 2, obj.y + obj.depthM / 2]}>
+              <boxGeometry args={[obj.widthM, obj.heightM, obj.depthM]} />
+              <meshStandardMaterial color="#c4a35a" transparent opacity={opacity} />
+            </mesh>
+          );
+        })}
         <Shaft project={project} />
         <Fans project={project} />
         <Board project={project} />

@@ -2,8 +2,20 @@ import { useEffect, useRef, useState } from "react";
 import { useProjectStore } from "@/project/store";
 import { loadMedia } from "@/reality/media";
 import { parseLengthToMeters } from "@/engineering/units";
+import { photoCalibration } from "@/engineering/reality";
 import { Button } from "@/components/ui/button";
 import { nid } from "@/project/factory";
+import type { PhotoMarkerKind } from "@/engineering/types";
+
+const KINDS: Array<{ id: PhotoMarkerKind; label: string }> = [
+  { id: "point", label: "Калибр" },
+  { id: "door", label: "Дверь" },
+  { id: "opening", label: "Проём" },
+  { id: "shaft", label: "Шахта" },
+  { id: "beam", label: "Балка" },
+  { id: "column", label: "Колонна" },
+  { id: "wall", label: "Стена" },
+];
 
 export function PhotoAnnotator({ photoId }: { photoId: string }) {
   const store = useProjectStore();
@@ -11,6 +23,7 @@ export function PhotoAnnotator({ photoId }: { photoId: string }) {
   const [src, setSrc] = useState<string | null>(null);
   const [pending, setPending] = useState<{ nx: number; ny: number } | null>(null);
   const [len, setLen] = useState("");
+  const [kind, setKind] = useState<PhotoMarkerKind>("point");
   const imgRef = useRef<HTMLImageElement>(null);
   const pointers = useRef<Map<number, { x: number; y: number }>>(new Map());
   const pinch = useRef<{ dist: number; scale: number } | null>(null);
@@ -19,9 +32,13 @@ export function PhotoAnnotator({ photoId }: { photoId: string }) {
   useEffect(() => {
     void loadMedia(photoId).then(setSrc);
     setScale(1);
+    setPending(null);
   }, [photoId]);
 
   if (!photo) return <div className="p-3 text-[12px] text-muted">Фото не найдено</div>;
+
+  const cal = photoCalibration(photo);
+  const known = parseLengthToMeters(len);
 
   const onTap = (e: React.PointerEvent<HTMLDivElement>) => {
     if (pointers.current.size > 1 || pinch.current) return;
@@ -34,24 +51,57 @@ export function PhotoAnnotator({ photoId }: { photoId: string }) {
       setPending({ nx, ny });
       return;
     }
+    if (kind === "point" && !(known && known > 0)) {
+      store.pushGrok({
+        id: `rv${Date.now()}`,
+        role: "assistant",
+        text: "Калибровка: введите известную длину A–B (например 2,43 m), затем повторите точки.",
+      });
+      setPending(null);
+      return;
+    }
+    if (kind !== "point" && !cal && !(known && known > 0)) {
+      store.pushGrok({
+        id: `rv${Date.now()}`,
+        role: "assistant",
+        text: "Сначала калибр A–B с известной длиной, либо введите длину этой пары.",
+      });
+      setPending(null);
+      return;
+    }
     const aId = nid("mk");
     const bId = nid("mk");
-    store.addPhotoMarker(photoId, { id: aId, nx: pending.nx, ny: pending.ny, kind: "point", label: "A", pairId: bId });
-    store.addPhotoMarker(photoId, {
-      id: bId,
-      nx,
-      ny,
-      kind: "point",
-      label: "B",
-      pairId: aId,
-      lengthM: parseLengthToMeters(len) ?? undefined,
-      provenance: parseLengthToMeters(len) ? "FIELD_MEASUREMENT" : "PHOTO_ESTIMATE",
-    });
+    store.annotatePhoto(
+      photoId,
+      { id: aId, nx: pending.nx, ny: pending.ny, kind, label: "A", pairId: bId },
+      { id: bId, nx, ny, kind, label: "B", pairId: aId },
+      { kind, knownLengthM: known ?? undefined },
+    );
     setPending(null);
+    if (kind === "point") setLen("");
   };
+
+  const pairs: Array<{ ax: number; ay: number; bx: number; by: number }> = [];
+  for (const m of photo.markers) {
+    if (!m.pairId || m.label !== "A") continue;
+    const b = photo.markers.find((x) => x.id === m.pairId);
+    if (b) pairs.push({ ax: m.nx, ay: m.ny, bx: b.nx, by: b.ny });
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      <div className="flex flex-wrap gap-1 border-b border-border px-2 py-1">
+        {KINDS.map((k) => (
+          <button
+            key={k.id}
+            type="button"
+            className={`rounded-[6px] px-2 py-1 text-[10px] uppercase ${kind === k.id ? "bg-raised text-fg" : "text-muted"}`}
+            onClick={() => setKind(k.id)}
+          >
+            {k.label}
+          </button>
+        ))}
+      </div>
       <div
         className="relative min-h-0 flex-1 overflow-hidden bg-bg"
         style={{ touchAction: "none" }}
@@ -86,6 +136,19 @@ export function PhotoAnnotator({ photoId }: { photoId: string }) {
             ) : (
               <div className="flex h-40 items-center justify-center text-[12px] text-muted">Загрузка…</div>
             )}
+            <svg className="pointer-events-none absolute inset-0 h-full w-full">
+              {pairs.map((p, i) => (
+                <line
+                  key={i}
+                  x1={`${p.ax * 100}%`}
+                  y1={`${p.ay * 100}%`}
+                  x2={`${p.bx * 100}%`}
+                  y2={`${p.by * 100}%`}
+                  stroke="var(--color-cold)"
+                  strokeWidth="2"
+                />
+              ))}
+            </svg>
             {photo.markers.map((m) => (
               <div
                 key={m.id}
@@ -109,7 +172,7 @@ export function PhotoAnnotator({ photoId }: { photoId: string }) {
           suppressHydrationWarning
           inputMode="decimal"
           className="h-9 flex-1 rounded-[6px] border border-border bg-bg px-2 font-mono text-[12px]"
-          placeholder="A–B = 2,43 m"
+          placeholder={kind === "point" ? "A–B = 2,43 m (замер)" : "длина, если известна"}
           value={len}
           onChange={(e) => setLen(e.target.value)}
         />
@@ -117,8 +180,12 @@ export function PhotoAnnotator({ photoId }: { photoId: string }) {
           Сброс
         </Button>
       </div>
-      <div className="px-2 pb-2 text-[11px] text-muted">
-        Tap A, tap B. Pinch — масштаб. Размер с фото = PHOTO ESTIMATE, пока не введён замер.
+      <div className="px-2 pb-2 font-mono text-[11px] text-muted">
+        {cal
+          ? `Масштаб ${(cal.scaleMPerPx * 1000).toFixed(2)} mm/px · ${cal.provenance}`
+          : "Нет калибровки — укажите известную длину A–B"}
+        {photo.wallHint ? ` · стена ${photo.wallHint}` : " · стена не задана"}
+        . Не сантиметровая точность.
       </div>
     </div>
   );

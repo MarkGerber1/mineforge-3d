@@ -9,6 +9,7 @@ import { MobileToolbar } from "./MobileToolbar";
 import { BottomSheet } from "./BottomSheet";
 import { UiPickOverlay } from "./UiPickOverlay";
 import { AppEditPanel } from "./AppEditPanel";
+import { RealityPanel } from "../reality/RealityPanel";
 import { useProjectStore } from "@/project/store";
 
 function DesktopAppEdit() {
@@ -25,6 +26,25 @@ function DesktopAppEdit() {
       </div>
       <div className="min-h-0 flex-1 overflow-hidden">
         <AppEditPanel />
+      </div>
+    </div>
+  );
+}
+
+function DesktopReality() {
+  const store = useProjectStore();
+  const open = store.sheet !== "closed" && store.sheetTab === "reality";
+  if (!open) return null;
+  return (
+    <div className="absolute right-0 top-12 z-40 hidden h-[calc(100%-48px-56px)] w-[380px] flex-col border-l border-border bg-surface shadow-panel md:flex">
+      <div className="flex shrink-0 items-center justify-between border-b border-border px-3 py-1">
+        <span className="text-[10px] uppercase tracking-[0.12em] text-muted">Reality Sync</span>
+        <button type="button" className="h-8 px-2 text-[12px] text-muted" onClick={() => store.setSheet("closed")}>
+          Закрыть
+        </button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-hidden">
+        <RealityPanel />
       </div>
     </div>
   );
@@ -49,6 +69,7 @@ export function AppShell() {
       <MobileToolbar />
       <BottomSheet />
       <DesktopAppEdit />
+      <DesktopReality />
       <UiPickOverlay />
     </div>
   );

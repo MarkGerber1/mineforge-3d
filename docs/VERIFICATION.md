@@ -22,14 +22,15 @@ Date: 2026-09-11
 | Application Edit (local Git, protected paths) | PASS |
 | Failure simulation (clone, no mutate) | PASS |
 | Reality as-built → collision warnings | PASS |
+| Reality calibration / Sync → canonical geometry | PASS |
 | Mobile workspace (not shrunk desktop) | PASS |
 
 ## UNIT TESTS
 
 Oracle suite: `src/engineering/oracle/*.test.ts`
 
-TOTAL: 45  
-PASSED: 45  
+TOTAL: 55  
+PASSED: 55  
 FAILED: 0
 
 | Test ID | Subsystem | Status |
@@ -44,7 +45,7 @@ FAILED: 0
 | UX-E2E-02 | Dimension parsing | PASS |
 | INT-01 … INT-04 | Intent + writable paths | PASS |
 | FAIL-01 … FAIL-02 | Failure sim clone | PASS |
-| REAL-01 … REAL-02 | Provenance + as-built collision | PASS |
+| REAL-01 … REAL-12 | Provenance, calibration, Sync → openings/as-built/wall, undo, persistence | PASS |
 
 ## E2E / UX
 
@@ -70,4 +71,6 @@ SAFE computed by the engine. Floor loading UNKNOWN → confidence PRELIMINARY.
 
 ## CURRENT PHASE
 
-INTEGRATION COMPLETE — Engineering Core frozen — Git on `main` — mobile workspace — unified Grok scopes — Reality Sync — failure critic.
+Repair Batch 1 PASSED under owner revised release policy (SHA `8f5c9c0`).
+Repair Batch 2 — Reality geometry pipeline (calibration → findings → canonical state).
+PUBLIC PRODUCTION DEPLOYMENT deferred to FINAL RELEASE.

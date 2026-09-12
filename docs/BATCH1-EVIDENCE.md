@@ -1,80 +1,65 @@
-# MINEFORGE 3D — Repair Batch 1 Correction Pass 3 evidence
+# MINEFORGE 3D — Repair Batch 1 evidence
 
-**BATCH STATUS:** BLOCKED_BY_EXTERNAL_CREDENTIAL
+**BATCH STATUS:** PASSED UNDER OWNER REVISED RELEASE POLICY
 
-This file is the evidence package. It does not contain secrets.
+Owner decision 2026-09-13: durable public production host is **deferred** to
+FINAL DEPLOYMENT / PUBLIC RELEASE after functional Batches 1–4. This is not a
+defect. Production deployment is out of the Batch 1 acceptance gate.
 
-A git commit cannot contain its own hash. Authoritative identity of this
-candidate is `git rev-parse HEAD` on `repair/batch-1` / `origin/main` after
-the protected merge, and the `CANDIDATE_SHA=` / `GATE PASS CANDIDATE_SHA=`
-lines printed by `scripts/ci-gate.sh` on that same commit.
-
-Pass 2 freeze (accepted mechanisms): `ff41fb9ecbac006232f2bdf4510e49c6005a973f`
+Do not create tunnels. Do not request Cloudflare credentials. Do not treat a
+temporary hostname as production.
 
 ## Identity
 
 | Field | Value |
 | --- | --- |
-| Branch | `repair/batch-1` |
-| Previous freeze | `ff41fb9ecbac006232f2bdf4510e49c6005a973f` |
+| Accepted candidate SHA | `8f5c9c0dd4909db51a28a2e14cff12b29c00b218` |
 | GitHub | https://github.com/MarkGerber1/mineforge-3d |
-| Canonical full-stack URL | **unset** — no claimed Named Tunnel token |
-| Static Pages (Option B) | https://markgerber1.github.io/mineforge-3d/ |
+| PR | https://github.com/MarkGerber1/mineforge-3d/pull/6 MERGED without bypass |
+| CI | https://github.com/MarkGerber1/mineforge-3d/actions/runs/34609759826 GATE PASS 346/346 |
+| main protection | required check `gate`, `enforce_admins: true` |
+| origin/main at close | `8f5c9c0dd4909db51a28a2e14cff12b29c00b218` |
+| PUBLIC PRODUCTION DEPLOYMENT | **DEFERRED TO FINAL RELEASE** |
 
-## Task 1 — durable production host
+## Revised Batch 1 gate — verified
 
-**BLOCKED_BY_EXTERNAL_CREDENTIAL**
+### Security
 
-Tried and rejected as canonical:
+Privileged mutations server-protected. Standard user cannot mutate source.
+Forged roles ignored. Feature flag. Secret isolation. Rate limiting.
+Trusted proxy identity: CF-Connecting-IP (Pass 2, accepted, not reworked).
 
-- Cloudflare Quick Tunnel (`*.trycloudflare.com`) — ephemeral hostname
-- `wrangler deploy --temporary` `*.workers.dev` — temporary account, bot challenge, ~60 min lifetime
-- grok.me slugs — 404, app not published
-- Vercel CLI — no credentials; `*-xai-org.vercel.app` SSO-gated
-- GitHub Pages — Option B static only
+### Safe Application Edit
 
-No `CLOUDFLARE_TUNNEL_TOKEN`, no `cert.pem`, no Vercel token, no claimed CF account.
+Developer/owner capability. Server-side owner authorization, isolated
+branch/worktree, typecheck, tests, build, real preview, fail-closed,
+exact SHA promotion, rollback. `fixtureAppHtml` removed (Pass 2).
+On a future public serverless host: `APP_EDIT_ENABLED=false` with honest UI
+is allowed.
 
-Ingress script now starts a Named Tunnel **only** when the token is present.
-It no longer deploys a temporary Worker or Quick Tunnel as public identity.
+This workspace process: `APP_EDIT_ENABLED=true` (git worktrees exist).
 
-**Owner action (one):** provide a Cloudflare Named Tunnel token
-(`CLOUDFLARE_TUNNEL_TOKEN`) and the persistent public hostname it serves
-(`CANONICAL_FULLSTACK_URL`, DNS-routed in a claimed Cloudflare account).
-Not a Quick Tunnel. Not a temporary `workers.dev` account.
+### CI
 
-## Tasks 2–3 (Pass 2, accepted, not reworked)
+Complete suite + Engineering Oracle + security + isolation + build + secret
+scan. Protected main. Required check `gate`. Negative PRs #1–#5 remain open
+and unused (negative CI evidence).
 
-Rate-limit identity: CF-Connecting-IP in Cloudflare mode. XFF rotation does
-not reset the bucket. Invalid IP → bounded `unknown`. Grok provider is not
-called after threshold.
+### Runtime architecture
 
-Application Edit preview: real SSR/build or fail-closed. `fixtureAppHtml`
-removed. evidence.html is not the preview. PROMOTE requires matching SHAs.
+Full-stack runtime proven in the development/runtime environment:
 
-## Task 4 — Application Edit production policy
+`GET /api/runtime` → `{mode:server, ai:true, appEditEnabled:true, sha:8f5c9c0…, instanceModel:single-instance}`
 
-This process: persistent filesystem + git + worktrees + child processes.
-`APP_EDIT_ENABLED=true` (workspace, `GROK_PROJECT_ID` unset). Gates remain.
+Persistent public hostname is **not** required for Batch 1 under the revised policy.
 
-Serverless / grok.me: `GROK_PROJECT_ID` set → flag stays off. UI:
-“Application Edit unavailable on this deployment — APP EDIT DISABLED.”
+## Pass 2 mechanisms (accepted, not reopened)
 
-## Task 5 — rate-limit topology
+- Rate-limit identity: CF-Connecting-IP; XFF does not reset the bucket.
+- Application Edit preview: real SSR/build or fail-closed.
 
-`PRODUCTION_INSTANCE_MODEL=single-instance` (also on `/api/runtime` as
-`instanceModel`). One Node process, one Named Tunnel hop. In-memory limiter
-is the matching store. No second instance to give a client a fresh budget.
+## STOP (Batch 1)
 
-## Task 6 — protected main release
-
-See PR created in this pass. Merge without bypass. Required check `gate`.
-
-## Forbidden as canonical (still)
-
-`*.trycloudflare.com`, temporary `workers.dev`, localhost, Codespaces,
-workspace-only preview, SSO, anti-bot challenge pages.
-
-## STOP
-
-Do not start Batch 2. Independent Acceptance Retest of Batch 1 is still required.
+Batch 1 is closed under the owner revised release policy. Independent
+acceptance retest of Batch 1 may still be performed. Functional work
+continues in Repair Batch 2 (Reality geometry pipeline).

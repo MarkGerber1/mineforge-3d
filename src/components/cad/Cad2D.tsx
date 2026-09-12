@@ -557,19 +557,30 @@ export function Cad2D() {
         })()}
 
         {(project.reality?.asBuilt ?? []).map((obj) => {
+          const mode = project.reality?.compareMode ?? "as-designed";
+          if (mode === "as-designed") return null;
           const a = toS(obj.x, obj.y);
           const b = toS(obj.x + obj.widthM, obj.y + obj.depthM);
+          const x = Math.min(a.sx, b.sx);
+          const y = Math.min(a.sy, b.sy);
+          const ww = Math.abs(b.sx - a.sx);
+          const hh = Math.abs(b.sy - a.sy);
           return (
-            <rect
-              key={obj.id}
-              x={Math.min(a.sx, b.sx)}
-              y={Math.min(a.sy, b.sy)}
-              width={Math.abs(b.sx - a.sx)}
-              height={Math.abs(b.sy - a.sy)}
-              fill="rgba(196,163,90,0.35)"
-              stroke="#c4a35a"
-              strokeDasharray="4 3"
-            />
+            <g key={obj.id}>
+              <rect
+                x={x}
+                y={y}
+                width={ww}
+                height={hh}
+                fill="rgba(196,163,90,0.35)"
+                stroke="#c4a35a"
+                strokeDasharray={mode === "deviation" ? "4 3" : undefined}
+                strokeWidth={mode === "as-built" ? 2 : 1}
+              />
+              <text x={x + 4} y={y + 12} fill="#c4a35a" fontSize={10} fontFamily="IBM Plex Mono, monospace">
+                {obj.kind} · {obj.provenance}
+              </text>
+            </g>
           );
         })}
 

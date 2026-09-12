@@ -91,6 +91,9 @@ export interface Opening {
   offsetFromWallStartM: number;
   locked?: boolean;
   name?: string;
+  provenance?: DimProvenance;
+  sourcePhotoId?: string;
+  sourceFindingId?: string;
 }
 
 export type VentKind =
@@ -206,16 +209,38 @@ export type DimProvenance =
 
 export type AsBuiltKind = "beam" | "column" | "obstruction" | "duct" | "other";
 
+export type RealityFindingKind = AsBuiltKind | "door" | "opening" | "shaft" | "wall";
+
+export type PhotoMarkerKind =
+  | "point"
+  | "wall"
+  | "door"
+  | "opening"
+  | "shaft"
+  | "beam"
+  | "column"
+  | "duct"
+  | "other";
+
 export interface PhotoMarker {
   id: string;
   nx: number;
   ny: number;
-  kind: "point" | "wall" | "door" | "opening" | "shaft" | "beam" | "column" | "duct" | "other";
+  kind: PhotoMarkerKind;
   label: string;
   pairId?: string;
   lengthM?: number;
   provenance?: DimProvenance;
   linkedObjectId?: string;
+}
+
+/** Isotropic photo-plane scale from a known A–B distance. Not photogrammetry. */
+export interface PhotoCalibration {
+  scaleMPerPx: number;
+  lengthM: number;
+  aId: string;
+  bId: string;
+  provenance: DimProvenance;
 }
 
 export interface RealityPhotoMeta {
@@ -225,6 +250,9 @@ export interface RealityPhotoMeta {
   createdAt: number;
   notes: string;
   wallHint?: WallId;
+  widthPx?: number;
+  heightPx?: number;
+  calibration?: PhotoCalibration;
   markers: PhotoMarker[];
 }
 
@@ -240,16 +268,19 @@ export interface AsBuiltObject {
   depthM: number;
   provenance: DimProvenance;
   photoId?: string;
+  findingId?: string;
   confidence: "LOW" | "MEDIUM" | "HIGH";
 }
 
 export interface RealityFinding {
   id: string;
-  kind: AsBuiltKind;
+  kind: RealityFindingKind;
   summary: string;
   confidence: "LOW" | "MEDIUM" | "HIGH";
   status: "PENDING" | "ADDED" | "IGNORED";
   estimated?: Omit<AsBuiltObject, "id" | "photoId">;
+  opening?: Opening;
+  wallResize?: { wallId: WallId; lengthM: number };
   photoId?: string;
 }
 

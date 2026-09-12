@@ -2,16 +2,26 @@ import { useRef } from "react";
 import { useProjectStore } from "@/project/store";
 import { resizeImageFile, saveMedia } from "@/reality/media";
 import { nextInterviewQuestion } from "@/reality/interview";
+import { photoCalibration } from "@/engineering/reality";
 import { PhotoAnnotator } from "./PhotoAnnotator";
 import { Button } from "@/components/ui/button";
 import { nid } from "@/project/factory";
-import { emptyReality } from "@/engineering/types";
+import { emptyReality, type WallId } from "@/engineering/types";
+
+const WALLS: Array<{ id: WallId; label: string }> = [
+  { id: "south", label: "Юг" },
+  { id: "north", label: "Север" },
+  { id: "west", label: "Запад" },
+  { id: "east", label: "Восток" },
+];
 
 export function RealityPanel() {
   const store = useProjectStore();
   const reality = store.project.reality ?? emptyReality();
   const fileRef = useRef<HTMLInputElement>(null);
   const q = nextInterviewQuestion(store.project);
+  const active = reality.photos.find((p) => p.id === store.activePhotoId);
+  const cal = active ? photoCalibration(active) : null;
 
   const onFiles = async (files: FileList | null) => {
     if (!files?.length) return;
@@ -25,7 +35,7 @@ export function RealityPanel() {
         continue;
       }
       if (!file.type.startsWith("image/")) continue;
-      const dataUrl = await resizeImageFile(file);
+      const { dataUrl, widthPx, heightPx } = await resizeImageFile(file);
       const id = nid("photo");
       await saveMedia(id, dataUrl);
       store.addPhotoMeta({
@@ -34,6 +44,8 @@ export function RealityPanel() {
         mime: file.type,
         createdAt: Date.now(),
         notes: "",
+        widthPx,
+        heightPx,
         markers: [],
       });
       store.setPendingImages([...store.pendingImages, dataUrl].slice(-3));
@@ -81,11 +93,33 @@ export function RealityPanel() {
           </button>
         ))}
       </div>
+      {active && (
+        <div className="flex flex-wrap items-center gap-1 px-3 pb-2">
+          <span className="text-[10px] uppercase text-muted">Стена фото</span>
+          {WALLS.map((w) => (
+            <button
+              key={w.id}
+              type="button"
+              className={`rounded-[6px] px-2 py-1 text-[10px] uppercase ${active.wallHint === w.id ? "bg-raised text-fg" : "text-muted"}`}
+              onClick={() => store.setPhotoWallHint(active.id, w.id)}
+            >
+              {w.label}
+            </button>
+          ))}
+          {cal && (
+            <span className="ml-auto font-mono text-[10px] text-muted">
+              {(cal.scaleMPerPx * 1000).toFixed(2)} mm/px · {cal.provenance}
+            </span>
+          )}
+        </div>
+      )}
       <div className="min-h-0 flex-1">
         {store.activePhotoId ? (
           <PhotoAnnotator photoId={store.activePhotoId} />
         ) : (
-          <div className="p-3 text-[12px] text-muted">Фотографии — visual reference. Геометрия остаётся в Engineering Core, пока размер не USER CONFIRMED / FIELD MEASUREMENT.</div>
+          <div className="p-3 text-[12px] text-muted">
+            Фото — visual evidence. Калибр A–B с известной длиной задаёт масштаб кадра. Аннотации (дверь, шахта, балка, стена) становятся геометрией Engineering Core только после ADD TO MODEL. До подтверждения — PHOTO ESTIMATE, не сантиметры.
+          </div>
         )}
       </div>
       {reality.findings.filter((f) => f.status === "PENDING").length > 0 && (
@@ -96,7 +130,7 @@ export function RealityPanel() {
               <div key={f.id} className="rounded-[8px] border border-border p-2 text-[12px]">
                 <div className="font-medium">NEW OBJECT · {f.kind}</div>
                 <div className="text-muted">{f.summary}</div>
-                <div className="text-[10px] uppercase text-warn">Confidence {f.confidence} · PHOTO ESTIMATE</div>
+                <div className="text-[10px] uppercase text-warn">Confidence {f.confidence} · PHOTO ESTIMATE until ADD</div>
                 <div className="mt-1 flex gap-1">
                   <Button size="sm" onClick={() => store.resolveFinding(f.id, "ADDED")}>
                     ADD TO MODEL
@@ -111,7 +145,7 @@ export function RealityPanel() {
       )}
       {reality.asBuilt.length > 0 && (
         <div className="border-t border-border p-2 text-[11px] text-muted">
-          As-built: {reality.asBuilt.map((o) => `${o.kind} ${o.name}`).join(" · ")}
+          As-built: {reality.asBuilt.map((o) => `${o.kind} ${o.name} (${o.provenance})`).join(" · ")}
         </div>
       )}
     </div>
