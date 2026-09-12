@@ -1,4 +1,4 @@
-import { Box, CheckSquare, DoorOpen, MousePointer2, Move, Ruler, Wind } from "lucide-react";
+import { Box, Camera, CheckSquare, DoorOpen, MousePointer2, Move, Ruler, Wind } from "lucide-react";
 import { useProjectStore, type CadTool } from "@/project/store";
 import { cn } from "@/lib/utils";
 
@@ -50,7 +50,23 @@ export function MobileToolbar() {
       </button>
       <button
         type="button"
+        title="Reality"
+        data-mf-id="toolbar-reality"
+        onClick={() =>
+          store.openSheet("reality", store.sheet !== "closed" && store.sheetTab === "reality" ? "closed" : "half")
+        }
+        className={cn(
+          "flex size-11 shrink-0 flex-col items-center justify-center rounded-[10px] text-muted",
+          store.sheet !== "closed" && store.sheetTab === "reality" && "bg-raised text-fg",
+        )}
+      >
+        <Camera className="size-5" />
+        <span className="text-[9px] leading-none">Факт</span>
+      </button>
+      <button
+        type="button"
         onClick={() => store.setView(store.view === "3d" ? "2d" : "3d")}
+        data-mf-id="toolbar-3d"
         className={cn(
           "flex size-11 shrink-0 flex-col items-center justify-center rounded-[10px] text-muted",
           store.view === "3d" && "bg-raised text-fg",

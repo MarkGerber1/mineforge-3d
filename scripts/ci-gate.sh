@@ -9,6 +9,10 @@ echo "== typecheck =="
 npm run typecheck
 echo "== full test suite =="
 npm test
+echo "== playwright webkit =="
+npx playwright install --with-deps webkit
+echo "== mobile webkit e2e =="
+npm run test:mobile
 echo "== secret scan =="
 npm run scan:secrets
 echo "== production build =="

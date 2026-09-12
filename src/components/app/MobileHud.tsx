@@ -23,7 +23,7 @@ export function MobileHud() {
         <span className="truncate text-[10px] uppercase tracking-[0.12em] text-muted">
           {sim ? FAILURE_LABELS[store.failureSim] : "Запрошено / допустимо"}
         </span>
-        <span className={cn("font-mono text-[18px] tabular leading-tight", (warn || sim) && "text-warn")}>
+        <span className={cn("font-mono text-[18px] tabular leading-tight", (warn || sim) && "text-warn")} data-mf-id="hud-safe" data-mf-requested={p.fleet.requestedCount} data-mf-safe={r.capacity.safe ?? ""}>
           {p.fleet.requestedCount} / {r.capacity.safe ?? "—"}
         </span>
       </button>

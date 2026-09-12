@@ -14,6 +14,8 @@ jobs:
           cache: npm
       - name: Install
         run: npm ci --legacy-peer-deps
+      - name: Install Playwright WebKit
+        run: npx playwright install --with-deps webkit
       - name: Mandatory gate
         run: bash scripts/ci-gate.sh
         env:

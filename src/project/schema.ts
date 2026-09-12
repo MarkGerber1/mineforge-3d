@@ -61,7 +61,7 @@ export const projectSchema = z.object({
       offsetFromWallStartM: z.number(),
       locked: z.boolean().optional(),
       name: z.string().optional(),
-      provenance: z.enum(["PHOTO_ESTIMATE", "USER_CONFIRMED", "FIELD_MEASUREMENT", "IMPORTED", "CALCULATED"]).optional(),
+      provenance: z.enum(["PHOTO_ESTIMATE", "USER_CONFIRMED", "FIELD_MEASUREMENT", "IMPORTED", "CALCULATED", "VIDEO_FRAME_ESTIMATE"]).optional(),
       sourcePhotoId: z.string().optional(),
       sourceFindingId: z.string().optional(),
     }),
@@ -166,6 +166,7 @@ export const projectSchema = z.object({
       asBuilt: z.array(z.any()),
       compareMode: z.enum(["as-designed", "as-built", "deviation"]),
       interview: z.array(z.any()),
+      videos: z.array(z.any()).optional(),
     })
     .optional(),
 });
@@ -173,6 +174,7 @@ export const projectSchema = z.object({
 export function parseProject(data: unknown): Project {
   const p = projectSchema.parse(data) as Project;
   if (!p.reality) p.reality = emptyReality();
+  if (!p.reality.videos) p.reality.videos = [];
   return p;
 }
 

@@ -9,7 +9,8 @@ import { emptyReality, type RealityFinding } from "@/engineering/types";
 import { parseAiFinding } from "@/engineering/reality";
 import { critiqueProject } from "@/ai/critic";
 import { cn } from "@/lib/utils";
-import { resizeImageFile, saveMedia } from "@/reality/media";
+import { resizeImageFile, saveMedia, loadMedia } from "@/reality/media";
+import { VIDEO_LIMITS } from "@/reality/video-policy";
 import { nid } from "@/project/factory";
 
 const SCOPE_RU = { PROJECT: "ПРОЕКТ", APPLICATION: "ПРИЛОЖЕНИЕ", REALITY: "ОБЪЕКТ" } as const;
@@ -30,8 +31,24 @@ export function GrokPanel({ fill }: { fill?: boolean }) {
   const send = async (msg: string, extraImages?: string[]) => {
     const message = msg.trim();
     if (!message || store.grokBusy) return;
-    const images = extraImages ?? store.pendingImages;
-    const intent = routeIntent(message, {
+    const reality0 = store.project.reality ?? emptyReality();
+    const frameIds = (reality0.videos ?? []).flatMap((v) => v.selectedFrameIds).slice(0, VIDEO_LIMITS.maxAiFrames);
+    const frameUrls: string[] = [];
+    const frameCaps: string[] = [];
+    for (const id of frameIds) {
+      const data = await loadMedia(id);
+      const photo = reality0.photos.find((p) => p.id === id);
+      if (data) {
+        frameUrls.push(data);
+        frameCaps.push(`${photo?.sourceFilename ?? "frame"} t=${photo?.timestampMs ?? 0}ms`);
+      }
+    }
+    const images = [...(extraImages ?? store.pendingImages), ...frameUrls].slice(0, VIDEO_LIMITS.maxAiFrames);
+    const outbound =
+      frameCaps.length > 0
+        ? `[video-frames stills, not a video file: ${frameCaps.join("; ")}]\n${message}`
+        : message;
+    const intent = routeIntent(outbound, {
       hasPhotos: images.length > 0 || Boolean(store.project.reality?.photos.length),
       pickedUi: Boolean(store.pickedUi),
     });
@@ -42,7 +59,7 @@ export function GrokPanel({ fill }: { fill?: boolean }) {
       store.pushGrok({
         id: `a${Date.now()}`,
         role: "assistant",
-        text: "AI OFFLINE — нет server runtime / xAI. CAD, REQUESTED/SAFE и Twin работают локально.",
+        text: "AI OFFLINE — нет server runtime / xAI. CAD, REQUESTED/SAFE, Reality и локальное извлечение кадров работают.",
       });
       return;
     }
@@ -65,13 +82,29 @@ export function GrokPanel({ fill }: { fill?: boolean }) {
     try {
       const res = await grokEngineer({
         data: {
-          message: store.pickedUi ? `[UI:${store.pickedUi.id} ${store.pickedUi.file}] ${message}` : message,
+          message: store.pickedUi ? `[UI:${store.pickedUi.id} ${store.pickedUi.file}] ${outbound}` : outbound,
           projectJson: JSON.stringify(store.project),
           selectedObjectId: store.selectedIds[0] ?? null,
           resultSummary: summary,
           pickedUi: store.pickedUi ? JSON.stringify(store.pickedUi) : null,
           realitySummary: JSON.stringify({
-            photos: reality.photos.map((p) => ({ id: p.id, name: p.name, markers: p.markers.length, wallHint: p.wallHint })),
+            photos: reality.photos.map((p) => ({
+              id: p.id,
+              name: p.name,
+              markers: p.markers.length,
+              wallHint: p.wallHint,
+              kind: p.kind,
+              timestampMs: p.timestampMs,
+              sourceVideoId: p.sourceVideoId,
+            })),
+            videos: (reality.videos ?? []).map((v) => ({
+              id: v.id,
+              name: v.name,
+              durationMs: v.durationMs,
+              status: v.status,
+              frameIds: v.frameIds,
+              persistRaw: false,
+            })),
             asBuilt: reality.asBuilt,
             findings: reality.findings,
             compareMode: reality.compareMode,
@@ -160,6 +193,15 @@ export function GrokPanel({ fill }: { fill?: boolean }) {
     if (!files?.length) return;
     const urls: string[] = [];
     for (const file of [...files].slice(0, 3)) {
+      if (file.type.startsWith("video/")) {
+        store.pushGrok({
+          id: `rv${Date.now()}`,
+          role: "assistant",
+          text: "Видео обрабатывается в Reality Sync (кадры). AI принимает JPEG-кадры с timestamp, не видеофайл.",
+        });
+        store.openSheet("reality", "half");
+        continue;
+      }
       if (!file.type.startsWith("image/")) continue;
       const { dataUrl, widthPx, heightPx } = await resizeImageFile(file);
       const id = nid("photo");
@@ -197,7 +239,8 @@ export function GrokPanel({ fill }: { fill?: boolean }) {
         <div className="flex gap-1">
           <input
             suppressHydrationWarning
-            className="h-9 min-w-0 flex-1 rounded-[6px] border border-border bg-bg px-2 text-[12px] outline-none"
+            className="h-11 min-w-0 flex-1 rounded-[6px] border border-border bg-bg px-2 text-[12px] outline-none"
+            data-mf-id="grok-input"
             placeholder="Спросить инженера…"
             value={text}
             onChange={(e) => setText(e.target.value)}
@@ -211,10 +254,10 @@ export function GrokPanel({ fill }: { fill?: boolean }) {
             suppressHydrationWarning
             onChange={(e) => void attach(e.target.files)}
           />
-          <Button type="button" variant="outline" className="h-9" onClick={() => fileRef.current?.click()}>
+          <Button type="button" variant="outline" className="h-11" onClick={() => fileRef.current?.click()}>
             Фото
           </Button>
-          <Button type="submit" variant="outline" className="h-9" disabled={store.grokBusy}>
+          <Button type="submit" variant="outline" className="h-11" data-mf-id="grok-send" disabled={store.grokBusy}>
             OK
           </Button>
         </div>

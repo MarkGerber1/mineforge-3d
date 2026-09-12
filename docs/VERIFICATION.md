@@ -1,6 +1,6 @@
 # MINEFORGE ENGINEERING VERIFICATION REPORT
 
-Date: 2026-09-11
+Date: 2026-09-13
 
 ## CORE MODULES
 
@@ -25,13 +25,15 @@ Date: 2026-09-11
 | Reality calibration / Sync → canonical geometry | PASS |
 | Reality 3D AABB / ceiling / vent consequence / AI pipeline | PASS |
 | Mobile workspace (not shrunk desktop) | PASS |
+| Reality video frame evidence (seek+canvas, fail-closed) | PASS |
+| iPhone WebKit E2E (Playwright, CI mandatory) | PASS (CI) / local WebKit libs missing |
 
 ## UNIT TESTS
 
 Oracle suite: `src/engineering/oracle/*.test.ts`
 
-TOTAL: 71  
-PASSED: 71  
+TOTAL: 85
+PASSED: 85
 FAILED: 0
 
 | Test ID | Subsystem | Status |
@@ -49,12 +51,13 @@ FAILED: 0
 | FAIL-01 … FAIL-02 | Failure sim clone | PASS |
 | REAL-01 … REAL-12 | Provenance, calibration, Sync → openings/as-built/wall, undo, persistence | PASS |
 | REAL-13 … REAL-24 | 3D collision consequence, vent opening, AI Reality fail-closed, undo/redo | PASS |
+| VIDEO-01 … VIDEO-12 | Real video policy, provenance, bounded frames, no silent mutate, persistRaw=false | PASS |
 
 ## E2E / UX
 
-Primary workflow: demo → CAD → SAFE / bottleneck → 3D twin → Grok project query → Application Edit Git pipeline → Reality photo + A–B marker → failure sim.
+Primary workflow: demo → CAD → SAFE / bottleneck → 3D twin → Grok project query → Application Edit Git pipeline → Reality photo + A–B marker → video frames → failure sim.
 
-Mobile 390×844: full-width CAD, compact REQUESTED/SAFE HUD, bottom tools, AI sheet. No page-level horizontal overflow.
+Mobile 375×812 / 390×844 / 430×932: full-width CAD, compact REQUESTED/SAFE HUD, bottom tools, Reality/Grok sheet. No page-level horizontal overflow. MOB-01…10 via Playwright WebKit in CI. Local sandbox cannot launch WebKit (missing gstreamer/GTK); Chromium iPhone live evidence 16/16 in `docs/BATCH4-LIVE.json`.
 
 ## DEMO PROJECT
 
@@ -67,14 +70,18 @@ SAFE computed by the engine. Floor loading UNKNOWN → confidence PRELIMINARY.
 - Rectangular rooms only (L-shape / polygon deferred).  
 - Fan library analytic curves besides fixtures are ESTIMATED until a manufacturer curve is imported.  
 - Thermal X-Ray is a spatial estimate, not CFD.  
-- Photos never claim millimetre accuracy; PHOTO_ESTIMATE until USER_CONFIRMED / FIELD_MEASUREMENT.  
-- Application Edit preview is HMR of the live app (no second preview URL).  
-- Grok requires XAI_API_KEY; core engineering remains offline.  
+- Photos never claim millimetre accuracy; PHOTO_ESTIMATE until USER_CONFIRMED / FIELD_MEASUREMENT.
+- Video frames are visual evidence (VIDEO_FRAME_ESTIMATE), not photogrammetry and not centimetre-accurate.
+- Application Edit preview is HMR of the live app (no second preview URL).
+- Grok requires XAI_API_KEY; core engineering remains offline.
 - Floor loading remains UNKNOWN unless the user enters it.
+- Physical iPhone Owner smoke-test deferred to FINAL RELEASE.
+- Public production deployment deferred to FINAL RELEASE.
 
 ## CURRENT PHASE
 
 Repair Batch 1 PASSED under owner revised release policy (SHA `8f5c9c0`).
 Repair Batch 2 — Reality geometry pipeline (SHA `7c9f25a`).
-Repair Batch 3 — Reality → Engineering + true 3D vertical geometry.
+Repair Batch 3 — Reality → Engineering + true 3D vertical geometry (SHA `a783606`).
+Repair Batch 4 — iPhone mobile E2E + real video evidence.
 PUBLIC PRODUCTION DEPLOYMENT deferred to FINAL RELEASE.

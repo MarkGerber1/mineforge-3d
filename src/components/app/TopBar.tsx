@@ -71,10 +71,10 @@ export function TopBar() {
         <span className="hidden px-1 font-mono text-[9px] uppercase tracking-[0.12em] text-cold sm:inline">
           {SCOPE_RU[store.grokScope]}
         </span>
-        <Button size="icon" className="size-10 md:size-8" onClick={() => store.undo()} title="Отменить ⌘Z">
+        <Button size="icon" className="size-11 md:size-8" onClick={() => store.undo()} title="Отменить ⌘Z" data-mf-id="undo">
           <Undo2 className="size-4" />
         </Button>
-        <Button size="icon" className="hidden md:inline-flex" onClick={() => store.redo()} title="Повторить">
+        <Button size="icon" className="size-11 md:size-8" onClick={() => store.redo()} title="Повторить" data-mf-id="redo">
           <Redo2 className="size-4" />
         </Button>
         <Button size="icon" className="hidden md:inline-flex" onClick={() => store.setTool("measure")} title="Рулетка M">
@@ -105,16 +105,22 @@ export function TopBar() {
           App
         </Button>
         <Button
-          className="h-9 min-w-10 px-2.5 text-[12px] md:hidden"
+          className="h-11 min-w-11 px-2.5 text-[12px] md:hidden"
           variant={store.sheet !== "closed" && store.sheetTab === "grok" ? "default" : "outline"}
-          onClick={() => store.openSheet("grok", store.sheet === "closed" ? "half" : "closed")}
+          data-mf-id="mobile-ai"
+          onClick={() => {
+            if (store.sheet !== "closed" && store.sheetTab === "grok") store.setSheet("closed");
+            else store.openSheet("grok", store.sheet === "closed" ? "half" : store.sheet);
+          }}
         >
           AI
         </Button>
         {store.grokOffline && (
-          <span className="hidden px-1 font-mono text-[9px] uppercase tracking-[0.12em] text-warn sm:inline">AI OFFLINE</span>
+          <span className="px-1 font-mono text-[9px] uppercase tracking-[0.12em] text-warn" data-mf-id="ai-offline">
+            AI OFFLINE
+          </span>
         )}
-        <div className="hidden px-2 font-mono text-[11px] text-muted lg:block">
+        <div className="hidden px-2 font-mono text-[11px] text-muted sm:block" data-mf-save={store.saveState}>
           {store.saveState === "saving" ? "Saving…" : store.saveState === "saved" ? "Saved" : "Local"}
         </div>
       </div>

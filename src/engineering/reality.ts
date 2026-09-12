@@ -23,6 +23,7 @@ import type {
   RealityFinding,
   RealityFindingKind,
   RealityPhotoMeta,
+  RealityVideoMeta,
   RealityState,
   WallId,
 } from "./types.ts";
@@ -609,4 +610,42 @@ export function parseAiFinding(raw: unknown, id: string): RealityFinding {
     missing: missing.length ? missing : undefined,
     estimated,
   };
+}
+
+/**
+ * Attach extracted video frames as Reality photo evidence.
+ * Does not touch openings, racks, room, or as-built. User ADD is still required.
+ */
+export function attachVideoFrames(
+  project: Project,
+  video: RealityVideoMeta,
+  frames: RealityPhotoMeta[],
+): Project {
+  const reality = ensureReality(project);
+  const photos = [...reality.photos];
+  for (const f of frames) {
+    if (!photos.some((p) => p.id === f.id)) photos.push(f);
+  }
+  const videos = [...(reality.videos ?? []).filter((v) => v.id !== video.id), video];
+  return {
+    ...project,
+    reality: { ...reality, photos, videos },
+  };
+}
+
+export function geometryFingerprint(project: Project): string {
+  return JSON.stringify({
+    room: project.room,
+    openings: project.openings,
+    racks: project.racks.map((r) => ({ id: r.id, x: r.x, y: r.y, widthM: r.widthM, depthM: r.depthM, heightM: r.heightM })),
+    asBuilt: (project.reality?.asBuilt ?? []).map((o) => ({
+      id: o.id,
+      x: o.x,
+      y: o.y,
+      z: o.z,
+      widthM: o.widthM,
+      heightM: o.heightM,
+      depthM: o.depthM,
+    })),
+  });
 }

@@ -10,8 +10,8 @@ import { undergroundParkingFarm } from "./factory.ts";
 import { saveProject } from "./persistence.ts";
 import { applyFailure, type FailureKind } from "../ai/failure.ts";
 import type { GrokScope } from "../ai/intent.ts";
-import { emptyReality, type AsBuiltObject, type PhotoMarker, type PhotoMarkerKind, type RealityFinding } from "../engineering/types.ts";
-import { applyFinding, recordAnnotation } from "../engineering/reality.ts";
+import { emptyReality, type AsBuiltObject, type PhotoMarker, type PhotoMarkerKind, type RealityFinding, type RealityPhotoMeta, type RealityVideoMeta, type VideoErrorCode } from "../engineering/types.ts";
+import { applyFinding, attachVideoFrames, recordAnnotation } from "../engineering/reality.ts";
 import type { RuntimeSnapshot } from "../ai/runtime-client.ts";
 
 export type CadTool = "select" | "pan" | "measure" | "door" | "intake" | "exhaust" | "rack" | "fan";
@@ -101,6 +101,12 @@ interface ProjectStore {
   pendingAppEdit: AppEditJob | null;
   activePhotoId: string | null;
   pendingImages: string[];
+  videoJob: {
+    status: "idle" | "processing" | "failed";
+    error?: VideoErrorCode;
+    errorText?: string;
+    videoId?: string;
+  };
 
   live(): Project;
   liveResult(): EngineeringResult;
@@ -158,6 +164,10 @@ interface ProjectStore {
   addPhotoMarker(photoId: string, marker: NonNullable<Project["reality"]>["photos"][number]["markers"][number]): void;
   setPhotoWallHint(photoId: string, wall: WallId | undefined): void;
   annotatePhoto(photoId: string, a: PhotoMarker, b: PhotoMarker, opts: { knownLengthM?: number; kind: PhotoMarkerKind }): void;
+  commitVideoEvidence(video: RealityVideoMeta, frames: RealityPhotoMeta[]): void;
+  toggleFrameSelect(photoId: string): void;
+  removePhoto(photoId: string): void;
+  setVideoJob(job: ProjectStore["videoJob"]): void;
 }
 
 const catalogs = defaultCatalogs();
@@ -221,6 +231,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   pendingAppEdit: null,
   activePhotoId: null,
   pendingImages: [],
+  videoJob: { status: "idle" },
 
   live() {
     return get().preview ?? get().project;
@@ -482,7 +493,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     const src = get().project;
     const reality = src.reality ?? emptyReality();
     get().commit({ ...src, reality: { ...reality, photos: [...reality.photos, meta] } }, "Add photo");
-    set({ activePhotoId: meta.id, sheet: "half", sheetTab: "reality" });
+    set({ activePhotoId: meta.id, sheet: "full", sheetTab: "reality" });
   },
   addPhotoMarker(photoId, marker) {
     const src = get().project;
@@ -516,6 +527,45 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     const src = get().project;
     const { project, finding } = recordAnnotation(src, photoId, a, b, opts);
     get().commit(project, finding ? `Аннотация ${finding.kind}` : "Калибровка фото");
+  },
+  commitVideoEvidence(video, frames) {
+    const src = get().project;
+    const next = attachVideoFrames(src, video, frames);
+    get().commit(next, `Video frames ${video.name}`);
+    set({
+      activePhotoId: frames[0]?.id ?? video.selectedFrameIds[0] ?? get().activePhotoId,
+      sheet: "full",
+      sheetTab: "reality",
+    });
+  },
+  toggleFrameSelect(photoId) {
+    const src = get().project;
+    const reality = src.reality ?? emptyReality();
+    const videos = (reality.videos ?? []).map((v) => {
+      if (!v.frameIds.includes(photoId)) return v;
+      const has = v.selectedFrameIds.includes(photoId);
+      const selectedFrameIds = has
+        ? v.selectedFrameIds.filter((id) => id !== photoId)
+        : [...v.selectedFrameIds, photoId].slice(-3);
+      return { ...v, selectedFrameIds };
+    });
+    get().commit({ ...src, reality: { ...reality, videos } }, "Select video frame");
+  },
+  removePhoto(photoId) {
+    const src = get().project;
+    const reality = src.reality ?? emptyReality();
+    const photos = reality.photos.filter((p) => p.id !== photoId);
+    const videos = (reality.videos ?? []).map((v) => ({
+      ...v,
+      frameIds: v.frameIds.filter((id) => id !== photoId),
+      selectedFrameIds: v.selectedFrameIds.filter((id) => id !== photoId),
+    }));
+    get().commit({ ...src, reality: { ...reality, photos, videos } }, "Remove evidence");
+    if (get().activePhotoId === photoId) set({ activePhotoId: photos[0]?.id ?? null });
+    void import("../reality/media.ts").then((m) => m.deleteMedia(photoId)).catch(() => undefined);
+  },
+  setVideoJob(videoJob) {
+    set({ videoJob });
   },
 }));
 

@@ -312,7 +312,7 @@ export function Twin3D() {
         data-mf-id="ceiling-toggle"
         data-mf-ceiling={project.room.heightM.toFixed(3)}
         data-mf-ceiling-visible={showCeiling ? "1" : "0"}
-        className="absolute right-3 bottom-3 rounded-[8px] border border-border bg-panel/90 px-2 py-1 font-mono text-[11px] text-muted hover:text-fg"
+        className="absolute right-3 bottom-3 min-h-11 rounded-[8px] border border-border bg-panel/90 px-3 py-2 font-mono text-[11px] text-muted hover:text-fg"
         onClick={() => setShowCeiling((v) => !v)}
       >
         Потолок {project.room.heightM.toFixed(3)} m · {showCeiling ? "скрыть" : "показать"}
