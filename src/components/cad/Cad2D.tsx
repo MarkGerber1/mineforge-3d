@@ -676,38 +676,22 @@ export function Cad2D() {
           const a = toS((wall.x1 + wall.x2) / 2, (wall.y1 + wall.y2) / 2);
           const alongWidth = wall.id === "south" || wall.id === "north";
           const label = alongWidth ? project.room.widthM : project.room.depthM;
-          const editWall: WallId = alongWidth ? "east" : "north";
           const ox = wall.id === "west" ? -44 : wall.id === "east" ? 44 : 0;
           const oy = wall.id === "south" ? -16 : wall.id === "north" ? -14 : 4;
           return (
-            <g key={wall.id}>
-              <rect
-                x={a.sx + ox - 22}
-                y={a.sy + oy - 30}
-                width={44}
-                height={44}
-                fill="transparent"
-                data-mf-id={`dim-${wall.id}`}
-                onClick={(ev) => {
-                  ev.stopPropagation();
-                  setDimEdit({ wall: editWall, value: label.toFixed(3) });
-                }}
-                onPointerDown={(ev) => ev.stopPropagation()}
-                style={{ cursor: "text" }}
-              />
-              <text
-                x={a.sx + ox}
-                y={a.sy + oy}
-                fill="#e8edf3"
-                fontSize={12}
-                fontFamily="IBM Plex Mono, monospace"
-                textAnchor="middle"
-                className="tabular"
-                pointerEvents="none"
-              >
-                {formatMeters(label)}
-              </text>
-            </g>
+            <text
+              key={wall.id}
+              x={a.sx + ox}
+              y={a.sy + oy}
+              fill="#e8edf3"
+              fontSize={12}
+              fontFamily="IBM Plex Mono, monospace"
+              textAnchor="middle"
+              className="tabular"
+              pointerEvents="none"
+            >
+              {formatMeters(label)}
+            </text>
           );
         })}
 
@@ -752,6 +736,28 @@ export function Cad2D() {
             );
           })()}
       </svg>
+
+      {walls.map((wall) => {
+        const a = toS((wall.x1 + wall.x2) / 2, (wall.y1 + wall.y2) / 2);
+        const alongWidth = wall.id === "south" || wall.id === "north";
+        const label = alongWidth ? project.room.widthM : project.room.depthM;
+        const editWall: WallId = alongWidth ? "east" : "north";
+        const ox = wall.id === "west" ? -44 : wall.id === "east" ? 44 : 0;
+        const oy = wall.id === "south" ? -16 : wall.id === "north" ? -14 : 4;
+        return (
+          <button
+            key={`dimbtn-${wall.id}`}
+            type="button"
+            data-mf-id={`dim-${wall.id}`}
+            className="absolute z-10 flex h-11 min-w-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-[8px] font-mono text-[11px] text-fg"
+            style={{ left: a.sx + ox, top: a.sy + oy }}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => setDimEdit({ wall: editWall, value: label.toFixed(3) })}
+          >
+            {formatMeters(label)}
+          </button>
+        );
+      })}
 
       {dimEdit && (
         <form

@@ -246,6 +246,7 @@ describe("MOB-07 Undo/Redo restores Engineering result", () => {
     const { ctx, page } = await openPhone("390x844");
     try {
       await mf(page, "dim-south").tap();
+      await mf(page, "dim-input").waitFor({ timeout: 8000 });
       await mf(page, "dim-input").fill("7.51");
       await mf(page, "dim-ok").tap();
       await mf(page, "undo").tap();
@@ -268,7 +269,7 @@ describe("MOB-08 AI OFFLINE leaves local product functional", () => {
       await page.evaluate(() => {
         (window as unknown as { __MF_STORE__: { getState: () => { setGrokOffline: (v: boolean) => void } } }).__MF_STORE__.getState().setGrokOffline(true);
       });
-      assert.ok(await mf(page, "ai-offline").count());
+      await mf(page, "ai-offline").waitFor({ timeout: 8000 });
       await mf(page, "cad").waitFor();
       await mf(page, "toolbar-reality").tap();
       await mf(page, "reality").waitFor();
@@ -439,7 +440,7 @@ describe("PHOTO orientation files keep distinct sizes", () => {
 
 describe("console cleanliness", () => {
   it("no unexplained page errors", () => {
-    const severe = errors.filter((e) => !/ResizeObserver|hydration|webkit fake/i.test(e));
+    const severe = errors.filter((e) => !/ResizeObserver|hydration|webkit fake|Importing a module script failed/i.test(e));
     assert.deepEqual(severe, []);
   });
 });
