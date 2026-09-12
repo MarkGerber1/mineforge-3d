@@ -61,6 +61,9 @@ export const projectSchema = z.object({
       offsetFromWallStartM: z.number(),
       locked: z.boolean().optional(),
       name: z.string().optional(),
+      provenance: z.enum(["PHOTO_ESTIMATE", "USER_CONFIRMED", "FIELD_MEASUREMENT", "IMPORTED", "CALCULATED"]).optional(),
+      sourcePhotoId: z.string().optional(),
+      sourceFindingId: z.string().optional(),
     }),
   ),
   ventilation: z.object({

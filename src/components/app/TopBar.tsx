@@ -90,6 +90,15 @@ export function TopBar() {
         </Button>
         <Button
           className="hidden h-8 px-2.5 text-[12px] md:inline-flex"
+          variant={store.sheet !== "closed" && store.sheetTab === "reality" ? "default" : "outline"}
+          onClick={() =>
+            store.openSheet("reality", store.sheet !== "closed" && store.sheetTab === "reality" ? "closed" : "half")
+          }
+        >
+          Фото
+        </Button>
+        <Button
+          className="hidden h-8 px-2.5 text-[12px] md:inline-flex"
           variant={store.sheet !== "closed" && store.sheetTab === "app" ? "default" : "outline"}
           onClick={() => store.openSheet("app", store.sheet !== "closed" && store.sheetTab === "app" ? "closed" : "half")}
         >

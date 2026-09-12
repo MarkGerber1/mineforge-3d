@@ -5,7 +5,7 @@ import { routeIntent } from "@/ai/intent";
 import { Button } from "@/components/ui/button";
 import { useLiveResult, useProjectStore, type AppEditJob } from "@/project/store";
 import type { PartialProjectPatch } from "@/engineering/upgrade";
-import { emptyReality, type RealityFinding } from "@/engineering/types";
+import { emptyReality, type AsBuiltKind, type RealityFinding } from "@/engineering/types";
 import { critiqueProject } from "@/ai/critic";
 import { cn } from "@/lib/utils";
 import { resizeImageFile, saveMedia } from "@/reality/media";
@@ -137,9 +137,16 @@ export function GrokPanel({ fill }: { fill?: boolean }) {
               heightM?: number;
               depthM?: number;
             };
-            const kind = (["beam", "column", "obstruction", "duct", "other"].includes(String(f.kind))
-              ? f.kind
-              : "other") as RealityFinding["kind"];
+            const kind = (
+              ["beam", "column", "obstruction", "duct", "other", "door", "opening", "shaft", "wall"].includes(String(f.kind))
+                ? f.kind
+                : "other"
+            ) as RealityFinding["kind"];
+            const asKind: AsBuiltKind = (["beam", "column", "obstruction", "duct", "other"] as const).includes(
+              kind as AsBuiltKind,
+            )
+              ? (kind as AsBuiltKind)
+              : "obstruction";
             store.addFinding({
               id: nid("find"),
               kind,
@@ -147,7 +154,7 @@ export function GrokPanel({ fill }: { fill?: boolean }) {
               confidence: f.confidence === "HIGH" || f.confidence === "MEDIUM" ? f.confidence : "LOW",
               status: "PENDING",
               estimated: {
-                kind,
+                kind: asKind,
                 name: f.summary || kind,
                 x: Number(f.x) || 1,
                 y: Number(f.y) || 1,
@@ -190,10 +197,10 @@ export function GrokPanel({ fill }: { fill?: boolean }) {
     const urls: string[] = [];
     for (const file of [...files].slice(0, 3)) {
       if (!file.type.startsWith("image/")) continue;
-      const dataUrl = await resizeImageFile(file);
+      const { dataUrl, widthPx, heightPx } = await resizeImageFile(file);
       const id = nid("photo");
       await saveMedia(id, dataUrl);
-      store.addPhotoMeta({ id, name: file.name, mime: file.type, createdAt: Date.now(), notes: "", markers: [] });
+      store.addPhotoMeta({ id, name: file.name, mime: file.type, createdAt: Date.now(), notes: "", widthPx, heightPx, markers: [] });
       urls.push(dataUrl);
     }
     store.setPendingImages(urls);

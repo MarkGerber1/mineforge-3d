@@ -6,6 +6,7 @@ import {
   rackAabb,
   roomAabb,
 } from "./geometry.ts";
+import { asBuiltPlanAabb } from "./reality.ts";
 
 export function asicsPerShelf(rack: Rack, asic: AsicSpec, sideSpacingM = 0): number {
   const pitch = asic.widthM + sideSpacingM;
@@ -85,7 +86,7 @@ export function analyzeRacks(project: Project, asic: AsicSpec | null) {
 
   const asBuiltHits: Array<{ id: string; objectId: string; reason: string }> = [];
   for (const obj of project.reality?.asBuilt ?? []) {
-    const bb = { x1: obj.x, y1: obj.y, x2: obj.x + obj.widthM, y2: obj.y + obj.depthM };
+    const bb = asBuiltPlanAabb(obj);
     for (const r of project.racks) {
       const o = aabbOverlap(rackAabb(r), bb);
       if (o > 0) {

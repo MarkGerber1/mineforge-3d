@@ -40,4 +40,16 @@ Auto-fit CAD, opening width grips, collision reject on drop, REQUESTED/SAFE HUD,
 - Mobile shell: CAD viewport + compact HUD + toolbar + bottom sheet. Not a shrunk desktop.
 - Reality Sync: photos, A–B markers, provenance, as-built → Engineering Core collisions.
 - Challenge-my-design critic + failure simulation (preview clone).
-- INT / FAIL / REAL oracle tests. 45/45 PASS.
+- INT / FAIL / REAL oracle tests.
+
+## REPAIR BATCH 1
+
+Closed under owner revised release policy at SHA `8f5c9c0dd4909db51a28a2e14cff12b29c00b218`.
+Public production hostname deferred to FINAL DEPLOYMENT. Not a defect.
+
+## REPAIR BATCH 2 — Reality geometry pipeline
+
+Known-distance A–B calibration (m/px) in Engineering Core. Annotations produce
+PENDING findings; ADD TO MODEL writes openings / as-built / wall length into
+canonical Project State. 2D and 3D consume the same boxes. Undo/persistence
+unchanged. REAL-01…12.

@@ -10,7 +10,8 @@ import { undergroundParkingFarm } from "./factory.ts";
 import { saveProject } from "./persistence.ts";
 import { applyFailure, type FailureKind } from "../ai/failure.ts";
 import type { GrokScope } from "../ai/intent.ts";
-import { emptyReality, type AsBuiltObject, type RealityFinding } from "../engineering/types.ts";
+import { emptyReality, type AsBuiltObject, type PhotoMarker, type PhotoMarkerKind, type RealityFinding } from "../engineering/types.ts";
+import { applyFinding, recordAnnotation } from "../engineering/reality.ts";
 import type { RuntimeSnapshot } from "../ai/runtime-client.ts";
 
 export type CadTool = "select" | "pan" | "measure" | "door" | "intake" | "exhaust" | "rack" | "fan";
@@ -155,6 +156,8 @@ interface ProjectStore {
   resolveFinding(id: string, status: "ADDED" | "IGNORED"): void;
   addPhotoMeta(meta: NonNullable<Project["reality"]>["photos"][number]): void;
   addPhotoMarker(photoId: string, marker: NonNullable<Project["reality"]>["photos"][number]["markers"][number]): void;
+  setPhotoWallHint(photoId: string, wall: WallId | undefined): void;
+  annotatePhoto(photoId: string, a: PhotoMarker, b: PhotoMarker, opts: { knownLengthM?: number; kind: PhotoMarkerKind }): void;
 }
 
 const catalogs = defaultCatalogs();
@@ -464,30 +467,16 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
   resolveFinding(id, status) {
     const src = get().project;
-    const reality = src.reality ?? emptyReality();
-    const f = reality.findings.find((x) => x.id === id);
-    let asBuilt = reality.asBuilt;
-    if (status === "ADDED" && f?.estimated) {
-      asBuilt = [
-        ...asBuilt,
-        {
-          id: `ab_${Date.now().toString(36)}`,
-          photoId: f.photoId,
-          ...f.estimated,
-        },
-      ];
+    const { project, ok, errors } = applyFinding(src, id, status);
+    if (!ok) {
+      get().pushGrok({
+        id: `rv${Date.now()}`,
+        role: "assistant",
+        text: `Reality Sync: не удалось применить (${errors.join("; ")}). Геометрия не изменена.`,
+      });
+      return;
     }
-    get().commit(
-      {
-        ...src,
-        reality: {
-          ...reality,
-          asBuilt,
-          findings: reality.findings.map((x) => (x.id === id ? { ...x, status } : x)),
-        },
-      },
-      status === "ADDED" ? "Add as-built object" : "Ignore finding",
-    );
+    get().commit(project, status === "ADDED" ? "Reality Sync: в модель" : "Reality Sync: игнор");
   },
   addPhotoMeta(meta) {
     const src = get().project;
@@ -508,6 +497,25 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       },
       "Photo marker",
     );
+  },
+  setPhotoWallHint(photoId, wall) {
+    const src = get().project;
+    const reality = src.reality ?? emptyReality();
+    get().commit(
+      {
+        ...src,
+        reality: {
+          ...reality,
+          photos: reality.photos.map((p) => (p.id === photoId ? { ...p, wallHint: wall } : p)),
+        },
+      },
+      wall ? `Стена фото: ${wall}` : "Стена фото сброшена",
+    );
+  },
+  annotatePhoto(photoId, a, b, opts) {
+    const src = get().project;
+    const { project, finding } = recordAnnotation(src, photoId, a, b, opts);
+    get().commit(project, finding ? `Аннотация ${finding.kind}` : "Калибровка фото");
   },
 }));
 

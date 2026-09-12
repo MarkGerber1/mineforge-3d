@@ -38,7 +38,7 @@ export async function loadMedia(id: string): Promise<string | null> {
   return row;
 }
 
-export async function resizeImageFile(file: File, maxEdge = 1280): Promise<string> {
+export async function resizeImageFile(file: File, maxEdge = 1280): Promise<{ dataUrl: string; widthPx: number; heightPx: number }> {
   const raw = await file.arrayBuffer();
   const blob = new Blob([raw], { type: file.type || "image/jpeg" });
   const url = URL.createObjectURL(blob);
@@ -58,7 +58,7 @@ export async function resizeImageFile(file: File, maxEdge = 1280): Promise<strin
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("canvas");
     ctx.drawImage(img, 0, 0, w, h);
-    return canvas.toDataURL("image/jpeg", 0.82);
+    return { dataUrl: canvas.toDataURL("image/jpeg", 0.82), widthPx: w, heightPx: h };
   } finally {
     URL.revokeObjectURL(url);
   }
