@@ -578,7 +578,7 @@ export function Cad2D() {
                 strokeWidth={mode === "as-built" ? 2 : 1}
               />
               <text x={x + 4} y={y + 12} fill="#c4a35a" fontSize={10} fontFamily="IBM Plex Mono, monospace">
-                {obj.kind} · {obj.provenance}
+                {obj.kind} · z {obj.z.toFixed(2)} · {obj.provenance}
               </text>
             </g>
           );

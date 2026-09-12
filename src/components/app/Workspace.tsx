@@ -95,7 +95,7 @@ export function Workspace() {
           store.setInspectorOpen(true);
         }}
       >
-        <div className="font-mono text-[16px] leading-tight tabular sm:text-[18px]">
+        <div className="font-mono text-[16px] leading-tight tabular sm:text-[18px]" data-mf-id="hud-safe" data-mf-safe={result.capacity.safe ?? ""} data-mf-requested={project.fleet.requestedCount}>
           <span className="text-fg">{project.fleet.requestedCount}</span>
           <span className="text-muted"> REQUESTED / </span>
           <span className={safeWarn ? "text-warn" : "text-ok"}>{result.capacity.safe ?? "—"} SAFE</span>

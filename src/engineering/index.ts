@@ -2,6 +2,7 @@ export * from "./constants.ts";
 export * from "./units.ts";
 export * from "./types.ts";
 export * from "./geometry.ts";
+export * from "./aabb3.ts";
 export * from "./electrical.ts";
 export * from "./thermal.ts";
 export * from "./airflow.ts";

@@ -5,7 +5,8 @@ import { routeIntent } from "@/ai/intent";
 import { Button } from "@/components/ui/button";
 import { useLiveResult, useProjectStore, type AppEditJob } from "@/project/store";
 import type { PartialProjectPatch } from "@/engineering/upgrade";
-import { emptyReality, type AsBuiltKind, type RealityFinding } from "@/engineering/types";
+import { emptyReality, type RealityFinding } from "@/engineering/types";
+import { parseAiFinding } from "@/engineering/reality";
 import { critiqueProject } from "@/ai/critic";
 import { cn } from "@/lib/utils";
 import { resizeImageFile, saveMedia } from "@/reality/media";
@@ -126,46 +127,9 @@ export function GrokPanel({ fill }: { fill?: boolean }) {
         }
         if (res.findingJson) {
           try {
-            const f = JSON.parse(res.findingJson) as {
-              kind?: string;
-              summary?: string;
-              confidence?: string;
-              x?: number;
-              y?: number;
-              z?: number;
-              widthM?: number;
-              heightM?: number;
-              depthM?: number;
-            };
-            const kind = (
-              ["beam", "column", "obstruction", "duct", "other", "door", "opening", "shaft", "wall"].includes(String(f.kind))
-                ? f.kind
-                : "other"
-            ) as RealityFinding["kind"];
-            const asKind: AsBuiltKind = (["beam", "column", "obstruction", "duct", "other"] as const).includes(
-              kind as AsBuiltKind,
-            )
-              ? (kind as AsBuiltKind)
-              : "obstruction";
-            store.addFinding({
-              id: nid("find"),
-              kind,
-              summary: f.summary || kind,
-              confidence: f.confidence === "HIGH" || f.confidence === "MEDIUM" ? f.confidence : "LOW",
-              status: "PENDING",
-              estimated: {
-                kind: asKind,
-                name: f.summary || kind,
-                x: Number(f.x) || 1,
-                y: Number(f.y) || 1,
-                z: Number(f.z) || 2.2,
-                widthM: Number(f.widthM) || 0.3,
-                heightM: Number(f.heightM) || 0.3,
-                depthM: Number(f.depthM) || 0.4,
-                provenance: "PHOTO_ESTIMATE",
-                confidence: f.confidence === "HIGH" || f.confidence === "MEDIUM" ? f.confidence : "LOW",
-              },
-            });
+            const raw = JSON.parse(res.findingJson) as unknown;
+            const finding: RealityFinding = parseAiFinding(raw, nid("find"));
+            store.addFinding(finding);
             store.openSheet("reality", "half");
           } catch {
             /* ignore */

@@ -130,9 +130,16 @@ export function RealityPanel() {
               <div key={f.id} className="rounded-[8px] border border-border p-2 text-[12px]">
                 <div className="font-medium">NEW OBJECT · {f.kind}</div>
                 <div className="text-muted">{f.summary}</div>
-                <div className="text-[10px] uppercase text-warn">Confidence {f.confidence} · PHOTO ESTIMATE until ADD</div>
+                <div className="text-[10px] uppercase text-warn">
+                  Confidence {f.confidence} · {f.incomplete ? "INCOMPLETE — нет ADD" : "PHOTO ESTIMATE until ADD"}
+                </div>
+                {f.incomplete && (
+                  <div className="mt-1 text-[11px] text-warn">
+                    Неполная геометрия: {(f.missing ?? []).join(", ") || "unknown"}. Canonical state не изменяется.
+                  </div>
+                )}
                 <div className="mt-1 flex gap-1">
-                  <Button size="sm" onClick={() => store.resolveFinding(f.id, "ADDED")}>
+                  <Button size="sm" disabled={Boolean(f.incomplete)} onClick={() => store.resolveFinding(f.id, "ADDED")}>
                     ADD TO MODEL
                   </Button>
                   <Button size="sm" variant="outline" onClick={() => store.resolveFinding(f.id, "IGNORED")}>

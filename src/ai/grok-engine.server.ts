@@ -132,13 +132,18 @@ export async function executeGrokEngineer(
       type: "function",
       function: {
         name: "propose_finding",
-        description: "Propose a detected as-built object. User must ADD / ADJUST / IGNORE.",
+        description:
+          "Propose a detected Reality object as a PENDING finding. User must ADD / IGNORE. Never invent coordinates or sizes — omit unknown numbers. door→DOOR opening, opening→TECHNICAL, shaft→EXHAUST, wall→wallResize, beam/column/duct/obstruction→as-built. Do not claim applied.",
         parameters: {
           type: "object",
           properties: {
             kind: { type: "string" },
             summary: { type: "string" },
             confidence: { type: "string" },
+            wallId: { type: "string", description: "north|south|east|west for door/opening/shaft/wall" },
+            offsetFromWallStartM: { type: "number" },
+            bottomElevationM: { type: "number" },
+            lengthM: { type: "number", description: "Wall length when kind=wall" },
             x: { type: "number" },
             y: { type: "number" },
             z: { type: "number" },
@@ -159,7 +164,7 @@ Rules:
 - Never invent airflow, pressure, SAFE COUNT, electrical numbers.
 - Project edits: call propose_patch. User must APPLY.
 - Application edits: ${appEditOn ? "call propose_app_edit. Do not write that you already changed the app. Isolated job + PROMOTE required." : "Application Edit is DISABLED. Do not pretend you can change the app source. Tell the user APP EDIT DISABLED."}
-- Reality: never claim centimetre accuracy from one photo. Ask one necessary question. Findings are PHOTO_ESTIMATE until the user confirms.
+- Reality: never claim centimetre accuracy from one photo. Ask one necessary question. Findings are PHOTO_ESTIMATE until the user confirms. Call propose_finding with only known finite numbers — never invent x/y/z/width/height. Omit unknown dimensions. You cannot applyFinding or mutate canonical geometry.
 - Answer in the user's language (Russian unless they write English).
 - Be concise, engineering, no marketing.
 - If you cannot reach tools or current project JSON, say so. Never fabricate a success.

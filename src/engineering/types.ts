@@ -282,6 +282,9 @@ export interface RealityFinding {
   opening?: Opening;
   wallResize?: { wallId: WallId; lengthM: number };
   photoId?: string;
+  /** True when required geometry is missing — fail-closed on ADD. */
+  incomplete?: boolean;
+  missing?: string[];
 }
 
 export interface RealityState {
@@ -431,11 +434,13 @@ export interface EngineeringResult {
     systemCurve: FanCurvePoint[];
   };
   racks: {
-    perRackCapacity: Array<{ id: string; perShelf: number; total: number }>;
+    perRackCapacity: Array<{ id: string; perShelf: number; total: number; blocked: boolean }>;
     totalCapacity: number;
+    usableCapacity: number;
     collisions: Array<{ a: string; b: string; overlapM: number; reason: string }>;
     wallHits: Array<{ id: string; reason: string }>;
     doorHits: Array<{ id: string; reason: string }>;
+    ceilingHits: Array<{ id: string; reason: string }>;
     recirculation: Array<{ from: string; to: string; distanceM: number }>;
     placedAsics: number;
     asBuiltHits: Array<{ id: string; objectId: string; reason: string }>;

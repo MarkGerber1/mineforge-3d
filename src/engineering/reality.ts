@@ -9,7 +9,7 @@
  * applyFinding(..., "ADDED").
  */
 import { MAX_ROOM_DIM_M, MIN_ROOM_DIM_M } from "./constants.ts";
-import { resizeRectangularRoom, validateOpening, wallLength, type Aabb } from "./geometry.ts";
+import { resizeRectangularRoom, validateOpening, type Aabb } from "./geometry.ts";
 import type {
   AsBuiltKind,
   AsBuiltObject,
@@ -352,6 +352,14 @@ export function applyFinding(project: Project, findingId: string, status: "ADDED
     };
   }
 
+  if (finding.incomplete || (finding.missing && finding.missing.length)) {
+    return {
+      project,
+      ok: false,
+      errors: [`Incomplete geometry: ${(finding.missing ?? ["unknown"]).join(", ")}. Canonical state unchanged.`],
+    };
+  }
+
   if (finding.wallResize) {
     const { wallId, lengthM } = finding.wallResize;
     if (lengthM < MIN_ROOM_DIM_M || lengthM > MAX_ROOM_DIM_M) {
@@ -373,12 +381,35 @@ export function applyFinding(project: Project, findingId: string, status: "ADDED
       ...finding.opening,
       provenance: finding.opening.provenance === "FIELD_MEASUREMENT" ? "FIELD_MEASUREMENT" : "USER_CONFIRMED",
     };
-    const v = validateOpening(project, opening);
+    const isExhaust = opening.type === "EXHAUST" || opening.type === "SHAFT_CONNECTION";
+    const existingIdx = isExhaust
+      ? project.openings.findIndex((o) => o.type === "EXHAUST" || o.type === "SHAFT_CONNECTION")
+      : -1;
+    const candidate: Opening =
+      existingIdx >= 0
+        ? {
+            ...project.openings[existingIdx],
+            widthM: opening.widthM,
+            heightM: opening.heightM,
+            bottomElevationM: opening.bottomElevationM,
+            provenance: opening.provenance,
+            sourcePhotoId: opening.sourcePhotoId,
+            sourceFindingId: opening.sourceFindingId,
+          }
+        : opening;
+    const v = validateOpening(
+      { ...project, openings: existingIdx >= 0 ? project.openings.filter((_, i) => i !== existingIdx) : project.openings },
+      candidate,
+    );
     if (!v.ok) return { project, ok: false, errors: v.errors };
+    const openings =
+      existingIdx >= 0
+        ? project.openings.map((o, i) => (i === existingIdx ? candidate : o))
+        : [...project.openings, candidate];
     return {
       project: {
         ...project,
-        openings: [...project.openings, opening],
+        openings,
         reality: { ...reality, findings },
       },
       ok: true,
@@ -409,4 +440,173 @@ export function applyFinding(project: Project, findingId: string, status: "ADDED
 
 export function pendingFindings(project: Project): RealityFinding[] {
   return ensureReality(project).findings.filter((f) => f.status === "PENDING");
+}
+
+const FINDING_KINDS: RealityFindingKind[] = [
+  "beam",
+  "column",
+  "obstruction",
+  "duct",
+  "other",
+  "door",
+  "opening",
+  "shaft",
+  "wall",
+];
+
+function parseWallId(v: unknown): WallId | null {
+  return v === "north" || v === "south" || v === "east" || v === "west" ? v : null;
+}
+
+/** Finite number only. No string coercion, no `|| 1` fallback. */
+function finiteNumber(v: unknown): number | null {
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
+function requirePositive(v: unknown, name: string, missing: string[]): number | null {
+  const n = finiteNumber(v);
+  if (n == null || n <= 0) {
+    missing.push(name);
+    return null;
+  }
+  return n;
+}
+
+function requireNonNegative(v: unknown, name: string, missing: string[]): number | null {
+  const n = finiteNumber(v);
+  if (n == null || n < 0) {
+    missing.push(name);
+    return null;
+  }
+  return n;
+}
+
+/**
+ * Validate an AI Reality observation into a PENDING finding.
+ * Incomplete geometry stays PENDING with `incomplete`/`missing`.
+ * Never mutates Project. Never invents coordinates.
+ */
+export function parseAiFinding(raw: unknown, id: string): RealityFinding {
+  const obj = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const kindRaw = typeof obj.kind === "string" ? obj.kind : "other";
+  const kind: RealityFindingKind = FINDING_KINDS.includes(kindRaw as RealityFindingKind)
+    ? (kindRaw as RealityFindingKind)
+    : "other";
+  const summary =
+    typeof obj.summary === "string" && obj.summary.trim().length > 0 ? obj.summary.trim() : kind;
+  const confidence: RealityFinding["confidence"] =
+    obj.confidence === "HIGH" || obj.confidence === "MEDIUM" ? obj.confidence : "LOW";
+  const missing: string[] = [];
+
+  if (kind === "wall") {
+    const wallId = parseWallId(obj.wallId);
+    if (!wallId) missing.push("wallId");
+    const lengthSource = obj.lengthM !== undefined ? obj.lengthM : obj.widthM;
+    const lengthM = requirePositive(lengthSource, "lengthM", missing);
+    return {
+      id,
+      kind: "wall",
+      summary,
+      confidence,
+      status: "PENDING",
+      incomplete: missing.length > 0,
+      missing: missing.length ? missing : undefined,
+      wallResize: wallId && lengthM != null ? { wallId, lengthM } : undefined,
+    };
+  }
+
+  const openingType = openingTypeFor(kind);
+  if (openingType) {
+    const wallId = parseWallId(obj.wallId);
+    if (!wallId) missing.push("wallId");
+    const widthM = requirePositive(obj.widthM, "widthM", missing);
+    const heightM = requirePositive(obj.heightM, "heightM", missing);
+    const offsetFromWallStartM = requireNonNegative(
+      obj.offsetFromWallStartM,
+      "offsetFromWallStartM",
+      missing,
+    );
+    let bottomElevationM: number | null;
+    if (kind === "door" && finiteNumber(obj.bottomElevationM) == null) {
+      bottomElevationM = 0;
+    } else {
+      bottomElevationM = requireNonNegative(obj.bottomElevationM, "bottomElevationM", missing);
+    }
+    const incomplete = missing.length > 0;
+    const opening: Opening | undefined =
+      !incomplete &&
+      wallId &&
+      widthM != null &&
+      heightM != null &&
+      offsetFromWallStartM != null &&
+      bottomElevationM != null
+        ? {
+            id: `op_${id}`,
+            type: openingType,
+            wallId,
+            widthM,
+            heightM,
+            bottomElevationM,
+            offsetFromWallStartM,
+            name:
+              kind === "door"
+                ? "Дверь (AI Reality)"
+                : kind === "shaft"
+                  ? "Шахта (AI Reality)"
+                  : "Проём (AI Reality)",
+            provenance: "PHOTO_ESTIMATE",
+            sourceFindingId: id,
+          }
+        : undefined;
+    return {
+      id,
+      kind,
+      summary,
+      confidence,
+      status: "PENDING",
+      incomplete,
+      missing: missing.length ? missing : undefined,
+      opening,
+    };
+  }
+
+  const x = requireNonNegative(obj.x, "x", missing);
+  const y = requireNonNegative(obj.y, "y", missing);
+  const z = requireNonNegative(obj.z, "z", missing);
+  const widthM = requirePositive(obj.widthM, "widthM", missing);
+  const heightM = requirePositive(obj.heightM, "heightM", missing);
+  const depthM = requirePositive(obj.depthM, "depthM", missing);
+  const incomplete = missing.length > 0;
+  const estimated: RealityFinding["estimated"] =
+    !incomplete &&
+    x != null &&
+    y != null &&
+    z != null &&
+    widthM != null &&
+    heightM != null &&
+    depthM != null
+      ? {
+          kind: asBuiltKindFor(kind),
+          name: summary,
+          x,
+          y,
+          z,
+          widthM,
+          heightM,
+          depthM,
+          provenance: "PHOTO_ESTIMATE",
+          findingId: id,
+          confidence,
+        }
+      : undefined;
+  return {
+    id,
+    kind,
+    summary,
+    confidence,
+    status: "PENDING",
+    incomplete,
+    missing: missing.length ? missing : undefined,
+    estimated,
+  };
 }

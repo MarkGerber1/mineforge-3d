@@ -6,7 +6,13 @@ import {
   rackAabb,
   roomAabb,
 } from "./geometry.ts";
-import { asBuiltPlanAabb } from "./reality.ts";
+import {
+  aabb3Intersects,
+  asBuiltAabb3,
+  exceedsCeiling,
+  rackAabb3,
+  roomEnvelope3,
+} from "./aabb3.ts";
 
 export function asicsPerShelf(rack: Rack, asic: AsicSpec, sideSpacingM = 0): number {
   const pitch = asic.widthM + sideSpacingM;
@@ -21,26 +27,36 @@ export function rackAsicCapacity(rack: Rack, asic: AsicSpec, sideSpacingM = 0): 
 }
 
 export function analyzeRacks(project: Project, asic: AsicSpec | null) {
+  const envelope = roomEnvelope3(project);
+  const ceilingHits: Array<{ id: string; reason: string }> = [];
   const perRackCapacity = project.racks.map((r) => {
-    if (!asic) return { id: r.id, perShelf: 0, total: 0 };
+    if (!asic) return { id: r.id, perShelf: 0, total: 0, blocked: false };
     const perShelf = asicsPerShelf(r, asic);
-    return { id: r.id, perShelf, total: perShelf * r.shelves };
+    const box = rackAabb3(r);
+    const overCeil = exceedsCeiling(box, envelope.z2);
+
+    if (overCeil) {
+      ceilingHits.push({
+        id: r.id,
+        reason: `${r.name} top ${(r.heightM).toFixed(3)} m exceeds ceiling ${envelope.z2.toFixed(3)} m.`,
+      });
+    }
+    return { id: r.id, perShelf, total: perShelf * r.shelves, blocked: false };
   });
-  const totalCapacity = perRackCapacity.reduce((s, x) => s + x.total, 0);
+
   const collisions: Array<{ a: string; b: string; overlapM: number; reason: string }> = [];
   for (let i = 0; i < project.racks.length; i++) {
     for (let j = i + 1; j < project.racks.length; j++) {
       const a = project.racks[i];
       const b = project.racks[j];
+      if (!aabb3Intersects(rackAabb3(a), rackAabb3(b))) continue;
       const o = aabbOverlap(rackAabb(a), rackAabb(b));
-      if (o > 0) {
-        collisions.push({
-          a: a.id,
-          b: b.id,
-          overlapM: o,
-          reason: `${a.name} overlaps ${b.name} by ${(o * 1000).toFixed(0)} mm.`,
-        });
-      }
+      collisions.push({
+        a: a.id,
+        b: b.id,
+        overlapM: o,
+        reason: `${a.name} overlaps ${b.name} in XYZ.`,
+      });
     }
   }
 
@@ -86,25 +102,42 @@ export function analyzeRacks(project: Project, asic: AsicSpec | null) {
 
   const asBuiltHits: Array<{ id: string; objectId: string; reason: string }> = [];
   for (const obj of project.reality?.asBuilt ?? []) {
-    const bb = asBuiltPlanAabb(obj);
+    const ob = asBuiltAabb3(obj);
+    if (exceedsCeiling(ob, envelope.z2)) {
+      ceilingHits.push({
+        id: obj.id,
+        reason: `As-built ${obj.kind} «${obj.name}» exceeds ceiling ${envelope.z2.toFixed(3)} m.`,
+      });
+    }
     for (const r of project.racks) {
-      const o = aabbOverlap(rackAabb(r), bb);
-      if (o > 0) {
-        asBuiltHits.push({
-          id: r.id,
-          objectId: obj.id,
-          reason: `${r.name} overlaps as-built ${obj.kind} «${obj.name}» by ${(o * 1000).toFixed(0)} mm.`,
-        });
-      }
+      if (!aabb3Intersects(rackAabb3(r), ob)) continue;
+      asBuiltHits.push({
+        id: r.id,
+        objectId: obj.id,
+        reason: `${r.name} collides in XYZ with as-built ${obj.kind} «${obj.name}».`,
+      });
     }
   }
+
+  const blocked = new Set<string>([
+    ...asBuiltHits.map((h) => h.id),
+    ...ceilingHits.filter((h) => project.racks.some((r) => r.id === h.id)).map((h) => h.id),
+  ]);
+  for (const row of perRackCapacity) {
+    if (blocked.has(row.id)) row.blocked = true;
+  }
+
+  const totalCapacity = perRackCapacity.reduce((s, x) => s + x.total, 0);
+  const usableCapacity = perRackCapacity.reduce((s, x) => s + (x.blocked ? 0 : x.total), 0);
 
   return {
     perRackCapacity,
     totalCapacity,
+    usableCapacity,
     collisions,
     wallHits,
     doorHits,
+    ceilingHits,
     recirculation,
     placedAsics,
     asBuiltHits,
