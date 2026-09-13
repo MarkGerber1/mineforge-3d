@@ -87,3 +87,9 @@ and produce distinct JPEG stills. Fail-closed corrupt video stays a separate
 test. Evidence JSON is a CI artifact. Chromium iPhone viewport is not a
 substitute for this proof.
 
+Linux WebKitGTK often yields black canvases from a paused/off-screen `<video>`.
+Extraction now play-through-samples a visible element, then falls back to
+WebCodecs VP8 on the same genuine bitstream. DMABuf is disabled in the gate
+so decoded samples stay CPU-readable. Still no synthetic frames.
+
+

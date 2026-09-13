@@ -11,9 +11,13 @@ import {
   sampleTimestampsMs,
   videoMetaSkeleton,
 } from "../../reality/video-policy.ts";
+import { demuxVp8Webm } from "../../reality/webm.ts";
 import { parseProject } from "../../project/schema.ts";
 import { calculateAll } from "../pipeline.ts";
 import { defaultCatalogs } from "../catalogs.ts";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 describe("VIDEO-01 policy: mime is classified by canPlayType, not extension", () => {
   it("mp4 with maybe is ok; random extension is unsupported", () => {
@@ -274,5 +278,25 @@ describe("VIDEO persistence of frame metadata through JSON", () => {
     assert.equal(loaded.reality!.photos[0].sourceVideoId, "vid1");
     assert.equal(loaded.reality!.photos[0].timestampMs, 1500);
     assert.equal(loaded.reality!.photos[0].kind, "video-frame");
+  });
+});
+
+describe("VIDEO-13 VP8 WebM demuxer reads genuine encoded samples", () => {
+  it("frames-rgb.webm yields ≥2 distinct VP8 keyframes", () => {
+    const root = join(dirname(fileURLToPath(import.meta.url)), "../../..");
+    const buf = readFileSync(join(root, "tests/fixtures/video/frames-rgb.webm"));
+    const demuxed = demuxVp8Webm(buf);
+    assert.ok(demuxed, "fixture must be genuine VP8 WebM");
+    assert.equal(demuxed!.codec, "vp8");
+    assert.equal(demuxed!.width, 320);
+    assert.equal(demuxed!.height, 180);
+    assert.ok(demuxed!.durationMs >= 3800);
+    assert.ok(demuxed!.samples.length >= 2);
+    assert.ok(demuxed!.samples.every((s) => s.data.byteLength > 0));
+    assert.ok(demuxed!.samples.filter((s) => s.keyframe).length >= 2);
+    const hashes = demuxed!.samples.map((s) => Buffer.from(s.data).subarray(0, 24).toString("hex"));
+    assert.ok(new Set(hashes).size >= 2, "encoded payloads must differ across colour scenes");
+    const stamps = demuxed!.samples.map((s) => s.timestampMs);
+    assert.ok(new Set(stamps).size >= 2);
   });
 });

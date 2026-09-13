@@ -14,7 +14,7 @@ Used by oracle + WebKit E2E. No user private media.
 
 | File | Notes |
 |---|---|
-| `video/frames-rgb.webm` | **Known-good WebKit fixture.** 4.00 s, 320×180, VP8, 5 fps, all-intra. 1 s each: red / green / blue / yellow |
+| `video/frames-rgb.webm` | **Known-good WebKit fixture.** 4.00 s, 320×180, VP8, 5 fps, all-intra keyframes. 1 s each: red / green / blue / yellow |
 | `video/frames-rgb.mp4` | Same pictures, H.264 (Linux WebKit may not decode; keep for Chromium / fail-closed MIME tests) |
 | `video/frames-rgb.ogv` | Same pictures, Theora/Ogg (secondary genuine encode) |
 | `video/corrupt.mp4` | Not a video stream — fail-closed fixture |

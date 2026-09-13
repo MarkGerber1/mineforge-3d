@@ -23,6 +23,10 @@ jobs:
           APP_EDIT_OWNER_SECRET: ci-owner-not-a-production-secret
           APP_EDIT_USER_SECRET: ci-user-not-a-production-secret
           APP_EDIT_SESSION_SECRET: ci-session-not-a-production-secret
+          WEBKIT_GST_DMABUF_SINK_DISABLED: "1"
+          WEBKIT_GST_DMABUF_SINK_FORCED_FALLBACK_CAPS_FORMAT: "RGBA"
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          GST_GL_DISABLED: "1"
       - name: Upload WebKit video evidence
         if: always()
         uses: actions/upload-artifact@v4

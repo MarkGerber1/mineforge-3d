@@ -88,6 +88,7 @@ export function framePhotoMeta(args: {
   widthPx: number;
   heightPx: number;
   createdAt: number;
+  extractionMethod?: RealityPhotoMeta["extractionMethod"];
 }): RealityPhotoMeta {
   return {
     id: args.id,
@@ -99,7 +100,7 @@ export function framePhotoMeta(args: {
     sourceVideoId: args.videoId,
     sourceFilename: args.filename,
     timestampMs: args.timestampMs,
-    extractionMethod: "video-seek-canvas",
+    extractionMethod: args.extractionMethod ?? "video-seek-canvas",
     widthPx: args.widthPx,
     heightPx: args.heightPx,
     markers: [],

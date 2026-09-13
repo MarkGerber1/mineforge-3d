@@ -260,7 +260,7 @@ export interface RealityPhotoMeta {
   sourceVideoId?: string;
   sourceFilename?: string;
   timestampMs?: number;
-  extractionMethod?: "video-seek-canvas";
+  extractionMethod?: "video-seek-canvas" | "video-play-canvas" | "video-webcodecs";
 }
 
 export type VideoErrorCode =

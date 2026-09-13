@@ -60,7 +60,16 @@ before(async () => {
   }
   await waitHealthy(BASE, 40000);
   try {
-    browser = await webkit.launch({ headless: true });
+    browser = await webkit.launch({
+      headless: true,
+      env: {
+        ...Object.fromEntries(Object.entries(process.env).filter((e): e is [string, string] => e[1] != null)),
+        WEBKIT_GST_DMABUF_SINK_DISABLED: "1",
+        WEBKIT_GST_DMABUF_SINK_FORCED_FALLBACK_CAPS_FORMAT: "RGBA",
+        LIBGL_ALWAYS_SOFTWARE: "1",
+        GST_GL_DISABLED: "1",
+      },
+    });
   } catch (e) {
     throw new Error(`WebKit failed to launch (CI must FAIL). ${e instanceof Error ? e.message : e}`);
   }
@@ -415,6 +424,11 @@ describe("WEBKIT VIDEO POSITIVE decode + Reality + Undo", () => {
           'video/webm; codecs="vp8"': v.canPlayType('video/webm; codecs="vp8"'),
         };
       });
+      evidence.webCodecs = await page.evaluate(async () => {
+        const hook = (window as unknown as { __MF_VIDEO__?: { probeWebCodecs?: () => Promise<{ vp8: boolean; avc1: boolean }> } }).__MF_VIDEO__;
+        if (hook?.probeWebCodecs) return hook.probeWebCodecs();
+        return { vp8: typeof VideoDecoder !== "undefined", avc1: false };
+      });
 
       const webmPlay = evidence.canPlayType as Record<string, string>;
       const webmClaimed =
@@ -478,7 +492,7 @@ describe("WEBKIT VIDEO POSITIVE decode + Reality + Undo", () => {
       await page.waitForFunction(() => {
         const s = (window as unknown as { __MF_STORE__: { getState: () => { videoJob: { status: string } } } }).__MF_STORE__.getState();
         return s.videoJob.status !== "processing";
-      }, null, { timeout: 25000 });
+      }, null, { timeout: 45000 });
 
       const decoded = await storeEval(page, () => {
         const s = (
@@ -537,6 +551,11 @@ describe("WEBKIT VIDEO POSITIVE decode + Reality + Undo", () => {
       evidence.extractedFrameCount = decoded.videos[0]?.frameIds.length ?? 0;
       evidence.persistRaw = decoded.videos[0]?.persistRaw ?? null;
       evidence.liveObjectUrls = decoded.urls;
+      evidence.lastExtract = await page.evaluate(() => {
+        const hook = (window as unknown as { __MF_VIDEO__?: { lastExtractDiag?: () => unknown } }).__MF_VIDEO__;
+        return hook?.lastExtractDiag ? hook.lastExtractDiag() : null;
+      });
+      evidence.captureMethod = (evidence.lastExtract as { method?: string } | null)?.method ?? null;
 
       assert.notEqual(decoded.job.status, "failed", `known-good WebM MUST decode, got ${decoded.job.error}`);
       assert.notEqual(decoded.job.error, "VIDEO_UNSUPPORTED");
@@ -816,6 +835,17 @@ describe("WEBKIT VIDEO POSITIVE decode + Reality + Undo", () => {
     } catch (e) {
       evidence.pass = false;
       evidence.error = e instanceof Error ? e.message : String(e);
+      try {
+        if (!evidence.lastExtract) {
+          evidence.lastExtract = await page.evaluate(() => {
+            const hook = (window as unknown as { __MF_VIDEO__?: { lastExtractDiag?: () => unknown } }).__MF_VIDEO__;
+            return hook?.lastExtractDiag ? hook.lastExtractDiag() : null;
+          });
+          evidence.captureMethod = (evidence.lastExtract as { method?: string } | null)?.method ?? null;
+        }
+      } catch {
+        /* page may already be closed */
+      }
       writeEvidence(evidence);
       throw e;
     } finally {
