@@ -78,6 +78,11 @@ QX-02B-R: one canonical numeric domain validator on every ingress (APPLY,
 commit, load, import). VERIFIED Physical Space is demonstrably feasible
 packing, not a body-only cell. Facing aisle requires intake faces to look at
 each other in space. Every safety-relevant CRITICAL warning blocks VERIFIED.
+
+QX-02B-R5: the same `validateCanonicalProjectDomains` now covers every
+SAFETY_DRIVING / SAFETY_GEOMETRY numeric (ΔT, reserve, auxiliary/lighting/
+network W, vent losses, fan count, service clearances, rack shelf geometry,
+imported ASIC primitives). Inventory: `src/engineering/numeric-inventory.ts`.
 Do not start QX-02C. Do not reopen QX-01 / QX-02A / FINAL-SEC.
 
 Evidence: [docs/FINAL-01.md](docs/FINAL-01.md).

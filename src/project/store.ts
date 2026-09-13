@@ -146,8 +146,8 @@ interface ProjectStore {
   setPower(watts: number, reservePct?: number): { ok: boolean; reason?: string };
   setRoomHeight(heightM: number): { ok: boolean; reason?: string };
   setRackAsicCount(id: string, count: number): { ok: boolean; reason?: string };
-  setDeltaT(k: number): void;
-  setFan(specId: string, count?: number, arrangement?: "single" | "parallel"): void;
+  setDeltaT(k: number): { ok: boolean; reason?: string };
+  setFan(specId: string, count?: number, arrangement?: "single" | "parallel"): { ok: boolean; reason?: string };
   autoLayout(): { ok: boolean; reason?: string };
   applyProposed(): { ok: boolean; errors: string[] };
   cancelProposed(): void;
@@ -472,7 +472,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       set({ lastMutationError: domains.errors[0] ?? "Каноническая проверка не пройдена." });
       return { ok: false, reason: domains.errors[0] };
     }
-    get().commit(next, "Set ASIC fleet");
+    const committed = get().commit(next, "Set ASIC fleet");
+    if (!committed) return { ok: false, reason: get().lastMutationError ?? "Каноническая проверка не пройдена." };
     return { ok: true };
   },
   setPower(watts, reservePct) {
@@ -482,7 +483,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       return { ok: false, reason: check.reason };
     }
     const src = get().project;
-    get().commit(
+    const ok = get().commit(
       {
         ...src,
         electrical: {
@@ -494,6 +495,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       },
       "Set electrical supply",
     );
+    if (!ok) return { ok: false, reason: get().lastMutationError ?? "Каноническая проверка не пройдена." };
     return { ok: true };
   },
   setRoomHeight(heightM) {
@@ -504,7 +506,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     }
     const src = get().project;
     if (src.room.heightM === check.meters) return { ok: true };
-    get().commit({ ...src, room: { ...src.room, heightM: check.meters } }, "Set height");
+    const ok = get().commit({ ...src, room: { ...src.room, heightM: check.meters } }, "Set height");
+    if (!ok) return { ok: false, reason: get().lastMutationError ?? "Каноническая проверка не пройдена." };
     return { ok: true };
   },
   setRackAsicCount(id, count) {
@@ -521,18 +524,21 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       set({ lastMutationError: check.reason });
       return { ok: false, reason: check.reason };
     }
-    get().commit(
+    const ok = get().commit(
       {
         ...src,
         racks: src.racks.map((r) => (r.id === id ? { ...r, asicCount: check.count } : r)),
       },
       "Set rack ASIC",
     );
+    if (!ok) return { ok: false, reason: get().lastMutationError ?? "Каноническая проверка не пройдена." };
     return { ok: true };
   },
   setDeltaT(k) {
     const src = get().project;
-    get().commit({ ...src, thermal: { ...src.thermal, deltaTK: k } }, "Set ΔT");
+    const ok = get().commit({ ...src, thermal: { ...src.thermal, deltaTK: k } }, "Set ΔT");
+    if (!ok) return { ok: false, reason: get().lastMutationError ?? "ΔT вне допустимого диапазона." };
+    return { ok: true };
   },
   setFan(specId, count = 1, arrangement = "single") {
     const src = get().project;
@@ -551,7 +557,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
             },
           ]
         : src.fans.map((f, i) => (i === 0 ? { ...f, specId, count, arrangement } : f));
-    get().commit({ ...src, fans }, "Set fan");
+    const ok = get().commit({ ...src, fans }, "Set fan");
+    if (!ok) return { ok: false, reason: get().lastMutationError ?? "Параметры вентилятора недопустимы." };
+    return { ok: true };
   },
   autoLayout() {
     const src = get().project;

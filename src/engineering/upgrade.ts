@@ -1,6 +1,6 @@
 import { FAN_STRONG, FAN_WEAK, getFan } from "../equipment/fan-catalog.ts";
 import { validateCanonicalProjectDomains } from "./canonical.ts";
-import { MAX_AVAILABLE_POWER_W } from "./constants.ts";
+import { MAX_AVAILABLE_POWER_W, MAX_DELTA_T_K } from "./constants.ts";
 import { defaultCatalogs } from "./catalogs.ts";
 import { validateAvailablePowerW } from "./electrical.ts";
 import { openingMaxWidthOnWallM, validateOpening, fanIsSpatiallyValid } from "./geometry.ts";
@@ -33,6 +33,7 @@ export type PartialProjectPatch = {
   fleet?: Partial<Project["fleet"]>;
   reality?: Partial<Project["reality"]> & { asBuilt?: NonNullable<Project["reality"]>["asBuilt"] };
   racks?: Project["racks"];
+  constraints?: Partial<Project["constraints"]>;
 };
 
 export function applyPatch(project: Project, patch: PartialProjectPatch): Project {
@@ -74,6 +75,7 @@ export function applyPatch(project: Project, patch: PartialProjectPatch): Projec
   if (patch.fans) next = { ...next, fans: patch.fans };
   if (patch.thermal) next = { ...next, thermal: { ...next.thermal, ...patch.thermal } };
   if (patch.fleet) next = { ...next, fleet: { ...next.fleet, ...patch.fleet } };
+  if (patch.constraints) next = { ...next, constraints: { ...next.constraints, ...patch.constraints } };
   if (patch.reality) {
     const prev = next.reality ?? {
       photos: [],
@@ -289,19 +291,21 @@ export function generateUpgradeOptions(project: Project, catalogs: Catalogs, tar
     }
   }
 
-  if (project.thermal.deltaTK < 15) {
-    const thermal = { ...project.thermal, deltaTK: 15 };
+  if (project.thermal.deltaTK < MAX_DELTA_T_K) {
+    const thermal = { ...project.thermal, deltaTK: MAX_DELTA_T_K };
     options.push(
-      optionFrom("delta-t", "Allow a higher ΔT (15 °C)", `${project.thermal.deltaTK} °C`, "ΔT = 15 °C", project, applyPatch(project, { thermal }), catalogs, { thermal }),
+      optionFrom("delta-t", "Allow a higher ΔT (15 °C)", `${project.thermal.deltaTK} °C`, `ΔT = ${MAX_DELTA_T_K} °C`, project, applyPatch(project, { thermal }), catalogs, { thermal }),
     );
   }
 
   // Rank by how close they get to target, then by remaining gap.
-  options.sort((a, b) => (b.newSafe ?? 0) - (a.newSafe ?? 0));
+  // Never return a patch that the canonical domain boundary would reject.
+  const valid = options.filter((o) => applyPatchValidated(project, o.patch, catalogs).ok);
+  valid.sort((a, b) => (b.newSafe ?? 0) - (a.newSafe ?? 0));
   void want;
   void result;
   void FAN_WEAK;
-  return options;
+  return valid;
 }
 
 export function solveForTarget(project: Project, catalogs: Catalogs, target: number) {
@@ -355,7 +359,7 @@ export function sensitivity(project: Project, catalogs: Catalogs) {
       tryRow("Available power", "+20%", applyPatch(project, { electrical: { availablePowerW: bumped } }));
     }
   }
-  tryRow("ΔT", "+2 K", applyPatch(project, { thermal: { deltaTK: Math.min(15, project.thermal.deltaTK + 2) } }));
+  tryRow("ΔT", "+2 K", applyPatch(project, { thermal: { deltaTK: Math.min(MAX_DELTA_T_K, project.thermal.deltaTK + 2) } }));
   const f = project.fans[0];
   if (f && f.specId !== FAN_STRONG.id) {
     tryRow("Fan selection", `→ ${FAN_STRONG.model}`, applyPatch(project, { fans: project.fans.map((x, i) => (i === 0 ? { ...x, specId: FAN_STRONG.id } : x)) }));

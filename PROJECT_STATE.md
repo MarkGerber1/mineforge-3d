@@ -81,10 +81,10 @@ repair (unique duplicate ids, nearest-wall over SVG z-order, Measure A/B in
 history). It does not publish, does not perform physical iPhone acceptance,
 and does not reopen MFQ-001…006 or FINAL-SEC-001/002.
 
-QX-02B is merged on `main` (`b47dea6`). QX-02B-R (this candidate) repairs
-canonical numeric ingress, feasible Physical Space, spatially correct facing
-aisle, and complete CRITICAL→SAFE propagation from `b47dea6`. Does not start
-QX-02C. Does not publish. Does not declare FINAL PASSED.
+QX-02B is merged on `main` (`b47dea6`). QX-02B-R is merged on `main`
+(`56d8b33`). QX-02B-R5 (this candidate) completes the safety-numeric domain
+boundary: every SAFETY_DRIVING field has one fail-closed validator, no silent
+clamp. Does not start QX-02C. Does not publish. Does not declare FINAL PASSED.
 
 ## Important historical SHAs
 
