@@ -12,7 +12,10 @@ import type { GrokScope } from "../ai/intent.ts";
 import { emptyReality, type AsBuiltObject, type PhotoMarker, type PhotoMarkerKind, type RealityFinding, type RealityPhotoMeta, type RealityVideoMeta, type VideoErrorCode } from "../engineering/types.ts";
 import { applyFinding, attachVideoFrames, recordAnnotation } from "../engineering/reality.ts";
 import type { RuntimeSnapshot } from "../ai/runtime-client.ts";
-import { validateRoomLengthM } from "../engineering/room-resize.ts";
+import { validateRoomHeightM, validateRoomLengthM } from "../engineering/room-resize.ts";
+import { validateAvailablePowerW } from "../engineering/electrical.ts";
+import { rackAsicCapacity, validateRackAsicCount } from "../engineering/racks.ts";
+import { resolveAsic } from "../engineering/pipeline.ts";
 import { validateRackPlacement, validateRacksConfiguration } from "../engineering/placement.ts";
 import { saveScheduler, type PersistState } from "./save-scheduler.ts";
 
@@ -139,7 +142,9 @@ interface ProjectStore {
   addRack(rack: Rack): { ok: boolean; errors: string[] };
   moveRack(id: string, x: number, y: number, preview?: boolean): { ok: boolean; errors: string[] };
   setFleet(asicId: string, count: number): void;
-  setPower(watts: number, reservePct?: number): void;
+  setPower(watts: number, reservePct?: number): { ok: boolean; reason?: string };
+  setRoomHeight(heightM: number): { ok: boolean; reason?: string };
+  setRackAsicCount(id: string, count: number): { ok: boolean; reason?: string };
   setDeltaT(k: number): void;
   setFan(specId: string, count?: number, arrangement?: "single" | "parallel"): void;
   autoLayout(): { ok: boolean; reason?: string };
@@ -452,19 +457,59 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     get().commit({ ...src, fleet: { ...src.fleet, asicId, requestedCount: Math.max(0, Math.floor(count)) } }, "Set ASIC fleet");
   },
   setPower(watts, reservePct) {
+    const check = validateAvailablePowerW(watts);
+    if (!check.ok) {
+      set({ lastMutationError: check.reason });
+      return { ok: false, reason: check.reason };
+    }
     const src = get().project;
     get().commit(
       {
         ...src,
         electrical: {
           ...src.electrical,
-          availablePowerW: watts,
-          known: watts > 0,
+          availablePowerW: check.watts,
+          known: true,
           reservePct: reservePct ?? src.electrical.reservePct,
         },
       },
       "Set electrical supply",
     );
+    return { ok: true };
+  },
+  setRoomHeight(heightM) {
+    const check = validateRoomHeightM(heightM);
+    if (!check.ok) {
+      set({ lastMutationError: check.reason });
+      return { ok: false, reason: check.reason };
+    }
+    const src = get().project;
+    if (src.room.heightM === check.meters) return { ok: true };
+    get().commit({ ...src, room: { ...src.room, heightM: check.meters } }, "Set height");
+    return { ok: true };
+  },
+  setRackAsicCount(id, count) {
+    const src = get().project;
+    const rack = src.racks.find((r) => r.id === id);
+    if (!rack) {
+      set({ lastMutationError: "Стойка не найдена." });
+      return { ok: false, reason: "Стойка не найдена." };
+    }
+    const asic = resolveAsic(src, get().catalogs);
+    const cap = asic ? rackAsicCapacity(rack, asic) : 0;
+    const check = validateRackAsicCount(count, cap);
+    if (!check.ok) {
+      set({ lastMutationError: check.reason });
+      return { ok: false, reason: check.reason };
+    }
+    get().commit(
+      {
+        ...src,
+        racks: src.racks.map((r) => (r.id === id ? { ...r, asicCount: check.count } : r)),
+      },
+      "Set rack ASIC",
+    );
+    return { ok: true };
   },
   setDeltaT(k) {
     const src = get().project;

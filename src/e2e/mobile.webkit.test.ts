@@ -1387,6 +1387,235 @@ describe("QX-02A WebKit West/South wall drag", () => {
   });
 });
 
+describe("QX-02B HUD + numeric fail-closed", () => {
+  async function seedVerified(page: Page): Promise<void> {
+    await page.evaluate(() => {
+      const s = (window as unknown as { __MF_STORE__: { getState: () => {
+        project: {
+          constraints: { floorLoadingUnknown: boolean };
+          fleet: { requestedCount: number };
+        };
+        loadProject: (p: unknown) => void;
+      } } }).__MF_STORE__.getState();
+      const p = structuredClone(s.project) as typeof s.project & { constraints: { floorLoadingUnknown: boolean } };
+      p.constraints.floorLoadingUnknown = false;
+      p.fleet.requestedCount = 24;
+      s.loadProject(p);
+    });
+    await page.waitForFunction(
+      () => {
+        const s = (
+          window as unknown as {
+            __MF_STORE__: {
+              getState: () => {
+                project: { fleet: { requestedCount: number }; constraints: { floorLoadingUnknown: boolean } };
+                result: { capacity: { verified: boolean } };
+              };
+            };
+          }
+        ).__MF_STORE__.getState();
+        return s.project.fleet.requestedCount === 24 && s.project.constraints.floorLoadingUnknown === false && s.result.capacity.verified === true;
+      },
+      null,
+      { timeout: 8000 },
+    );
+  }
+
+  function hudMobile(page: Page) {
+    return page.locator('[data-mf-id="hud-safe"][data-mf-hud="mobile"]');
+  }
+  function hudDesktop(page: Page) {
+    return page.locator('[data-mf-id="hud-safe"][data-mf-hud="desktop"]');
+  }
+  async function waitHudSafety(page: Page, which: "mobile" | "desktop", safety: string): Promise<void> {
+    await page.waitForFunction(
+      ({ which: w, safety: s }) =>
+        document.querySelector(`[data-mf-id="hud-safe"][data-mf-hud="${w}"]`)?.getAttribute("data-mf-safety") === s,
+      { which, safety },
+      { timeout: 8000 },
+    );
+  }
+
+  it("HUD-SAFE-01/08 375 verified not green-false", async () => {
+    const { ctx, page } = await openPhone("375x812");
+    try {
+      await seedVerified(page);
+      await waitHudSafety(page, "mobile", "VERIFIED");
+      const el = hudMobile(page);
+      assert.equal(await el.getAttribute("data-mf-verified"), "1");
+      assert.equal(await el.getAttribute("data-mf-safety"), "VERIFIED");
+    } finally {
+      await ctx.close();
+    }
+  });
+
+  it("HUD-SAFE-02 requested > safe", async () => {
+    const { ctx, page } = await openPhone("390x844");
+    try {
+      await seedVerified(page);
+      await waitHudSafety(page, "mobile", "VERIFIED");
+      await page.evaluate(() => {
+        const s = (window as unknown as { __MF_STORE__: { getState: () => {
+          project: { fleet: { asicId: string } };
+          setFleet: (id: string, n: number) => void;
+        } } }).__MF_STORE__.getState();
+        s.setFleet(s.project.fleet.asicId, 10000);
+      });
+      await waitHudSafety(page, "mobile", "OVER_CAPACITY");
+      assert.equal(await hudMobile(page).getAttribute("data-mf-verified"), "0");
+    } finally {
+      await ctx.close();
+    }
+  });
+
+  it("HUD-SAFE-03 rack collision is not green", async () => {
+    const { ctx, page } = await openPhone("430x932");
+    try {
+      await seedVerified(page);
+      await waitHudSafety(page, "mobile", "VERIFIED");
+      await page.evaluate(() => {
+        const s = (window as unknown as { __MF_STORE__: { getState: () => {
+          project: { racks: Array<Record<string, unknown>>; fleet: { requestedCount: number } };
+          loadProject: (p: unknown) => void;
+        } } }).__MF_STORE__.getState();
+        const p = structuredClone(s.project) as typeof s.project;
+        const a = { ...(p.racks[0] ?? {}), id: "c1", name: "c1", x: 2, y: 2 };
+        const b = { ...a, id: "c2", name: "c2", x: 2.2, y: 2 };
+        p.racks = [a, b];
+        p.fleet.requestedCount = 1;
+        s.loadProject(p);
+      });
+      await waitHudSafety(page, "mobile", "CRITICAL");
+      const safety = await hudMobile(page).getAttribute("data-mf-safety");
+      assert.equal(safety, "CRITICAL");
+      assert.equal(await hudMobile(page).getAttribute("data-mf-verified"), "0");
+    } finally {
+      await ctx.close();
+    }
+  });
+
+  it("HUD-SAFE-04/05 invalid opening and missing intake", async () => {
+    const { ctx, page } = await openPhone("375x812");
+    try {
+      await seedVerified(page);
+      await waitHudSafety(page, "mobile", "VERIFIED");
+      await page.evaluate(() => {
+        const s = (window as unknown as { __MF_STORE__: { getState: () => {
+          project: { openings: Array<{ type: string; widthM: number }> };
+          loadProject: (p: unknown) => void;
+        } } }).__MF_STORE__.getState();
+        const p = structuredClone(s.project) as { openings: Array<{ type: string; widthM: number }> };
+        p.openings = p.openings.map((o) => (o.type === "EXHAUST" ? { ...o, widthM: 0 } : o));
+        s.loadProject(p);
+      });
+      await waitHudSafety(page, "mobile", "INCOMPLETE");
+      await page.evaluate(() => {
+        const s = (window as unknown as { __MF_STORE__: { getState: () => {
+          project: { openings: Array<{ type: string }> };
+          loadProject: (p: unknown) => void;
+        } } }).__MF_STORE__.getState();
+        const p = structuredClone(s.project) as { openings: Array<{ type: string }> };
+        p.openings = p.openings.filter((o) => o.type !== "INTAKE");
+        s.loadProject(p);
+      });
+      await waitHudSafety(page, "mobile", "INCOMPLETE");
+      const safety = await hudMobile(page).getAttribute("data-mf-safety");
+      assert.equal(safety, "INCOMPLETE");
+    } finally {
+      await ctx.close();
+    }
+  });
+
+  it("HUD-SAFE-07 desktop viewport", async () => {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: "ru-RU" });
+    const page = await ctx.newPage();
+    try {
+      await page.goto(BASE, { waitUntil: "domcontentloaded", timeout: 30000 });
+      await page.waitForFunction(() => Boolean((window as unknown as { __MF_STORE__?: unknown }).__MF_STORE__), null, {
+        timeout: 20000,
+      });
+      await page.evaluate(() => {
+        const w = window as unknown as { __MF_STORE__: { getState: () => { dismissFirstRun: () => void } } };
+        w.__MF_STORE__.getState().dismissFirstRun();
+      });
+      const cont = page.getByText("Продолжить текущий проект");
+      if (await cont.count()) await cont.first().click();
+      await seedVerified(page);
+      await waitHudSafety(page, "desktop", "VERIFIED");
+      const el = hudDesktop(page);
+      await el.waitFor({ state: "visible", timeout: 8000 });
+      assert.equal(await el.getAttribute("data-mf-verified"), "1");
+    } finally {
+      await ctx.close();
+    }
+  });
+
+  it("invalid height / power / rack ASIC visible rejection", async () => {
+    const { ctx, page } = await openPhone("375x812");
+    try {
+      await seedVerified(page);
+      await page.evaluate(() => {
+        const s = (window as unknown as { __MF_STORE__: { getState: () => {
+          openSheet: (t: string, st: string) => void;
+          select: (ids: string[]) => void;
+        } } }).__MF_STORE__.getState();
+        s.select([]);
+        s.openSheet("props", "full");
+      });
+      await mf(page, "inspector-height").waitFor({ timeout: 8000 });
+      const beforeH = await page.evaluate(
+        () => (window as unknown as { __MF_STORE__: { getState: () => { project: { room: { heightM: number } } } } }).__MF_STORE__.getState().project.room.heightM,
+      );
+      await mf(page, "inspector-height").fill("0.20");
+      await mf(page, "inspector-height").blur();
+      await mf(page, "inspector-dim-error").waitFor({ timeout: 4000 });
+      const afterH = await page.evaluate(
+        () => (window as unknown as { __MF_STORE__: { getState: () => { project: { room: { heightM: number } } } } }).__MF_STORE__.getState().project.room.heightM,
+      );
+      assert.equal(afterH, beforeH);
+
+      const beforeW = await page.evaluate(
+        () =>
+          (window as unknown as { __MF_STORE__: { getState: () => { project: { electrical: { availablePowerW: number } } } } }).__MF_STORE__.getState()
+            .project.electrical.availablePowerW,
+      );
+      await mf(page, "inspector-power").fill("abc");
+      await mf(page, "inspector-power").blur();
+      await mf(page, "inspector-dim-error").waitFor({ timeout: 4000 });
+      const afterW = await page.evaluate(
+        () =>
+          (window as unknown as { __MF_STORE__: { getState: () => { project: { electrical: { availablePowerW: number } } } } }).__MF_STORE__.getState()
+            .project.electrical.availablePowerW,
+      );
+      assert.equal(afterW, beforeW);
+
+      const rackId = await page.evaluate(() => {
+        const s = (window as unknown as { __MF_STORE__: { getState: () => {
+          project: { racks: Array<{ id: string }> };
+          select: (ids: string[]) => void;
+        } } }).__MF_STORE__.getState();
+        const id = s.project.racks[0]?.id;
+        if (id) s.select([id]);
+        return id ?? "";
+      });
+      assert.ok(rackId);
+      await mf(page, "inspector-rack-asic").waitFor({ timeout: 8000 });
+      const beforeC = await page.evaluate(
+        () => (window as unknown as { __MF_STORE__: { getState: () => { project: { racks: Array<{ asicCount: number }> } } } }).__MF_STORE__.getState().project.racks[0]?.asicCount,
+      );
+      await mf(page, "inspector-rack-asic").fill("3.7");
+      await mf(page, "inspector-rack-asic").blur();
+      await mf(page, "inspector-dim-error").waitFor({ timeout: 4000 });
+      const afterC = await page.evaluate(
+        () => (window as unknown as { __MF_STORE__: { getState: () => { project: { racks: Array<{ asicCount: number }> } } } }).__MF_STORE__.getState().project.racks[0]?.asicCount,
+      );
+      assert.equal(afterC, beforeC);
+    } finally {
+      await ctx.close();
+    }
+  });
+});
+
 describe("console cleanliness", () => {
   it("no unexplained page errors", () => {
     const severe = errors.filter((e) => !/ResizeObserver|hydration|webkit fake|Importing a module script failed/i.test(e));

@@ -1,6 +1,52 @@
-import { PHASE_COUNT, SUPPLY_VOLTAGE_V } from "./constants.ts";
+import { MAX_AVAILABLE_POWER_W, MIN_AVAILABLE_POWER_W, PHASE_COUNT, SUPPLY_VOLTAGE_V } from "./constants.ts";
 import type { AsicSpec, CalcTrace, ElectricalSupply, Project } from "./types.ts";
-import { formatAmps, formatKw } from "./units.ts";
+import { formatAmps, formatKw, parsePowerInputToWatts } from "./units.ts";
+
+export type PowerOk = { ok: true; watts: number };
+export type PowerErr = {
+  ok: false;
+  code: "BLANK" | "PARSE" | "NAN" | "INFINITY" | "NEGATIVE" | "ZERO" | "MIN" | "MAX";
+  reason: string;
+};
+export type PowerResult = PowerOk | PowerErr;
+
+function fmtKw(w: number): string {
+  return (w / 1000).toFixed(w % 1000 === 0 ? 0 : 3).replace(".", ",");
+}
+
+export function validateAvailablePowerW(watts: number): PowerResult {
+  if (Number.isNaN(watts)) {
+    return { ok: false, code: "NAN", reason: "Некорректная мощность." };
+  }
+  if (!Number.isFinite(watts)) {
+    return { ok: false, code: "INFINITY", reason: "Мощность должна быть конечным числом." };
+  }
+  if (watts < 0) {
+    return { ok: false, code: "NEGATIVE", reason: "Мощность не может быть отрицательной." };
+  }
+  if (watts === 0) {
+    return { ok: false, code: "ZERO", reason: "Укажите выделенную мощность больше нуля." };
+  }
+  if (watts < MIN_AVAILABLE_POWER_W) {
+    return { ok: false, code: "MIN", reason: `Минимальная мощность — ${fmtKw(MIN_AVAILABLE_POWER_W)} kW.` };
+  }
+  if (watts > MAX_AVAILABLE_POWER_W) {
+    return { ok: false, code: "MAX", reason: `Максимальная мощность — ${fmtKw(MAX_AVAILABLE_POWER_W)} kW.` };
+  }
+  return { ok: true, watts };
+}
+
+/** Inspector field is labelled kW; bare numbers default to kW. */
+export function validateAvailablePowerInput(raw: string, defaultUnit: "W" | "kW" = "kW"): PowerResult {
+  if (!raw.trim()) {
+    return { ok: false, code: "BLANK", reason: "Введите мощность." };
+  }
+  const watts = parsePowerInputToWatts(raw, defaultUnit);
+  if (watts == null) {
+    return { ok: false, code: "PARSE", reason: "Некорректная мощность." };
+  }
+  return validateAvailablePowerW(watts);
+}
 
 export function typicalCurrentA(asic: AsicSpec, voltageV = SUPPLY_VOLTAGE_V): number {
   return asic.typicalPowerW / voltageV;

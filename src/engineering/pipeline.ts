@@ -2,7 +2,7 @@ import { AIR_CP_J_KG_K, AIR_DENSITY_KG_M3 } from "./constants.ts";
 import { calculateCapacity, theoreticalSpaceCapacity } from "./capacity.ts";
 import { calculateElectrical } from "./electrical.ts";
 import { evaluateProjectFans } from "./fans.ts";
-import { analyzeGeometry, analyzeOpenings } from "./geometry.ts";
+import { analyzeGeometry, analyzeOpenings, validExhaustAvailable, validIntakeAvailable } from "./geometry.ts";
 import { defaultRackTemplate } from "./layout.ts";
 import { calculatePressure, resolvedVentComponents } from "./pressure.ts";
 import { analyzeRacks, rackAsicCapacity } from "./racks.ts";
@@ -45,18 +45,15 @@ export function calculateAll(project: Project, catalogs: Catalogs): EngineeringR
   const electrical = calculateElectrical(project, asic);
   const thermal = calculateThermal(project, asic, electrical.typicalTotalW);
   const components = resolvedVentComponents(project);
-  const extraDirty = project.ventilation.dirtyFilter ? project.ventilation.dirtyFilterExtraPa : 0;
-  const compsForPressure = components.map((c) =>
-    extraDirty && c.kind === "filter" ? { ...c, extraPressurePa: c.extraPressurePa + extraDirty } : c,
-  );
   const pressure = calculatePressure(
-    { ...project, ventilation: { ...project.ventilation, components: compsForPressure } },
+    { ...project, ventilation: { ...project.ventilation, components } },
     thermal.designAirflowM3h || 1,
   );
   const fan = evaluateProjectFans(project, catalogs.fans, components, thermal.designAirflowM3h);
   const racks = analyzeRacks(project, asic);
 
-  const exhaustOk = project.openings.some((o) => o.type === "EXHAUST" || o.type === "SHAFT_CONNECTION");
+  const exhaustOk = validExhaustAvailable(project, openings);
+  const intakeOk = validIntakeAvailable(project, openings);
   const warnings: Warning[] = [];
 
   if (!geometry.valid) {
@@ -92,6 +89,14 @@ export function calculateAll(project: Project, catalogs: Catalogs): EngineeringR
       severity: "BLOCKER",
       title: "No exhaust path",
       detail: "Add an exhaust opening or shaft connection.",
+    });
+  }
+  if (!intakeOk) {
+    warnings.push({
+      id: "no-intake",
+      severity: "BLOCKER",
+      title: "No intake path",
+      detail: "Add a valid intake opening. Ventilation SAFE cannot be verified without usable intake.",
     });
   }
   if (project.fans.length === 0) {
@@ -162,6 +167,15 @@ export function calculateAll(project: Project, catalogs: Catalogs): EngineeringR
       detail: h.reason,
     });
   }
+  for (const h of racks.clearanceHits) {
+    warnings.push({
+      id: `clear-${h.id}-${warnings.length}`,
+      severity: "CRITICAL",
+      objectId: h.id,
+      title: "Service / aisle conflict",
+      detail: h.reason,
+    });
+  }
   for (const r of racks.recirculation) {
     warnings.push({
       id: `recirc-${r.from}-${r.to}`,
@@ -194,7 +208,8 @@ export function calculateAll(project: Project, catalogs: Catalogs): EngineeringR
   const perTmpl = asic ? rackAsicCapacity(dummyRack, asic) : 0;
   const spaceN = asic
     ? theoreticalSpaceCapacity(
-        geometry.floorAreaM2,
+        project.room.widthM,
+        project.room.depthM,
         dummyRack.widthM,
         dummyRack.depthM,
         perTmpl,
@@ -219,6 +234,21 @@ export function calculateAll(project: Project, catalogs: Catalogs): EngineeringR
     project.electrical.policy === "design" ? electrical.maxByDesign : electrical.maxByTypical;
 
   const qPer = asic ? requiredAirflowPerAsicM3h(asic, project.thermal.deltaTK) : 0;
+
+  const hasCriticalConflict =
+    racks.collisions.length > 0 ||
+    racks.wallHits.length > 0 ||
+    racks.doorHits.length > 0 ||
+    racks.asBuiltHits.length > 0 ||
+    racks.ceilingHits.some((h) => project.racks.some((r) => r.id === h.id)) ||
+    racks.clearanceHits.length > 0;
+  const hasBlocker =
+    !geometry.valid ||
+    !openings.valid ||
+    !asic ||
+    !exhaustOk ||
+    !intakeOk ||
+    openings.items.some((i) => i.errors.length > 0);
 
   const capacity = calculateCapacity({
     requested: project.fleet.requestedCount,
@@ -275,7 +305,7 @@ export function calculateAll(project: Project, catalogs: Catalogs): EngineeringR
     maxByRack: project.racks.length ? racks.usableCapacity : spaceN,
     rackKnown: true,
     rackDetail: project.racks.length
-      ? `${racks.usableCapacity} usable ASIC on ${project.racks.length} rack(s) (${racks.totalCapacity} shelf capacity, ${racks.totalCapacity - racks.usableCapacity} blocked by 3D conflict).`
+      ? `${racks.usableCapacity} usable ASIC on ${project.racks.length} rack(s) (${racks.totalCapacity} shelf capacity, ${racks.totalCapacity - racks.usableCapacity} blocked by 3D/clearance conflict).`
       : "No racks placed — using theoretical space packing.",
     rackTrace: racks.perRackCapacity.map((r) => ({
       id: r.id,
@@ -291,8 +321,12 @@ export function calculateAll(project: Project, catalogs: Catalogs): EngineeringR
     geometryValid: geometry.valid,
     asicKnown: asic != null,
     exhaustKnown: exhaustOk,
+    intakeKnown: intakeOk,
+    openingsValid: openings.valid,
     fanKnown: project.fans.length > 0 && fan.operatingQ_m3h != null,
     floorUnknown: project.constraints.floorLoadingUnknown,
+    hasBlocker,
+    hasCriticalConflict,
   });
 
   const missing = [
@@ -300,6 +334,7 @@ export function calculateAll(project: Project, catalogs: Catalogs): EngineeringR
     { key: "ASIC_MODEL", complete: asic != null, impact: 10, question: "Какая модель ASIC?" },
     { key: "ELECTRICAL_POWER", complete: project.electrical.known && project.electrical.availablePowerW > 0, impact: 9, question: "Какая выделенная электрическая мощность?" },
     { key: "EXHAUST_PATH", complete: exhaustOk, impact: 9, question: "Где вытяжной проём и шахта?" },
+    { key: "INTAKE_PATH", complete: intakeOk, impact: 9, question: "Где приточный проём?" },
     { key: "FAN", complete: project.fans.length > 0, impact: 8, question: "Какой вентилятор установлен или планируется?" },
     { key: "DELTA_T", complete: project.thermal.deltaTK > 0, impact: 5, question: "Какой расчётный перепад температуры ΔT?" },
     { key: "FLOOR_LOADING", complete: !project.constraints.floorLoadingUnknown, impact: 4, question: "Какая допустимая нагрузка на перекрытие?" },

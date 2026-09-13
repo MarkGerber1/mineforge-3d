@@ -35,7 +35,18 @@ export const DEFAULT_AISLE_M = 1.0;
 
 export const MIN_ROOM_DIM_M = 0.5;
 export const MAX_ROOM_DIM_M = 200;
+export const MAX_ROOM_HEIGHT_M = 50;
 export const MAX_SHAFT_LENGTH_M = 250;
+
+/** Geometric availability floor for intake/exhaust. Not an airflow calculation. */
+export const MIN_USABLE_OPENING_AREA_M2 = 0.05;
+
+/** Electrical available-power domain (Inspector kW field commits watts). */
+export const MIN_AVAILABLE_POWER_W = 1000;
+export const MAX_AVAILABLE_POWER_W = 10_000_000;
+
+/** Absolute asicCount domain; per-rack capacity is an additional cap when ASIC is known. */
+export const MAX_RACK_ASIC_COUNT = 10_000;
 
 export const SNAP_MODES_M = {
   "1mm": 0.001,

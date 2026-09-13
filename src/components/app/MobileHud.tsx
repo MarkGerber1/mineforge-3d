@@ -1,5 +1,6 @@
 import { useLiveProject, useLiveResult, useProjectStore } from "@/project/store";
 import { formatKw, formatM3h } from "@/engineering/units";
+import { HUD_SAFETY_LABEL_RU } from "@/engineering/capacity";
 import { FAILURE_LABELS } from "@/ai/failure";
 import { cn } from "@/lib/utils";
 
@@ -7,7 +8,9 @@ export function MobileHud() {
   const p = useLiveProject();
   const r = useLiveResult();
   const store = useProjectStore();
-  const warn = r.capacity.safe != null && p.fleet.requestedCount > r.capacity.safe;
+  const safety = r.capacity.safety;
+  const verifiedGreen = r.capacity.verified;
+  const safetyTone = verifiedGreen ? "text-ok" : safety === "OVER_CAPACITY" || safety === "PRELIMINARY" ? "text-warn" : "text-crit";
   const crit = r.warnings.filter((w) => w.severity === "BLOCKER" || w.severity === "CRITICAL").length;
   const sim = store.failureSim !== "none";
   return (
@@ -21,9 +24,18 @@ export function MobileHud() {
         }}
       >
         <span className="truncate text-[10px] uppercase tracking-[0.12em] text-muted">
-          {sim ? FAILURE_LABELS[store.failureSim] : "Запрошено / допустимо"}
+          {sim ? FAILURE_LABELS[store.failureSim] : HUD_SAFETY_LABEL_RU[safety]}
         </span>
-        <span className={cn("font-mono text-[18px] tabular leading-tight", (warn || sim) && "text-warn")} data-mf-id="hud-safe" data-mf-requested={p.fleet.requestedCount} data-mf-safe={r.capacity.safe ?? ""}>
+        <span
+          className={cn("font-mono text-[18px] tabular leading-tight", safetyTone)}
+          data-mf-id="hud-safe"
+          data-mf-hud="mobile"
+          data-mf-requested={p.fleet.requestedCount}
+          data-mf-safe={r.capacity.safe ?? ""}
+          data-mf-confidence={r.capacity.confidence}
+          data-mf-safety={safety}
+          data-mf-verified={verifiedGreen ? "1" : "0"}
+        >
           {p.fleet.requestedCount} / {r.capacity.safe ?? "—"}
         </span>
       </button>
@@ -49,8 +61,8 @@ export function MobileHud() {
         onClick={() => store.openSheet("why", "half")}
       >
         <span className="truncate text-[10px] uppercase tracking-[0.1em] text-muted">{crit ? `CRIT ${crit}` : "Узкое"}</span>
-        <span className={cn("truncate font-mono text-[11px]", warn ? "text-crit" : "text-ok")}>
-          {r.capacity.bottlenecks[0] ?? r.capacity.status}
+        <span className={cn("truncate font-mono text-[11px]", safetyTone)}>
+          {HUD_SAFETY_LABEL_RU[safety]}
         </span>
       </button>
     </div>

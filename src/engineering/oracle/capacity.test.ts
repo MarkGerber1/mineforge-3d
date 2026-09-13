@@ -32,8 +32,12 @@ function pack(partial: {
     geometryValid: true,
     asicKnown: true,
     exhaustKnown: true,
+    intakeKnown: true,
+    openingsValid: true,
     fanKnown: true,
     floorUnknown: false,
+    hasBlocker: false,
+    hasCriticalConflict: false,
   });
 }
 

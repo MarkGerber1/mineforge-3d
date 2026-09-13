@@ -1,4 +1,4 @@
-import type { ComponentLoss, Project, VentComponent } from "./types.ts";
+import type { CalcTrace, ComponentLoss, Project, VentComponent } from "./types.ts";
 import {
   crossSectionAreaM2,
   dynamicPressurePa,
@@ -49,41 +49,55 @@ export function systemPressurePa(components: VentComponent[], flowM3h: number, e
 }
 
 export function calculatePressure(project: Project, designFlowM3h: number) {
-  const extra = project.ventilation.dirtyFilter ? project.ventilation.dirtyFilterExtraPa : 0;
-  const comps = project.ventilation.components.map((c) =>
-    c.kind === "filter" && project.ventilation.dirtyFilter
-      ? { ...c, extraPressurePa: c.extraPressurePa + extra }
-      : extra && c.kind === "filter"
-        ? c
-        : c,
-  );
+  const extra = dirtyFilterPenaltyPa(project);
+  const comps = project.ventilation.components;
   const flow = designFlowM3h > 0 ? designFlowM3h : 1;
   const components = networkLosses(comps, flow);
-  const totalPa = components.reduce((s, x) => s + x.totalPa, 0);
+  const networkPa = components.reduce((s, x) => s + x.totalPa, 0);
+  const totalPa = networkPa + extra;
   const q2 = flow * flow;
-  const fixed = comps.reduce((s, c) => s + c.extraPressurePa, 0);
+  const fixed = comps.reduce((s, c) => s + c.extraPressurePa, 0) + extra;
   const systemK = q2 > 0 ? (totalPa - fixed) / q2 : 0;
+  const traces: CalcTrace[] = components.map((c) => ({
+    id: c.componentId,
+    label: c.name,
+    formula: "ΔP = f·L/Dh·Pv + K·Pv + P_extra",
+    inputs: {
+      flow_m3h: c.flowM3h,
+      v_ms: c.velocityMs,
+      Pv_Pa: c.dynamicPa,
+      f: 0,
+      L: 0,
+      Dh: c.dhM,
+    },
+    raw: c.totalPa,
+    unit: "Pa",
+    display: `${c.totalPa.toFixed(3)} Pa`,
+  }));
+  if (extra > 0) {
+    traces.push({
+      id: "dirty-filter",
+      label: "Dirty filter extra",
+      formula: "P_dirty = P_clean + dirtyFilterExtraPa (once)",
+      inputs: { extra_Pa: extra },
+      raw: extra,
+      unit: "Pa",
+      display: `${extra.toFixed(3)} Pa`,
+    });
+  }
   return {
     components,
     totalPa,
     systemK,
-    traces: components.map((c) => ({
-      id: c.componentId,
-      label: c.name,
-      formula: "ΔP = f·L/Dh·Pv + K·Pv + P_extra",
-      inputs: {
-        flow_m3h: c.flowM3h,
-        v_ms: c.velocityMs,
-        Pv_Pa: c.dynamicPa,
-        f: 0,
-        L: 0,
-        Dh: c.dhM,
-      },
-      raw: c.totalPa,
-      unit: "Pa",
-      display: `${c.totalPa.toFixed(3)} Pa`,
-    })),
+    dirtyExtraPa: extra,
+    traces,
   };
+}
+
+/** Canonical dirty-filter penalty. Applied once at the network, never per component. */
+export function dirtyFilterPenaltyPa(project: Project): number {
+  const on = project.ventilation.dirtyFilter || project.fans.some((f) => f.dirtyFilter);
+  return on ? project.ventilation.dirtyFilterExtraPa : 0;
 }
 
 export function resolvedVentComponents(project: Project): VentComponent[] {

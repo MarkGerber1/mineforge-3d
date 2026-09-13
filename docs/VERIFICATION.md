@@ -90,9 +90,8 @@ SAFE computed by the engine. Floor loading UNKNOWN → confidence PRELIMINARY.
 Continuity / recovery package: GitHub is the durable source of truth for non-secret source.
 Start at `AI_HANDOFF.md`. Operational recovery: `RECOVERY.md`. Machine metadata: `project-handoff.json`.
 
-QX-01 owner-experience repair (MFQ-001…006) is an implementation candidate on
-`repair/qx-01-owner-experience`. Developer does **not** self-accept. Status after
-merge: READY FOR INDEPENDENT QUALITY RETEST.
+QX-02A + QX-02A-R are merged on protected `main`. QX-02B is Engineering
+safety + SAFE fail-closed (candidate). Developer does **not** self-accept.
 
 Repair Batch 1 PASSED (SHA `8f5c9c0dd4909db51a28a2e14cff12b29c00b218`).
 Repair Batch 2 — Reality geometry pipeline (SHA `7c9f25ae31fab0fe501f542856210adfb7dcfb4c`).

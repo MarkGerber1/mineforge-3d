@@ -1,12 +1,15 @@
 import { useLiveProject, useLiveResult, useProjectStore } from "@/project/store";
 import { formatKw, formatM3h, formatPa, formatThs } from "@/engineering/units";
+import { HUD_SAFETY_LABEL_RU } from "@/engineering/capacity";
 import { cn } from "@/lib/utils";
 
 export function BottomBar() {
   const p = useLiveProject();
   const r = useLiveResult();
   const store = useProjectStore();
-  const safeWarn = r.capacity.safe != null && p.fleet.requestedCount > r.capacity.safe;
+  const safety = r.capacity.safety;
+  const verifiedGreen = r.capacity.verified;
+  const safetyTone = verifiedGreen ? "text-ok" : safety === "OVER_CAPACITY" || safety === "PRELIMINARY" ? "text-warn" : "text-crit";
   const openWhy = () => {
     store.setWhyOpen(true);
     store.setInspectorOpen(true);
@@ -15,13 +18,18 @@ export function BottomBar() {
     <footer className="hidden min-h-14 flex-nowrap items-stretch overflow-x-auto border-t border-border bg-surface md:flex" data-mf-id="bottombar">
       <button type="button" className="hud-chip min-w-[168px] shrink-0 text-left" onClick={openWhy}>
         <span className="k">Requested / Safe</span>
-        <span className={cn("v text-[18px]", safeWarn && "text-warn")}>
+        <span
+          className={cn("v text-[18px]", safetyTone)}
+          data-mf-id="hud-safe-bar"
+          data-mf-safety={safety}
+          data-mf-verified={verifiedGreen ? "1" : "0"}
+        >
           {p.fleet.requestedCount} / {r.capacity.safe ?? "—"}
         </span>
       </button>
       <button type="button" className="hud-chip shrink-0 text-left" onClick={openWhy}>
         <span className="k">Узкое место</span>
-        <span className={cn("v", safeWarn ? "text-crit" : "text-ok")}>{r.capacity.bottlenecks.join(" · ") || "—"}</span>
+        <span className={cn("v", safetyTone)}>{HUD_SAFETY_LABEL_RU[safety]} · {r.capacity.bottlenecks.join(" · ") || "—"}</span>
       </button>
       <div className="hud-chip hidden shrink-0 sm:flex">
         <span className="k">ASIC</span>

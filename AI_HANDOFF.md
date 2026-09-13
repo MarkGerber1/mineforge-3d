@@ -67,6 +67,14 @@ include failure overlay or drag preview) into canonical writes — use
 `resolveWallDragTarget` prefers nearest geometry over SVG hit-rect z-order;
 HistoryEntry stores Measure A/B with the project snapshot.
 
+QX-02B: SAFE fail-closed. Collision / wall / door / as-built / ceiling /
+service-aisle racks are not usable capacity. Intake is a required ventilation
+input. Invalid openings cannot satisfy exhaust/intake. HUD is VERIFIED /
+PRELIMINARY / INCOMPLETE / CRITICAL / OVER_CAPACITY — green only when
+verified. Power, height, and rack asicCount mutations fail closed. Dirty-filter
+Pa is applied once. Do not start QX-02C. Do not reopen QX-01 / QX-02A /
+FINAL-SEC.
+
 Evidence: [docs/FINAL-01.md](docs/FINAL-01.md).
 
 ## How to start work
