@@ -311,7 +311,7 @@ export function PhotoAnnotator({ photoId }: { photoId: string }) {
           </div>
         </div>
       </div>
-      <div className="flex flex-wrap gap-1 border-t border-border p-2">
+      <div className="sticky bottom-0 z-10 flex flex-wrap gap-1 border-t border-border bg-surface p-2">
         <input
           suppressHydrationWarning
           inputMode="decimal"

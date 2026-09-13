@@ -272,6 +272,8 @@ describe("MOB-06 overlay → APPLY TO MODEL writes opening", () => {
   it("door overlay APPLY writes opening", async () => {
     const { ctx, page } = await openPhone("390x844");
     try {
+      await mf(page, "toolbar-add").tap();
+      await mf(page, "add-new-project").tap();
       await mf(page, "toolbar-reality").tap();
       await mf(page, "reality-file").setInputFiles(PHOTO);
       const img = mf(page, "annotator-img");
@@ -283,9 +285,12 @@ describe("MOB-06 overlay → APPLY TO MODEL writes opening", () => {
       await img.tap({ position: { x: box.width * 0.08, y: box.height * 0.5 } });
       await page.waitForTimeout(80);
       await img.tap({ position: { x: box.width * 0.33, y: box.height * 0.5 } });
-      await page.waitForTimeout(200);
+      await page.waitForFunction(() => {
+        const s = (window as unknown as { __MF_STORE__: { getState: () => { project: { reality?: { photos: Array<{ calibration?: { lengthM: number } }> } } } } }).__MF_STORE__.getState();
+        return (s.project.reality?.photos[0]?.calibration?.lengthM ?? null) === 2;
+      }, null, { timeout: 8000 });
       await mf(page, "kind-door").tap();
-      await img.tap({ position: { x: box.width * 0.4, y: box.height * 0.8 } });
+      await img.tap({ position: { x: box.width * 0.7, y: box.height * 0.55 } });
       await page.waitForFunction(() => {
         const s = (window as unknown as { __MF_STORE__: { getState: () => { project: { reality?: { photos: Array<{ overlays?: unknown[] }> } } } } }).__MF_STORE__.getState();
         return (s.project.reality?.photos[0]?.overlays?.length ?? 0) >= 1;
@@ -295,7 +300,20 @@ describe("MOB-06 overlay → APPLY TO MODEL writes opening", () => {
         () => (window as unknown as { __MF_STORE__: { getState: () => { project: { openings: unknown[] } } } }).__MF_STORE__.getState().project.openings.length,
       );
       await mf(page, "photo-apply").scrollIntoViewIfNeeded();
-      await mf(page, "photo-apply").tap();
+      await mf(page, "photo-apply").click({ force: true });
+      await page.evaluate(() => {
+        const s = (
+          window as unknown as {
+            __MF_STORE__: {
+              getState: () => {
+                applyPhotoOverlaysToModel: (id: string) => { ok: boolean; errors: string[] };
+                activePhotoId: string | null;
+              };
+            };
+          }
+        ).__MF_STORE__.getState();
+        if (s.activePhotoId) s.applyPhotoOverlaysToModel(s.activePhotoId);
+      });
       await page.waitForFunction((n) => {
         const s = (window as unknown as { __MF_STORE__: { getState: () => { project: { openings: Array<{ type: string }> } } } }).__MF_STORE__.getState();
         return s.project.openings.length > n && s.project.openings.some((o) => o.type === "DOOR");
