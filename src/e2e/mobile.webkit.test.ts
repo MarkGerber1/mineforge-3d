@@ -1494,14 +1494,15 @@ describe("QX-02B HUD + numeric fail-closed", () => {
       await page.evaluate(() => {
         const s = (window as unknown as { __MF_STORE__: { getState: () => {
           project: { racks: Array<Record<string, unknown>>; fleet: { requestedCount: number } };
-          loadProject: (p: unknown) => void;
+          loadProject: (p: unknown) => { ok: boolean; reason?: string };
         } } }).__MF_STORE__.getState();
         const p = structuredClone(s.project) as typeof s.project;
-        const a = { ...(p.racks[0] ?? {}), id: "c1", name: "c1", x: 2, y: 2 };
-        const b = { ...a, id: "c2", name: "c2", x: 2.2, y: 2 };
+        const a = { ...(p.racks[0] ?? {}), id: "c1", name: "c1", x: 2, y: 2, asicCount: 0 };
+        const b = { ...a, id: "c2", name: "c2", x: 2.2, y: 2, asicCount: 0 };
         p.racks = [a, b];
         p.fleet.requestedCount = 1;
-        s.loadProject(p);
+        const res = s.loadProject(p);
+        if (!res.ok) throw new Error(res.reason ?? "collision fixture rejected");
       });
       await waitHudSafety(page, "mobile", "CRITICAL");
       const safety = await hudMobile(page).getAttribute("data-mf-safety");
