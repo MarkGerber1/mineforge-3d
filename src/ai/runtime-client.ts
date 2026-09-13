@@ -1,5 +1,6 @@
 export type RuntimeMode = "unknown" | "server" | "static";
 export type RuntimeRole = "anonymous" | "user" | "owner";
+export type RateLimitProtection = "local-process" | "shared" | "none";
 
 export interface RuntimeSnapshot {
   mode: RuntimeMode;
@@ -10,6 +11,7 @@ export interface RuntimeSnapshot {
   sha?: string;
   buildId?: string;
   instanceModel?: "single-instance" | "multi-instance";
+  rateLimitProtection?: RateLimitProtection;
 }
 
 export const STATIC_RUNTIME: RuntimeSnapshot = {
@@ -18,6 +20,7 @@ export const STATIC_RUNTIME: RuntimeSnapshot = {
   available: false,
   appEditEnabled: false,
   role: "anonymous",
+  rateLimitProtection: "none",
 };
 
 export function parseRuntime(raw: unknown): RuntimeSnapshot | null {
@@ -33,6 +36,12 @@ export function parseRuntime(raw: unknown): RuntimeSnapshot | null {
     sha: typeof o.sha === "string" ? o.sha : undefined,
     buildId: typeof o.buildId === "string" ? o.buildId : undefined,
     instanceModel: o.instanceModel === "multi-instance" ? "multi-instance" : "single-instance",
+    rateLimitProtection:
+      o.rateLimitProtection === "shared" ||
+      o.rateLimitProtection === "local-process" ||
+      o.rateLimitProtection === "none"
+        ? o.rateLimitProtection
+        : undefined,
   };
 }
 

@@ -29,8 +29,13 @@ in release evidence when a real hostname exists. Until Owner publishes:
 ```
 { "mode": "server", "ai": true|false, "available": true|false,
   "appEditEnabled": false, "role": "anonymous", "sha": "<git sha>",
-  "buildId": "...", "instanceModel": "multi-instance" }
+  "buildId": "...", "instanceModel": "multi-instance",
+  "rateLimitProtection": "none" }
 ```
+
+`ai`/`available` are **usable** capability, not merely “key present”.
+Serverless without a shared limiter reports `ai=false` even if `XAI_API_KEY`
+exists.
 
 `sha` / `buildId` come from `MF_DEPLOY_SHA`, `VERCEL_GIT_COMMIT_SHA`, or
 `GITHUB_SHA`.
@@ -39,15 +44,15 @@ Environment (server-only, never `VITE_`):
 
 | Variable | Role |
 | --- | --- |
-| `XAI_API_KEY` | xAI. Absence ⇒ AI OFFLINE. Never sent to the browser. |
-| `APP_EDIT_ENABLED` | Workspace preview flag. Ignored (forced off) when `GROK_PROJECT_ID` is set. |
+| `XAI_API_KEY` | xAI. Server-only. On serverless without a shared limiter, public Grok stays OFFLINE even if the key is present. |
+| `APP_EDIT_ENABLED` | Workspace preview flag. Ignored (forced off) when `isServerlessProduction` (`GROK_PROJECT_ID` or `VERCEL=1`/`true`). |
 | `APP_EDIT_OWNER_SECRET` | Owner passphrase. Compared server-side only. |
 | `APP_EDIT_USER_SECRET` | Standard-user passphrase (tests / reduced role). |
 | `APP_EDIT_SESSION_SECRET` | HMAC key for the httpOnly `mf_priv` cookie. |
 | `RATE_LIMIT_TRUST` | `vercel` on grok.me/Vercel; `local` in workspace; `cloudflare` only behind a claimed Named Tunnel. `auto` + `VERCEL=1` → vercel. `auto` never trusts spoofable CF headers. |
 | `MF_DEPLOY_SHA` | Exact deployed git SHA exposed on `/api/runtime`. |
-| `GROK_PROJECT_ID` | Set by Grok Build / Vercel publish. Presence ⇒ App Edit off, instanceModel multi-instance. |
-| `VERCEL` | Platform `1` on Vercel. Selects vercel rate-limit identity. |
+| `GROK_PROJECT_ID` | Set by Grok Build publish. Presence ⇒ serverless production. |
+| `VERCEL` | Platform `1`/`true` on Vercel. Selects vercel rate-limit identity **and** serverless fail-closed policy (App Edit off, public AI off until a shared limiter exists). |
 | `PRODUCTION_INSTANCE_MODEL` | Explicit override. Default multi-instance on serverless, single-instance on the worktree process. |
 | `CLOUDFLARE_TUNNEL_TOKEN` | Named Tunnel token. **Deferred / unused.** Absence is correct. |
 | `CANONICAL_FULLSTACK_URL` | Optional recorded public origin. Empty until Owner publishes. |
@@ -58,23 +63,27 @@ Workspace preview is a **persistent git worktree process** (filesystem, git,
 child processes, isolated preview). `APP_EDIT_ENABLED=true` is valid **there**.
 Authorization / isolation gates from Batch 1 remain required.
 
-On grok.me / Vercel / any host with `GROK_PROJECT_ID`: App Edit is **forced
-off** even if `APP_EDIT_ENABLED=true`. UI copy: Application Edit unavailable /
+On grok.me / Vercel / any host matching `isServerlessProduction` (`GROK_PROJECT_ID`
+**or** `VERCEL=1`/`true`): App Edit is **forced off** even if
+`APP_EDIT_ENABLED=true`. UI copy: Application Edit unavailable /
 APP EDIT DISABLED. A secure disabled capability is acceptable. A fake working
 button is not.
 
 ### Rate-limit topology
 
-Serverless is **multi-instance**. Process-local memory buckets are a best-effort
-per-instance limiter, not a shared store. Client identity on Vercel is
-`x-real-ip` then `x-vercel-forwarded-for` (validated IPv4/IPv6). First
-`X-Forwarded-For` is never the key. Cloudflare `CF-Connecting-IP` is used
-**only** when `RATE_LIMIT_TRUST=cloudflare` (Named Tunnel). Presence of CF
-headers on a non-Cloudflare host is spoofable and is ignored.
+Serverless is **multi-instance**. Process-local memory buckets are **not**
+a production-wide quota. Public Grok AI on that host is **fail-closed**
+(OPTION B) until a real shared limiter exists (none is implemented).
 
-Rate limits: Grok 20/60s, login 8/60s, App Edit mutations 30/60s.
+Client identity on Vercel is `x-real-ip` then `x-vercel-forwarded-for`
+(validated IPv4/IPv6). First `X-Forwarded-For` is never the key. Cloudflare
+`CF-Connecting-IP` is used **only** when `RATE_LIMIT_TRUST=cloudflare`
+(Named Tunnel). Presence of CF headers on a non-Cloudflare host is spoofable
+and is ignored.
 
-Workspace preview: `PRODUCTION_INSTANCE_MODEL=single-instance`,
+Workspace preview: process-local limiter is valid (`rateLimitProtection=
+local-process`). Rate limits there: Grok 20/60s, login 8/60s, App Edit
+mutations 30/60s. `PRODUCTION_INSTANCE_MODEL=single-instance`,
 `RATE_LIMIT_TRUST=local`.
 
 ## Static CAD surface (GitHub Pages) — demo only

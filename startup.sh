@@ -2,9 +2,9 @@
 set -eu
 cd /workspace
 # Privileged Application Edit is deny-by-default. Workspace preview (no
-# GROK_PROJECT_ID) may enable the capability flag; mutating endpoints still
+# serverless marker) may enable the capability flag; mutating endpoints still
 # require an owner session. grok.me / Vercel always force the flag off.
-if [ -n "${GROK_PROJECT_ID:-}" ]; then
+if [ -n "${GROK_PROJECT_ID:-}" ] || [ "${VERCEL:-}" = "1" ] || [ "${VERCEL:-}" = "true" ]; then
   export APP_EDIT_ENABLED=false
 else
   export APP_EDIT_ENABLED="${APP_EDIT_ENABLED:-true}"

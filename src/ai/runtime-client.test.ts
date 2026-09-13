@@ -12,11 +12,24 @@ describe("runtime client static vs server", () => {
     assert.equal(STATIC_RUNTIME.appEditEnabled, false);
   });
   it("accepts server snapshot", () => {
-    const s = parseRuntime({ mode: "server", ai: true, available: true, appEditEnabled: false, role: "anonymous" });
+    const s = parseRuntime({
+      mode: "server",
+      ai: false,
+      available: false,
+      appEditEnabled: false,
+      role: "anonymous",
+      rateLimitProtection: "none",
+    });
     assert.ok(s);
     assert.equal(s!.mode, "server");
-    assert.equal(s!.ai, true);
+    assert.equal(s!.ai, false);
     assert.equal(s!.appEditEnabled, false);
+    assert.equal(s!.rateLimitProtection, "none");
+  });
+  it("does not invent shared limiter from junk", () => {
+    const s = parseRuntime({ mode: "server", ai: true, available: true, rateLimitProtection: "global-map" });
+    assert.ok(s);
+    assert.equal(s!.rateLimitProtection, undefined);
   });
 });
 

@@ -24,12 +24,26 @@ export function getGrokProviderCalls(): number {
 
 export async function executeGrokEngineer(
   data: GrokInput,
-  opts: { ip?: string; fetchImpl?: typeof fetch } = {},
+  opts: { ip?: string; fetchImpl?: typeof fetch; env?: NodeJS.ProcessEnv } = {},
 ) {
   const intent = routeIntent(data.message, {
     hasPhotos: Boolean(data.images?.length) || data.realitySummary.includes("photos:"),
     pickedUi: Boolean(data.pickedUi),
   });
+
+  const env = opts.env ?? process.env;
+  const { isAppEditEnabled, publicAiAvailable } = await import("./privilege.server.ts");
+
+  // OPTION B: multi-instance / serverless without a shared limiter must not
+  // call xAI even when XAI_API_KEY is present. Fail closed before provider.
+  if (!publicAiAvailable(env)) {
+    return {
+      ok: false as const,
+      offline: true,
+      intent,
+      error: "AI OFFLINE — инженерное ядро, CAD и локальный проект работают без сети.",
+    };
+  }
 
   const ip = opts.ip ?? (await clientIpFromRequest());
   const lim = allow(`grok:${ip}`, LIMITS.grok);
@@ -44,7 +58,7 @@ export async function executeGrokEngineer(
     };
   }
 
-  const apiKey = process.env.XAI_API_KEY;
+  const apiKey = (env.XAI_API_KEY ?? "").trim();
 
   if (!apiKey) {
     return {
@@ -55,8 +69,7 @@ export async function executeGrokEngineer(
     };
   }
 
-  const { isAppEditEnabled } = await import("./privilege.server.ts");
-  const appEditOn = isAppEditEnabled();
+  const appEditOn = isAppEditEnabled(env);
 
   const tools = [
     {

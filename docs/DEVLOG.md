@@ -145,3 +145,18 @@ main). Branch `release/final-01-production-policy`.
 - CI follow-up: QX invalid-dim WebKit click uses the same visible/retry path as
   `editWallDim` (375×812 east label miss). Product reject semantics unchanged.
 
+## FINAL-01R — serverless production safety
+
+Starting SHA `37eef679e4b027abda37c0a494613130d23eabe1`. Branch
+`repair/final-01r-serverless-safety`.
+
+- FINAL-SEC-001: shared `isServerlessProduction` (`GROK_PROJECT_ID` **or**
+  `VERCEL=1`/`true`). App Edit fail-closed on Vercel-only (empty project id).
+- FINAL-SEC-002 OPTION B: no shared limiter implemented. Multi-instance public
+  Grok AI fail-closed before xAI call even if `XAI_API_KEY` is set. Runtime
+  `ai`/`available` report usable capability. `rateLimitProtection` is never
+  advertised as shared. Workspace single-instance + key keeps existing Grok.
+- CAD / Engineering Core unchanged. No publish, no tunnels, no iPhone.
+- Does not reopen MFQ-001…006. Does not declare FINAL PASSED.
+
+

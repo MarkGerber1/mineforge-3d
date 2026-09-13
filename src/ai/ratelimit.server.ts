@@ -1,12 +1,17 @@
 /**
  * Process-local rate limiter. Fail-closed: any internal error denies the request.
- * Single-instance preview: in-memory buckets. Multi-instance production needs a shared store.
+ *
+ * Valid ONLY on a single persistent process (workspace preview).
+ * This Map is NOT production-wide protection across serverless instances.
+ * Public Grok AI on multi-instance hosts is fail-closed unless a shared limiter exists
+ * (none is implemented — see runtime-policy.server.ts).
  *
  * Client identity is taken only from a trusted source for the deployment
  * architecture. Attacker-controlled X-Forwarded-For first hops are never keys.
  */
 
 import { isIP } from "node:net";
+import { isVercelRuntime } from "./runtime-policy.server.ts";
 
 export interface LimitConfig {
   max: number;
@@ -91,11 +96,6 @@ export function validClientIp(raw: string | undefined | null): string | undefine
   if (!s || s.length > MAX_IP_CHARS) return undefined;
   if (/[,\s\r\n]/.test(s)) return undefined;
   return isIP(s) ? s : undefined;
-}
-
-function isVercelRuntime(env: NodeJS.ProcessEnv): boolean {
-  const v = (env.VERCEL ?? "").trim().toLowerCase();
-  return v === "1" || v === "true";
 }
 
 function resolveTrust(mode: TrustMode, env: NodeJS.ProcessEnv = process.env): TrustMode {

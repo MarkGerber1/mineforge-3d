@@ -1,5 +1,11 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { spawnSync } from "node:child_process";
+import {
+  isServerlessProduction,
+  publicAiAvailable,
+  rateLimitProtectionKind,
+  type RateLimitProtection,
+} from "./runtime-policy.server.ts";
 
 export type ActorRole = "anonymous" | "user" | "owner";
 
@@ -18,11 +24,13 @@ const ANON: Actor = { sub: "anonymous", role: "anonymous" };
 const PUBLIC_401 = "Unauthorized";
 const PUBLIC_403 = "Forbidden";
 
+export { isServerlessProduction, publicAiAvailable, rateLimitProtectionKind };
+export type { RateLimitProtection };
+
 export function isAppEditEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  // grok.me / Vercel / any Grok Build publish sets GROK_PROJECT_ID. Isolated
-  // git worktrees, child processes and App Edit preview are not available on
-  // that architecture — never advertise a fake working editor.
-  if ((env.GROK_PROJECT_ID ?? "").trim()) return false;
+  // Isolated git worktrees are not available on serverless production.
+  // VERCEL=1 with empty GROK_PROJECT_ID must still fail closed.
+  if (isServerlessProduction(env)) return false;
   const v = (env.APP_EDIT_ENABLED ?? "").trim().toLowerCase();
   return v === "true" || v === "1" || v === "on";
 }
@@ -175,9 +183,7 @@ export function advertisedInstanceModel(
   const explicit = (env.PRODUCTION_INSTANCE_MODEL ?? "").trim().toLowerCase();
   if (explicit === "multi-instance") return "multi-instance";
   if (explicit === "single-instance") return "single-instance";
-  const vercel = (env.VERCEL ?? "").trim().toLowerCase();
-  if (vercel === "1" || vercel === "true") return "multi-instance";
-  if ((env.GROK_PROJECT_ID ?? "").trim()) return "multi-instance";
+  if (isServerlessProduction(env)) return "multi-instance";
   return "single-instance";
 }
 
@@ -192,11 +198,12 @@ export function runtimeSnapshot(
   sha: string;
   buildId: string;
   instanceModel: "single-instance" | "multi-instance";
+  rateLimitProtection: RateLimitProtection;
 } {
   const env = input.env ?? process.env;
   const enabled = isAppEditEnabled(env);
   const session = verifySession(parseCookieHeader(input.cookieHeader, PRIV_COOKIE), sessionSecret(env));
-  const ai = Boolean(env.XAI_API_KEY);
+  const ai = publicAiAvailable(env);
   const id = deployedIdentity(env);
   return {
     mode: "server",
@@ -207,6 +214,7 @@ export function runtimeSnapshot(
     sha: id.sha,
     buildId: id.buildId,
     instanceModel: advertisedInstanceModel(env),
+    rateLimitProtection: rateLimitProtectionKind(env),
   };
 }
 
