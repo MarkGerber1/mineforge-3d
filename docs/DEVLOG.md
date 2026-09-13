@@ -142,4 +142,6 @@ main). Branch `release/final-01-production-policy`.
   (`*.grok.me`) or Vercel. Physical iPhone is WAITING_FOR_OWNER.
 - Evidence: `docs/FINAL-01.md`, `docs/final-01.json`. Does not declare FINAL
   PASSED. Does not reopen MFQ-001…006.
+- CI follow-up: QX invalid-dim WebKit click uses the same visible/retry path as
+  `editWallDim` (375×812 east label miss). Product reject semantics unchanged.
 
