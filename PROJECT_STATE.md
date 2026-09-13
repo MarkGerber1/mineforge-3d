@@ -85,10 +85,17 @@ and does not reopen MFQ-001…006 or FINAL-SEC-001/002.
 
 QX-02B is merged on `main` (`b47dea6`). QX-02B-R is merged on `main`
 (`56d8b33`). QX-02B-R5 is merged on `main` (`492e50e`) — complete
-safety-numeric domain boundary. QX-02B-R6/R7 (this candidate) adds ASIC
-spec relations (`designPowerW >= typicalPowerW`), supply-voltage
-compatibility CRITICAL, and OPTION A floor payload as a real FLOOR SAFE
-slot. Does not start QX-02C. Does not publish. Does not declare FINAL PASSED.
+safety-numeric domain boundary. QX-02B-R6/R7 is merged on `main`
+(`c4f23f0`) — ASIC spec relations, supply-voltage CRITICAL, OPTION A
+floor payload as a real FLOOR SAFE slot. Owner-approved PHASE 1 floor
+meaning was introduced during QX-02B-R6/R7 (PR #20); it is not a
+historical claim about earlier builds. Floor calculation is unchanged.
+
+QX-02B-R8/R11 (this candidate) repairs four residuals without reopening
+R6/R7: ASIC frequency compatibility, ASIC trust/provenance control of
+VERIFIED, 1-phase vs 3-phase current topology, and placed ≤ requested
+inventory. Does not start QX-02C. Does not publish. Does not declare
+FINAL PASSED.
 
 ## Important historical SHAs
 

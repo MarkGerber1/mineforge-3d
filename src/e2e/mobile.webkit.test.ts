@@ -1394,13 +1394,20 @@ describe("QX-02B HUD + numeric fail-closed", () => {
         project: {
           constraints: { floorLoadingUnknown: boolean; maxFloorLoadPa?: number };
           fleet: { requestedCount: number };
+          racks: Array<{ asicCount: number }>;
         };
         loadProject: (p: unknown) => void;
       } } }).__MF_STORE__.getState();
-      const p = structuredClone(s.project) as typeof s.project & { constraints: { floorLoadingUnknown: boolean; maxFloorLoadPa?: number } };
+      const p = structuredClone(s.project) as typeof s.project & { constraints: { floorLoadingUnknown: boolean; maxFloorLoadPa?: number }; racks: Array<{ asicCount: number }> };
       p.constraints.floorLoadingUnknown = false;
       p.constraints.maxFloorLoadPa = 10_000;
       p.fleet.requestedCount = 24;
+      let left = 24;
+      p.racks = p.racks.map((r) => {
+        const n = Math.min(r.asicCount, left);
+        left -= n;
+        return { ...r, asicCount: n };
+      });
       s.loadProject(p);
     });
     await page.waitForFunction(

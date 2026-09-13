@@ -40,6 +40,9 @@ export interface CapacityInputs {
   floorUnknown: boolean;
   hasBlocker: boolean;
   hasCriticalConflict: boolean;
+  asicFinalSafeEligible?: boolean;
+  frequencyCapabilityKnown?: boolean;
+  topologyKnown?: boolean;
 }
 
 export function calculateCapacity(input: CapacityInputs) {
@@ -107,7 +110,15 @@ export function calculateCapacity(input: CapacityInputs) {
   let confidence: SafeConfidence = "VERIFIED";
   if (requiredMissing || input.hasBlocker) confidence = "INCOMPLETE";
   else if (input.hasCriticalConflict) confidence = "CRITICAL";
-  else if (input.floorUnknown || !input.fanKnown || !input.electricalKnown) confidence = "PRELIMINARY";
+  else if (
+    input.floorUnknown ||
+    !input.fanKnown ||
+    !input.electricalKnown ||
+    input.asicFinalSafeEligible === false ||
+    input.frequencyCapabilityKnown === false ||
+    input.topologyKnown === false
+  )
+    confidence = "PRELIMINARY";
 
   let status: ProjectStatus = "PASS";
   if (confidence === "INCOMPLETE") status = "INCOMPLETE";

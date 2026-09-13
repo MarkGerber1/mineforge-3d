@@ -15,6 +15,7 @@ import {
 } from "./constants.ts";
 import { validateAsicSpecRelations } from "./asic-spec.ts";
 import { validateAvailablePowerW } from "./electrical.ts";
+import { placedAsicCount, placedExceedsRequestedReason } from "./inventory.ts";
 import { resolveAsic, type Catalogs } from "./pipeline.ts";
 import { rackAsicCapacity, validateRackAsicCount } from "./racks.ts";
 import { validateRoomHeightM, validateRoomLengthM } from "./room-resize.ts";
@@ -301,6 +302,10 @@ export function validateCanonicalProjectDomains(project: Project, catalogs: Cata
   const req = validateRequestedCount(project.fleet.requestedCount);
   if (!req.ok) errors.push(req.reason);
   if (project.fleet.imported) validateImportedAsic(project.fleet.imported, errors);
+  const placed = placedAsicCount(project);
+  if (placed > project.fleet.requestedCount) {
+    errors.push(placedExceedsRequestedReason(placed, project.fleet.requestedCount));
+  }
 
   const asic = resolveAsic(project, catalogs);
   for (const r of project.racks) {

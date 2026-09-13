@@ -5,6 +5,8 @@ import { alignRacks, distributeRacks, duplicateRackOffset, generateAutoLayout, r
 import { originDeltaForWallResize, resizeRectangularRoom, validateOpening } from "../engineering/geometry.ts";
 import { validateCanonicalProjectDomains, validateRequestedCount } from "../engineering/canonical.ts";
 import { applyPatchValidated, type PartialProjectPatch } from "../engineering/upgrade.ts";
+import { grokImportedAsic } from "../engineering/asic-trust.ts";
+import { placedAsicCount, placedExceedsRequestedReason } from "../engineering/inventory.ts";
 import type { AppMode, EngineeringResult, Opening, Project, Rack, ViewMode, WallId } from "../engineering/types.ts";
 import { SNAP_MODES_M, type SnapMode } from "../engineering/constants.ts";
 import { undergroundParkingFarm } from "./factory.ts";
@@ -467,6 +469,12 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       return { ok: false, reason: check.reason };
     }
     const src = get().project;
+    const placed = placedAsicCount(src);
+    if (check.count < placed) {
+      const reason = placedExceedsRequestedReason(placed, check.count);
+      set({ lastMutationError: reason });
+      return { ok: false, reason };
+    }
     const next = { ...src, fleet: { ...src.fleet, asicId, requestedCount: check.count } };
     const domains = validateCanonicalProjectDomains(next, get().catalogs);
     if (!domains.ok) {
@@ -525,10 +533,17 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       set({ lastMutationError: check.reason });
       return { ok: false, reason: check.reason };
     }
+    const nextRacks = src.racks.map((r) => (r.id === id ? { ...r, asicCount: check.count } : r));
+    const nextPlaced = nextRacks.reduce((s, r) => s + r.asicCount, 0);
+    if (nextPlaced > src.fleet.requestedCount) {
+      const reason = placedExceedsRequestedReason(nextPlaced, src.fleet.requestedCount);
+      set({ lastMutationError: reason });
+      return { ok: false, reason };
+    }
     const ok = get().commit(
       {
         ...src,
-        racks: src.racks.map((r) => (r.id === id ? { ...r, asicCount: check.count } : r)),
+        racks: nextRacks,
       },
       "Set rack ASIC",
     );
@@ -592,7 +607,11 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   applyProposed() {
     const { proposed, project } = get();
     if (!proposed) return { ok: false, errors: ["Нет предложения."] };
-    const applied = applyPatchValidated(project, proposed.patch, get().catalogs);
+    let patch = proposed.patch;
+    if (proposed.fromGrok && patch.fleet?.imported) {
+      patch = { ...patch, fleet: { ...patch.fleet, imported: grokImportedAsic(patch.fleet.imported) } };
+    }
+    const applied = applyPatchValidated(project, patch, get().catalogs);
     if (!applied.ok) {
       set({ lastMutationError: applied.errors[0] ?? "Патч отклонён." });
       get().pushGrok({
@@ -655,6 +674,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     if (!id) return { ok: false, errors: ["Стойка не выбрана."] };
     const copy = duplicateRackOffset(src.racks, id);
     if (!copy) return { ok: false, errors: ["Стойка не найдена."] };
+    const placed = placedAsicCount(src);
+    if (placed + copy.asicCount > src.fleet.requestedCount) {
+      copy.asicCount = 0;
+    }
     const nextRacks = [...src.racks, copy];
     const v = validateRacksConfiguration(src, nextRacks, [copy.id]);
     if (!v.ok) {

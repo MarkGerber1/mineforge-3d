@@ -81,14 +81,16 @@ export function isSupportedRackRotationDeg(n: number): n is SupportedRackRotatio
 export const STANDARD_GRAVITY_M_S2 = 9.80665;
 
 /**
- * Documented PHASE 1 net equipment payload allowance used by fixtures that
- * declare floor loading as known.
+ * Owner-approved PHASE 1 contract introduced during QX-02B-R6/R7.
  *
- * CONTRACT (OPTION A): `constraints.maxFloorLoadPa` is the Owner-entered
- * allowable **net equipment payload pressure** (Pa) AFTER permanent structure
- * and rack dead load have been accounted for outside this model. Engineering
- * Core does not invent rack self-weight. Screening uses ASIC mass × g on the
- * demonstrated rack plan footprint only.
+ * `constraints.maxFloorLoadPa` is the Owner-entered allowable **net equipment
+ * payload pressure** (Pa) AFTER permanent structure and rack dead load have
+ * been accounted for outside this model. Engineering Core does not invent
+ * rack self-weight. Screening uses ASIC mass × g on the demonstrated rack
+ * plan footprint only.
+ *
+ * This meaning was introduced with PR #20; it is not a historical claim
+ * about earlier PHASE 1 builds.
  *
  * 10 kPa = 10 kN/m² ≈ 1020 kg/m² — a typical industrial live-load order of
  * magnitude, not a silent default and not an unbounded sentinel.

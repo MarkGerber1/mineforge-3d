@@ -32,6 +32,7 @@ export function MobileHud() {
           data-mf-hud="mobile"
           data-mf-requested={p.fleet.requestedCount}
           data-mf-safe={r.capacity.safe ?? ""}
+          data-mf-placed={r.inventory.placedAsicCount}
           data-mf-confidence={r.capacity.confidence}
           data-mf-safety={safety}
           data-mf-verified={verifiedGreen ? "1" : "0"}

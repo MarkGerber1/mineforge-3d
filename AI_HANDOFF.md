@@ -88,7 +88,21 @@ QX-02B-R6/R7: ASIC spec relations (`designPowerW >= typicalPowerW`) and
 supply-voltage compatibility (CRITICAL, maxByElectrical=0, Project still
 canonical). Floor loading OPTION A: `maxFloorLoadPa` is net equipment payload
 after dead load; FLOOR is a real SAFE slot; known floor requires a finite
-limit > 0. Do not start QX-02C. Do not reopen QX-01 / QX-02A / FINAL-SEC.
+limit > 0. Owner-approved PHASE 1 contract introduced during QX-02B-R6/R7
+(PR #20). Merged on `main` (`c4f23f0`).
+
+QX-02B-R8/R11: frequency compatibility (known range vs `frequencyHz`;
+unknown range → PRELIMINARY, mismatch → CRITICAL `asic-frequency-mismatch`,
+`maxByElectrical = 0`). ASIC trust: only `OFFICIAL_VERIFIED` and
+`VERIFIED_SECONDARY` may reach VERIFIED; `TEST_FIXTURE` / `USER_ENTERED` /
+`AI_FOUND_UNVERIFIED` / `ESTIMATED` stay PRELIMINARY. Grok cannot mint
+official trust on imported specs. Phase topology: `inputPhases` 1|3 from
+source; 1-phase uses `distributePhases()`, 3-phase loads all lines equally;
+unknown topology is not VERIFIED. Inventory: `placedAsicCount ≤ requestedCount`
+canonical; `engineeringDemandCount = max(requested, placed)` for electrical
+and thermal. Floor OPTION A calculation is not reopened.
+
+Do not start QX-02C. Do not reopen QX-01 / QX-02A / FINAL-SEC.
 
 Evidence: [docs/FINAL-01.md](docs/FINAL-01.md).
 

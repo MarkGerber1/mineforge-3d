@@ -25,6 +25,28 @@ export type HudSafetyKind = "VERIFIED" | "PRELIMINARY" | "INCOMPLETE" | "CRITICA
 
 export type BottleneckKind = "ELECTRICAL" | "VENTILATION" | "SPACE" | "RACK" | "FLOOR" | "USER" | "UNKNOWN";
 
+export type AsicInputPhases = 1 | 3;
+
+export type PhaseModel = "SINGLE_PHASE_DISTRIBUTED" | "THREE_PHASE_BALANCED" | "UNKNOWN";
+
+export type CurrentProvenance =
+  | "MANUFACTURER_NAMEPLATE"
+  | "CALCULATED_P_OVER_U"
+  | "CALCULATED_THREE_PHASE_SCREENING"
+  | "UNKNOWN";
+
+export interface AsicTrustDecision {
+  level: TrustLevel | null;
+  finalSafeEligible: boolean;
+  reason: string;
+}
+
+export interface InventoryCounts {
+  requestedCount: number;
+  placedAsicCount: number;
+  engineeringDemandCount: number;
+}
+
 export interface DataSource {
   label: string;
   url?: string;
@@ -53,6 +75,11 @@ export interface AsicSpec {
   voltageMin: number;
   voltageMax: number;
   currentA?: number;
+  /** Proven manufacturer input-frequency capability (Hz). Absent = UNKNOWN. */
+  frequencyMinHz?: number;
+  frequencyMaxHz?: number;
+  /** Proven ASIC input topology. Absent = UNKNOWN; do not invent. */
+  inputPhases?: AsicInputPhases;
   widthM: number;
   heightM: number;
   lengthM: number;
@@ -156,7 +183,14 @@ export interface FanInstance {
 
 export interface ElectricalSupply {
   availablePowerW: number;
+  /**
+   * Voltage presented at the selected ASIC input terminals (PHASE 1).
+   * inputPhases=1 → single-phase ASIC input voltage.
+   * inputPhases=3 → three-phase line-to-line ASIC input voltage.
+   * 230 V and 400 V are not the same electrical quantity.
+   */
   voltageV: number;
+  /** Facility supply frequency presented to the ASIC (Hz). */
   frequencyHz: number;
   phases: 3;
   reservePct: number;
@@ -194,7 +228,8 @@ export interface Constraints {
    */
   floorLoadingUnknown: boolean;
   /**
-   * Net equipment payload allowance (Pa) AFTER structure and rack dead load.
+   * Owner-approved PHASE 1 contract introduced during QX-02B-R6/R7:
+   * net equipment payload allowance (Pa) AFTER structure and rack dead load.
    * OPTION A floor model — see STANDARD_NET_FLOOR_PAYLOAD_PA.
    */
   maxFloorLoadPa?: number;
@@ -441,8 +476,17 @@ export interface EngineeringResult {
     hashrateThs: number;
     totalWeightKg: number;
     supplyVoltageCompatible: boolean | null;
+    supplyFrequencyCompatible: boolean | null;
+    inputPhases: AsicInputPhases | null;
+    phaseModel: PhaseModel;
+    nameplateCurrentA: number | null;
+    calculatedLineCurrentA: number;
+    currentProvenance: CurrentProvenance;
+    demandCount: number;
     traces: CalcTrace[];
   };
+  asicTrust: AsicTrustDecision;
+  inventory: InventoryCounts;
   thermal: {
     asicHeatW: number;
     auxiliaryHeatW: number;

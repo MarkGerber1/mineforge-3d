@@ -35,9 +35,15 @@ describe("ELEC-03 perfect three-phase", () => {
     p.electrical.known = true;
     p.electrical.availablePowerW = 200000;
     const r = calculateElectrical(p, TEST_ASIC_A);
-    assert.ok(Math.abs(r.l1CurrentA - 152.608695652) < 1e-9);
-    assert.ok(Math.abs(r.l2CurrentA - 152.608695652) < 1e-9);
-    assert.ok(Math.abs(r.l3CurrentA - 152.608695652) < 1e-9);
+    const iPu = typicalCurrentA(TEST_ASIC_A, 230);
+    assert.ok(Math.abs(iPu - 15.260869565217391) < 1e-9);
+    assert.ok(Math.abs(r.calculatedLineCurrentA - iPu) < 1e-9);
+    assert.equal(r.currentProvenance, "MANUFACTURER_NAMEPLATE");
+    assert.equal(r.nameplateCurrentA, TEST_ASIC_A.currentA);
+    assert.ok(Math.abs(r.l1CurrentA - 10 * (TEST_ASIC_A.currentA ?? 0)) < 1e-9);
+    assert.ok(Math.abs(r.l2CurrentA - 10 * (TEST_ASIC_A.currentA ?? 0)) < 1e-9);
+    assert.ok(Math.abs(r.l3CurrentA - 10 * (TEST_ASIC_A.currentA ?? 0)) < 1e-9);
+    assert.ok(Math.abs(10 * iPu - 152.608695652) < 1e-9);
     assert.equal(r.imbalanceAsic, 0);
     assert.equal(roundTo(r.l1CurrentA, 2).toFixed(2), "152.61");
   });

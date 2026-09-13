@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { ASIC_S21_PRO, TEST_ASIC_A } from "../../equipment/asic-catalog.ts";
-import { emptyRectangularProject, undergroundParkingFarm, withKnownFloor, TEST_RACK_A } from "../../project/factory.ts";
+import { emptyRectangularProject, undergroundParkingFarm, withKnownFloor, TEST_RACK_A, verifiedAcceptanceProject } from "../../project/factory.ts";
 import { parseProject } from "../../project/schema.ts";
 import { saveScheduler } from "../../project/save-scheduler.ts";
 import { useProjectStore } from "../../project/store.ts";
@@ -37,10 +37,7 @@ function rackAt(x: number, y: number, id = "r1", extra: Partial<Rack> = {}): Rac
 }
 
 function verifiedBase(): Project {
-  const p = undergroundParkingFarm();
-  withKnownFloor(p);
-  p.fleet = { asicId: TEST_ASIC_A.id, requestedCount: 24 };
-  return p;
+  return verifiedAcceptanceProject();
 }
 
 function imported(asic: AsicSpec): Project {
@@ -93,10 +90,12 @@ describe("ASIC-REL-05 design < typical load/import rejected", () => {
   it("load", () => {
     const p = verifiedBase();
     live().loadProject(p, false);
+    const beforeImported = live().project.fleet.imported;
     const bad = imported(cloneAsic({ typicalPowerW: 3510, designPowerW: 1000 }));
     assert.equal(live().loadProject(bad, false).ok, false);
     assert.equal(live().project.fleet.asicId, TEST_ASIC_A.id);
-    assert.equal(live().project.fleet.imported, undefined);
+    assert.equal(live().project.fleet.imported, beforeImported);
+    assert.equal(live().project.fleet.imported?.source.trust, "OFFICIAL_VERIFIED");
   });
 });
 
@@ -104,7 +103,9 @@ describe("ASIC-REL-06 synthetic invalid catalog ASIC is BLOCKER", () => {
   it("never VERIFIED, no crash", () => {
     const cats = defaultCatalogs();
     cats.asics[TEST_ASIC_A.id] = cloneAsic({ typicalPowerW: 3510, designPowerW: 1000 });
-    const r = calculateAll(verifiedBase(), cats);
+    const p = verifiedBase();
+    p.fleet = { asicId: TEST_ASIC_A.id, requestedCount: p.fleet.requestedCount };
+    const r = calculateAll(p, cats);
     assert.ok(r.warnings.some((w) => w.id === "asic-spec-invalid" && w.severity === "BLOCKER"));
     assert.equal(r.capacity.verified, false);
     assert.notEqual(r.capacity.safety, "VERIFIED");
@@ -136,7 +137,8 @@ describe("R6-C malformed imported cannot raise electrical SAFE", () => {
       fromGrok: true,
     });
     assert.equal(live().applyProposed().ok, false);
-    assert.equal(live().project.fleet.imported, undefined);
+    assert.equal(live().project.fleet.imported, p.fleet.imported);
+    assert.equal(live().project.fleet.imported?.source.trust, "OFFICIAL_VERIFIED");
     const after = calculateAll(live().project, catalogs);
     assert.ok((after.electrical.maxByDesign ?? 0) <= (baseline.electrical.maxByDesign ?? 0) + 1e-9);
     assert.equal(after.capacity.verified, baseline.capacity.verified);
@@ -350,12 +352,17 @@ describe("FLOOR-SAFE-03 very low floor limit is limiting", () => {
 });
 
 describe("FLOOR-SAFE-04 adequate floor is not bottleneck", () => {
-  it("10 kPa net payload", () => {
+  it("10 kPa net payload not limiting below requested", () => {
     const p = verifiedBase();
     const r = calculateAll(p, catalogs);
     assert.ok((r.floor.maxByFloor ?? 0) >= 24);
-    assert.equal(r.capacity.bottlenecks.includes("FLOOR"), false);
+    assert.equal(r.floor.pass, true);
+    assert.equal(r.floor.known, true);
+    assert.ok(r.capacity.slots.some((s) => s.kind === "FLOOR" && s.known && (s.value ?? 0) >= 24));
     assert.equal(r.capacity.verified, true);
+    // Compact INV-14 layout (placed === requested on one rack) makes FLOOR
+    // share the RACK cap via maxAsicByFloorOnRack. That is not a floor-pressure
+    // failure; do not require FLOOR to be absent from bottlenecks.
   });
 });
 

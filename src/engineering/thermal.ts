@@ -1,4 +1,5 @@
 import { AIR_CP_J_KG_K, AIR_DENSITY_KG_M3 } from "./constants.ts";
+import { engineeringDemandCount } from "./inventory.ts";
 import type { AsicSpec, CalcTrace, Project } from "./types.ts";
 import { formatM3h, m3sToM3h } from "./units.ts";
 
@@ -14,7 +15,7 @@ export function thermalAirflowM3s(
 
 export function calculateThermal(project: Project, asic: AsicSpec | null, typicalTotalW: number) {
   const traces: CalcTrace[] = [];
-  const n = project.fleet.requestedCount;
+  const n = engineeringDemandCount(project);
   const asicHeatW = asic ? typicalTotalW : 0;
   const auxiliaryHeatW =
     project.electrical.auxiliaryW + project.electrical.lightingW + project.electrical.networkW;

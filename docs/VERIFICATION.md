@@ -94,11 +94,12 @@ and FLOOR participates in SAFE.
 Continuity / recovery package: GitHub is the durable source of truth for non-secret source.
 Start at `AI_HANDOFF.md`. Operational recovery: `RECOVERY.md`. Machine metadata: `project-handoff.json`.
 
-QX-02A + QX-02A-R + QX-02B + QX-02B-R + QX-02B-R5 are merged on protected `main`.
-QX-02B-R6/R7 is relational safety + OPTION A floor loading (candidate).
+QX-02A + QX-02A-R + QX-02B + QX-02B-R + QX-02B-R5 + QX-02B-R6/R7 are
+merged on protected `main` (R6/R7 at `c4f23f0`).
+QX-02B-R8/R11 is frequency + trust + phase topology + inventory (candidate).
 Developer does **not** self-accept.
 
-## QX-02B-R6/R7 oracle (candidate)
+## QX-02B-R6/R7 oracle (merged `c4f23f0`)
 
 | Test ID | Subsystem | Status |
 |---|---|---|
@@ -115,6 +116,39 @@ Engineering does not invent rack self-weight. Screening:
 `Σ floor(limitPa × A_rack / (m_asic × g))` on demonstrated rack footprints
 (placed usable racks, or `feasibleSpacePacking` if the room is empty).
 Blocked racks contribute 0.
+
+Floor OPTION A is the Owner-approved PHASE 1 contract introduced during
+QX-02B-R6/R7 (PR #20). Calculation is unchanged in R8/R11.
+
+## QX-02B-R8/R11 oracle (candidate)
+
+| Test ID | Subsystem | Status |
+|---|---|---|
+| FREQ-01 … FREQ-10 | ASIC supply frequency compatibility | PASS (oracle) |
+| TRUST-01 … TRUST-10 | ASIC provenance vs VERIFIED | PASS (oracle) |
+| PHASE-01 … PHASE-12 | 1-phase / 3-phase topology + current provenance | PASS (oracle) |
+| INV-01 … INV-14 | placed ≤ requested; demand defense-in-depth | PASS (oracle) |
+| ADV-ELEC-01 … ADV-ELEC-08 | combined frequency/trust/phase/inventory | PASS (oracle) |
+
+Catalog (source-proven only; no invented 50–60 / 1-phase):
+
+| Model | V | Hz | phases | currentA | trust |
+|---|---|---|---|---|---|
+| S21 Pro | 220–277 | 50–60 | 1 | 20 nameplate | OFFICIAL_VERIFIED |
+| S21 | 220–277 | 47–63 | 1 | 20 nameplate | OFFICIAL_VERIFIED |
+| T21 | 380–415 | 50–60 | 3 | 12 nameplate | OFFICIAL_VERIFIED |
+| M60S | 200–277 | UNKNOWN | UNKNOWN | absent | VERIFIED_SECONDARY |
+| TEST_ASIC_A | 230–230 | 50–60 synthetic | 1 | 15.260869565 | TEST_FIXTURE |
+
+VERIFIED fixtures use `officialTestAsicA()` (TEST_ASIC_A numbers +
+`OFFICIAL_VERIFIED`) and rebuild auto-layout so placed === requested.
+Catalog TEST_ASIC_A remains TEST_FIXTURE.
+
+`electrical.voltageV` is the voltage at the selected ASIC terminals
+(1-phase = single-phase input; 3-phase = line-to-line). Owner-facing
+current prefers manufacturer `currentA`; I=P/U (1-phase) and
+I=P/(√3×U_LL) (3-phase screening, PF not modeled) stay labelled
+calculated traces.
 
 Repair Batch 1 PASSED (SHA `8f5c9c0dd4909db51a28a2e14cff12b29c00b218`).
 Repair Batch 2 — Reality geometry pipeline (SHA `7c9f25ae31fab0fe501f542856210adfb7dcfb4c`).
