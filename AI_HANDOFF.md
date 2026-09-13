@@ -83,7 +83,12 @@ QX-02B-R5: the same `validateCanonicalProjectDomains` now covers every
 SAFETY_DRIVING / SAFETY_GEOMETRY numeric (ΔT, reserve, auxiliary/lighting/
 network W, vent losses, fan count, service clearances, rack shelf geometry,
 imported ASIC primitives). Inventory: `src/engineering/numeric-inventory.ts`.
-Do not start QX-02C. Do not reopen QX-01 / QX-02A / FINAL-SEC.
+
+QX-02B-R6/R7: ASIC spec relations (`designPowerW >= typicalPowerW`) and
+supply-voltage compatibility (CRITICAL, maxByElectrical=0, Project still
+canonical). Floor loading OPTION A: `maxFloorLoadPa` is net equipment payload
+after dead load; FLOOR is a real SAFE slot; known floor requires a finite
+limit > 0. Do not start QX-02C. Do not reopen QX-01 / QX-02A / FINAL-SEC.
 
 Evidence: [docs/FINAL-01.md](docs/FINAL-01.md).
 

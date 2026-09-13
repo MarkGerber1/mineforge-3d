@@ -76,3 +76,21 @@ export type SupportedRackRotationDeg = (typeof SUPPORTED_RACK_ROTATION_DEG)[numb
 export function isSupportedRackRotationDeg(n: number): n is SupportedRackRotationDeg {
   return (SUPPORTED_RACK_ROTATION_DEG as readonly number[]).includes(n);
 }
+
+/** Standard gravity for payload force. SI. */
+export const STANDARD_GRAVITY_M_S2 = 9.80665;
+
+/**
+ * Documented PHASE 1 net equipment payload allowance used by fixtures that
+ * declare floor loading as known.
+ *
+ * CONTRACT (OPTION A): `constraints.maxFloorLoadPa` is the Owner-entered
+ * allowable **net equipment payload pressure** (Pa) AFTER permanent structure
+ * and rack dead load have been accounted for outside this model. Engineering
+ * Core does not invent rack self-weight. Screening uses ASIC mass × g on the
+ * demonstrated rack plan footprint only.
+ *
+ * 10 kPa = 10 kN/m² ≈ 1020 kg/m² — a typical industrial live-load order of
+ * magnitude, not a silent default and not an unbounded sentinel.
+ */
+export const STANDARD_NET_FLOOR_PAYLOAD_PA = 10_000;

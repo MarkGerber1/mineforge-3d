@@ -1,4 +1,5 @@
 import { MAX_AVAILABLE_POWER_W, MIN_AVAILABLE_POWER_W, PHASE_COUNT, SUPPLY_VOLTAGE_V } from "./constants.ts";
+import { supplyVoltageCompatible } from "./asic-spec.ts";
 import type { AsicSpec, CalcTrace, ElectricalSupply, Project } from "./types.ts";
 import { formatAmps, formatKw, parsePowerInputToWatts } from "./units.ts";
 
@@ -100,10 +101,12 @@ export function calculateElectrical(project: Project, asic: AsicSpec | null) {
       usableCapacityW: usableElectricalW(project.electrical),
       hashrateThs: 0,
       totalWeightKg: 0,
+      supplyVoltageCompatible: null as boolean | null,
       traces,
     };
   }
 
+  const voltageCompat = project.electrical.known ? supplyVoltageCompatible(asic, project.electrical.voltageV) : null;
   const iTyp = typicalCurrentA(asic, voltage);
   const iDes = designCurrentA(asic, voltage);
   traces.push({
@@ -170,6 +173,12 @@ export function calculateElectrical(project: Project, asic: AsicSpec | null) {
     const aux = project.electrical.auxiliaryW + project.electrical.lightingW + project.electrical.networkW;
     maxByTypical = maxByPower(Math.max(0, usable - aux), asic.typicalPowerW);
     maxByDesign = maxByPower(Math.max(0, usable - aux), asic.designPowerW);
+    if (voltageCompat === false) {
+      maxByTypical = 0;
+      maxByDesign = 0;
+      typicalPass = false;
+      designPass = false;
+    }
     traces.push({
       id: "usable_W",
       label: "Usable electrical capacity",
@@ -203,6 +212,7 @@ export function calculateElectrical(project: Project, asic: AsicSpec | null) {
     usableCapacityW: usable,
     hashrateThs: n * asic.hashrateThs,
     totalWeightKg: n * asic.weightKg,
+    supplyVoltageCompatible: voltageCompat,
     traces,
   };
 }

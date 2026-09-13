@@ -23,7 +23,7 @@ export type ProjectStatus = "PASS" | "WARNING" | "FAIL" | "INCOMPLETE";
 export type SafeConfidence = "VERIFIED" | "PRELIMINARY" | "INCOMPLETE" | "CRITICAL";
 export type HudSafetyKind = "VERIFIED" | "PRELIMINARY" | "INCOMPLETE" | "CRITICAL" | "OVER_CAPACITY";
 
-export type BottleneckKind = "ELECTRICAL" | "VENTILATION" | "SPACE" | "RACK" | "USER" | "UNKNOWN";
+export type BottleneckKind = "ELECTRICAL" | "VENTILATION" | "SPACE" | "RACK" | "FLOOR" | "USER" | "UNKNOWN";
 
 export interface DataSource {
   label: string;
@@ -188,7 +188,15 @@ export interface RoomGeometry {
 }
 
 export interface Constraints {
+  /**
+   * When true, floor payload is UNKNOWN → SAFE confidence PRELIMINARY.
+   * When false, `maxFloorLoadPa` MUST be a finite pressure > 0.
+   */
   floorLoadingUnknown: boolean;
+  /**
+   * Net equipment payload allowance (Pa) AFTER structure and rack dead load.
+   * OPTION A floor model — see STANDARD_NET_FLOOR_PAYLOAD_PA.
+   */
   maxFloorLoadPa?: number;
   frontServiceClearanceM: number;
   rearServiceClearanceM: number;
@@ -432,6 +440,7 @@ export interface EngineeringResult {
     usableCapacityW: number | null;
     hashrateThs: number;
     totalWeightKg: number;
+    supplyVoltageCompatible: boolean | null;
     traces: CalcTrace[];
   };
   thermal: {
@@ -481,6 +490,19 @@ export interface EngineeringResult {
     recirculation: Array<{ from: string; to: string; distanceM: number }>;
     placedAsics: number;
     asBuiltHits: Array<{ id: string; objectId: string; reason: string }>;
+  };
+  floor: {
+    known: boolean;
+    limitPa: number | null;
+    model: "NET_EQUIPMENT_PAYLOAD";
+    g: number;
+    asicWeightKg: number | null;
+    racksUsed: Array<{ id: string; footprintM2: number; allowableN: number; maxAsic: number; blocked: boolean }>;
+    totalPayloadN: number | null;
+    maxByFloor: number | null;
+    pass: boolean | null;
+    reason: string;
+    traces: CalcTrace[];
   };
   capacity: {
     requested: number;

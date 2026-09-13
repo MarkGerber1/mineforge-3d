@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { TEST_ASIC_A } from "../../equipment/asic-catalog.ts";
 import { FAN_WEAK } from "../../equipment/fan-catalog.ts";
-import { TEST_RACK_A, emptyRectangularProject, undergroundParkingFarm } from "../../project/factory.ts";
+import { TEST_RACK_A, emptyRectangularProject, undergroundParkingFarm, withKnownFloor } from "../../project/factory.ts";
 import { parseProject } from "../../project/schema.ts";
 import { saveScheduler } from "../../project/save-scheduler.ts";
 import { useProjectStore } from "../../project/store.ts";
@@ -40,7 +40,7 @@ function rackAt(x: number, y: number, id = "r1", extra: Partial<Rack> = {}): Rac
 
 function verifiedBase(): Project {
   const p = undergroundParkingFarm();
-  p.constraints.floorLoadingUnknown = false;
+  withKnownFloor(p);
   p.fleet = { asicId: TEST_ASIC_A.id, requestedCount: 24 };
   return p;
 }

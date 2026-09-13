@@ -69,6 +69,8 @@ Mobile 375×812 / 390×844 / 430×932: full-width CAD, compact REQUESTED/SAFE HU
 Underground parking: 8.000 × 5.000 × 2.8 m.  
 30 × BITMAIN S21 Pro. Exhaust 1.4 × 0.9 m, shaft 75 m, FAN_STRONG, 150 kW.  
 SAFE computed by the engine. Floor loading UNKNOWN → confidence PRELIMINARY.
+When the Owner declares floor known, a finite net payload (Pa) is required
+and FLOOR participates in SAFE.
 
 ## KNOWN LIMITATIONS
 
@@ -79,7 +81,9 @@ SAFE computed by the engine. Floor loading UNKNOWN → confidence PRELIMINARY.
 - Video frames are visual evidence (VIDEO_FRAME_ESTIMATE), not photogrammetry and not centimetre-accurate.
 - Application Edit preview is HMR of the live app (no second preview URL).
 - Grok requires XAI_API_KEY; core engineering remains offline.
-- Floor loading remains UNKNOWN unless the user enters it.
+- Floor loading remains UNKNOWN unless the Owner enters a finite net payload
+  (`maxFloorLoadPa`, OPTION A). Known floor without a limit is rejected.
+  Incompatible ASIC supply voltage is CRITICAL, not a Project reject.
 - Physical iPhone Owner smoke-test deferred to FINAL RELEASE.
 - Public production deployment deferred to FINAL RELEASE.
 
@@ -90,9 +94,27 @@ SAFE computed by the engine. Floor loading UNKNOWN → confidence PRELIMINARY.
 Continuity / recovery package: GitHub is the durable source of truth for non-secret source.
 Start at `AI_HANDOFF.md`. Operational recovery: `RECOVERY.md`. Machine metadata: `project-handoff.json`.
 
-QX-02A + QX-02A-R + QX-02B + QX-02B-R are merged on protected `main`.
-QX-02B-R5 is the complete safety-numeric domain boundary (candidate).
+QX-02A + QX-02A-R + QX-02B + QX-02B-R + QX-02B-R5 are merged on protected `main`.
+QX-02B-R6/R7 is relational safety + OPTION A floor loading (candidate).
 Developer does **not** self-accept.
+
+## QX-02B-R6/R7 oracle (candidate)
+
+| Test ID | Subsystem | Status |
+|---|---|---|
+| ASIC-REL-01 … ASIC-REL-07 | ASIC spec relations (`design ≥ typical`) | PASS (oracle) |
+| R6-C | malformed design power cannot inflate electrical SAFE | PASS (oracle) |
+| VOLT-01 … VOLT-10 | supply voltage compatibility CRITICAL | PASS (oracle) |
+| FLOOR-REL-01 … FLOOR-REL-04 | known floor requires finite payload > 0 Pa | PASS (oracle) |
+| FLOOR-SAFE-01 … FLOOR-SAFE-12 | FLOOR slot, monotonicity, packing, HUD | PASS (oracle) |
+
+Floor model: OPTION A `NET_EQUIPMENT_PAYLOAD`. `maxFloorLoadPa` is Owner-entered
+net equipment payload pressure (Pa) AFTER permanent structure and rack dead
+load. Documented fixture: `STANDARD_NET_FLOOR_PAYLOAD_PA = 10_000` (10 kPa).
+Engineering does not invent rack self-weight. Screening:
+`Σ floor(limitPa × A_rack / (m_asic × g))` on demonstrated rack footprints
+(placed usable racks, or `feasibleSpacePacking` if the room is empty).
+Blocked racks contribute 0.
 
 Repair Batch 1 PASSED (SHA `8f5c9c0dd4909db51a28a2e14cff12b29c00b218`).
 Repair Batch 2 — Reality geometry pipeline (SHA `7c9f25ae31fab0fe501f542856210adfb7dcfb4c`).

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { TEST_ASIC_A } from "../../equipment/asic-catalog.ts";
 import { FAN_STRONG } from "../../equipment/fan-catalog.ts";
-import { emptyRectangularProject, undergroundParkingFarm } from "../../project/factory.ts";
+import { emptyRectangularProject, undergroundParkingFarm, withKnownFloor } from "../../project/factory.ts";
 import { parseProject } from "../../project/schema.ts";
 import { importProjectJson } from "../../project/persistence.ts";
 import { saveScheduler } from "../../project/save-scheduler.ts";
@@ -38,7 +38,7 @@ function live() {
 
 function verifiedBase(): Project {
   const p = undergroundParkingFarm();
-  p.constraints.floorLoadingUnknown = false;
+  withKnownFloor(p);
   p.fleet = { asicId: TEST_ASIC_A.id, requestedCount: 24 };
   return p;
 }

@@ -57,7 +57,9 @@ Demo seed: underground parking 8.000 × 5.000 × 2.8 m, 30 × BITMAIN S21 Pro, e
 - Photos / video frames never claim millimetre or centimetre field accuracy.
 - Video is **not** photogrammetry.
 - Real iOS Safari keyboard and physical device chrome are not proven (Playwright WebKit only).
-- Floor loading UNKNOWN unless the Owner enters it → SAFE confidence PRELIMINARY.
+- Floor loading UNKNOWN unless the Owner enters a finite net payload > 0 Pa
+  (`maxFloorLoadPa`, OPTION A after structure/rack dead load) → PRELIMINARY.
+  Known floor without a limit is canonical-invalid. FLOOR participates in SAFE.
 - Application Edit is a **developer/owner** capability on a git worktree process, not a public multi-tenant editor. Serverless (`GROK_PROJECT_ID` **or** `VERCEL=1`/`true`) forces it **off**.
 - Static GitHub Pages cannot run `/api/*`, Grok, or App Edit.
 - No public server-capable hostname is recorded until Owner publishes.
@@ -82,9 +84,11 @@ history). It does not publish, does not perform physical iPhone acceptance,
 and does not reopen MFQ-001…006 or FINAL-SEC-001/002.
 
 QX-02B is merged on `main` (`b47dea6`). QX-02B-R is merged on `main`
-(`56d8b33`). QX-02B-R5 (this candidate) completes the safety-numeric domain
-boundary: every SAFETY_DRIVING field has one fail-closed validator, no silent
-clamp. Does not start QX-02C. Does not publish. Does not declare FINAL PASSED.
+(`56d8b33`). QX-02B-R5 is merged on `main` (`492e50e`) — complete
+safety-numeric domain boundary. QX-02B-R6/R7 (this candidate) adds ASIC
+spec relations (`designPowerW >= typicalPowerW`), supply-voltage
+compatibility CRITICAL, and OPTION A floor payload as a real FLOOR SAFE
+slot. Does not start QX-02C. Does not publish. Does not declare FINAL PASSED.
 
 ## Important historical SHAs
 

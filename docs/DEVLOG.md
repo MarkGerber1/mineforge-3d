@@ -267,6 +267,25 @@ Starting SHA `56d8b33f4c2a4e9879edcbb8cd094cee033873ed`. Branch
 Does not start QX-02C. Does not publish. Does not declare FINAL PASSED.
 Does not reopen QX-01 / QX-02A / QX-02B-R2…R4 / FINAL-SEC.
 
+## QX-02B-R6/R7 — RELATIONAL SAFETY + FLOOR LOADING
+
+Starting SHA `492e50e86dac310a0b308fbd41a0677226bb2b38`. Branch
+`repair/qx-02b-r6-r7-relational-safety`.
+
+- R6-A: `validateAsicSpecRelations` requires `designPowerW >= typicalPowerW`
+  (equality valid). Imported malformed specs are canonical-rejected. Catalog
+  regression is Engineering BLOCKER, never silent repair.
+- R6-B: known supply voltage outside ASIC min/max is CRITICAL, not a Project
+  reject. `maxByElectrical = 0`. Unknown electrical is not a fake CRITICAL.
+- R7: OPTION A — `maxFloorLoadPa` is net equipment payload pressure after
+  structure/rack dead load (documented 10 kPa fixture). Known floor without a
+  finite limit > 0 is canonical-invalid. FLOOR is a real SAFE constraint using
+  ASIC mass × g on demonstrated rack footprints (placed usable or feasible
+  packing). Lower limit / heavier ASIC cannot raise maxByFloor.
+
+Does not start QX-02C. Does not publish. Does not declare FINAL PASSED.
+
+
 
 
 

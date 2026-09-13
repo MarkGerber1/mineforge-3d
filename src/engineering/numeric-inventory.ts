@@ -67,7 +67,7 @@ export const SAFETY_NUMERIC_INVENTORY: NumericInventoryEntry[] = [
   // Imported ASIC (Engineering source when fleet.imported.id === asicId)
   { path: "fleet.imported.hashrateThs", class: "SAFETY_DRIVING", rule: "finite; ≥ 0", invalid: -1 },
   { path: "fleet.imported.typicalPowerW", class: "SAFETY_DRIVING", rule: "finite; > 0", invalid: 0 },
-  { path: "fleet.imported.designPowerW", class: "SAFETY_DRIVING", rule: "finite; > 0", invalid: -1 },
+  { path: "fleet.imported.designPowerW", class: "SAFETY_DRIVING", rule: "finite; > 0; ≥ typicalPowerW", invalid: -1 },
   { path: "fleet.imported.voltageMin", class: "SAFETY_DRIVING", rule: "finite; > 0; ≤ voltageMax", invalid: -230 },
   { path: "fleet.imported.voltageMax", class: "SAFETY_DRIVING", rule: "finite; > 0; ≥ voltageMin", invalid: 0 },
   { path: "fleet.imported.currentA", class: "SAFETY_DRIVING", rule: "if present: finite; ≥ 0", invalid: -1 },
@@ -99,7 +99,7 @@ export const SAFETY_NUMERIC_INVENTORY: NumericInventoryEntry[] = [
   { path: "constraints.frontServiceClearanceM", class: "SAFETY_DRIVING", rule: "finite; ≥ 0", invalid: -1 },
   { path: "constraints.rearServiceClearanceM", class: "SAFETY_DRIVING", rule: "finite; ≥ 0", invalid: -1 },
   { path: "constraints.minAisleM", class: "SAFETY_DRIVING", rule: "finite; ≥ 0", invalid: -1 },
-  { path: "constraints.maxFloorLoadPa", class: "SAFETY_DRIVING", rule: "if present: finite; > 0; UNKNOWN flag unchanged", invalid: 0 },
+  { path: "constraints.maxFloorLoadPa", class: "SAFETY_DRIVING", rule: "if floorLoadingUnknown=false: required finite > 0; net payload Pa. If unknown: optional", invalid: 0 },
 
   // As-built — collision geometry
   { path: "reality.asBuilt[].x", class: "SAFETY_GEOMETRY", rule: "finite", invalid: Number.NaN },
