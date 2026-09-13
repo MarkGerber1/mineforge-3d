@@ -1,7 +1,9 @@
 import { AIR_CP_J_KG_K, AIR_DENSITY_KG_M3 } from "./constants.ts";
+import { validateAsicSpecRelations } from "./asic-spec.ts";
 import { calculateCapacity } from "./capacity.ts";
 import { calculateElectrical } from "./electrical.ts";
 import { evaluateProjectFans } from "./fans.ts";
+import { calculateFloorLoading } from "./floor.ts";
 import { analyzeGeometry, analyzeOpenings, validExhaustAvailable, validIntakeAvailable } from "./geometry.ts";
 import { feasibleSpacePacking } from "./space-pack.ts";
 import { calculatePressure, resolvedVentComponents } from "./pressure.ts";
@@ -42,6 +44,7 @@ export function calculateAll(project: Project, catalogs: Catalogs): EngineeringR
   const geometry = analyzeGeometry(project);
   const openings = analyzeOpenings(project);
   const asic = resolveAsic(project, catalogs);
+  const asicRel = asic ? validateAsicSpecRelations(asic) : { ok: true as const };
   const electrical = calculateElectrical(project, asic);
   const thermal = calculateThermal(project, asic, electrical.typicalTotalW);
   const components = resolvedVentComponents(project);
@@ -81,6 +84,13 @@ export function calculateAll(project: Project, catalogs: Catalogs): EngineeringR
       severity: "BLOCKER",
       title: "ASIC model unknown",
       detail: "Select a verified ASIC model before treating SAFE COUNT as final.",
+    });
+  } else if (!asicRel.ok) {
+    warnings.push({
+      id: "asic-spec-invalid",
+      severity: "BLOCKER",
+      title: "Некорректная спецификация ASIC",
+      detail: asicRel.errors.join(" "),
     });
   }
   if (!exhaustOk) {
@@ -140,6 +150,14 @@ export function calculateAll(project: Project, catalogs: Catalogs): EngineeringR
       detail: "Typical load may pass, but the project policy must not ignore design power.",
     });
   }
+  if (electrical.supplyVoltageCompatible === false) {
+    warnings.push({
+      id: "asic-voltage-mismatch",
+      severity: "CRITICAL",
+      title: "Напряжение питания несовместимо с ASIC",
+      detail: `Supply ${project.electrical.voltageV} V is outside ASIC ${asic?.voltageMin}–${asic?.voltageMax} V.`,
+    });
+  }
   for (const c of racks.collisions) {
     warnings.push({ id: `col-${c.a}-${c.b}`, severity: "CRITICAL", objectId: c.a, title: "Rack collision", detail: c.reason });
   }
@@ -192,12 +210,19 @@ export function calculateAll(project: Project, catalogs: Catalogs): EngineeringR
       title: "Floor loading UNKNOWN",
       detail: "Structural capacity is not entered. Safe count confidence is preliminary.",
     });
+  } else if (project.constraints.maxFloorLoadPa == null || !(project.constraints.maxFloorLoadPa > 0)) {
+    warnings.push({
+      id: "floor-known-without-limit",
+      severity: "BLOCKER",
+      title: "Floor marked known without a limit",
+      detail: "A known floor requires a finite net payload pressure > 0 Pa.",
+    });
   }
 
   const tmplPack = feasibleSpacePacking(project, asic);
-  const spaceN = asic ? tmplPack.asicCount : null;
+  const spaceN = asic && asicRel.ok ? tmplPack.asicCount : null;
 
-  const ventKnown = fan.operatingQ_m3h != null && asic != null;
+  const ventKnown = fan.operatingQ_m3h != null && asic != null && asicRel.ok;
   const ventN =
     ventKnown && asic && fan.operatingQ_m3h != null
       ? maxAsicByAirflow(
@@ -208,20 +233,29 @@ export function calculateAll(project: Project, catalogs: Catalogs): EngineeringR
         )
       : null;
 
-  const policyMax =
+  let policyMax =
     project.electrical.policy === "design" ? electrical.maxByDesign : electrical.maxByTypical;
+  if (!asicRel.ok) policyMax = 0;
+
+  const floor = calculateFloorLoading(project, asicRel.ok ? asic : null, racks.perRackCapacity);
 
   const qPer = asic ? requiredAirflowPerAsicM3h(asic, project.thermal.deltaTK) : 0;
 
   const hasCriticalConflict = warnings.some((w) => w.severity === "CRITICAL");
+  const floorKnownInconsistent =
+    !project.constraints.floorLoadingUnknown &&
+    (project.constraints.maxFloorLoadPa == null || !(project.constraints.maxFloorLoadPa > 0));
   const hasBlocker =
     !geometry.valid ||
     !openings.valid ||
     !asic ||
+    !asicRel.ok ||
     !exhaustOk ||
     !intakeOk ||
+    floorKnownInconsistent ||
     openings.items.some((i) => i.errors.length > 0);
 
+  const floorKnown = floor.known && floor.maxByFloor != null;
   const capacity = calculateCapacity({
     requested: project.fleet.requestedCount,
     maxByElectrical: policyMax,
@@ -288,6 +322,10 @@ export function calculateAll(project: Project, catalogs: Catalogs): EngineeringR
       unit: "ASIC",
       display: r.blocked ? `${r.total} BLOCKED` : String(r.total),
     })),
+    maxByFloor: floor.maxByFloor,
+    floorKnown,
+    floorDetail: floor.reason,
+    floorTrace: floor.traces,
     maxByUser: null,
     userKnown: false,
     geometryValid: geometry.valid,
@@ -296,7 +334,7 @@ export function calculateAll(project: Project, catalogs: Catalogs): EngineeringR
     intakeKnown: intakeOk,
     openingsValid: openings.valid,
     fanKnown: project.fans.length > 0 && fan.operatingQ_m3h != null,
-    floorUnknown: project.constraints.floorLoadingUnknown,
+    floorUnknown: project.constraints.floorLoadingUnknown || !floorKnown,
     hasBlocker,
     hasCriticalConflict,
   });
@@ -309,7 +347,12 @@ export function calculateAll(project: Project, catalogs: Catalogs): EngineeringR
     { key: "INTAKE_PATH", complete: intakeOk, impact: 9, question: "Где приточный проём?" },
     { key: "FAN", complete: project.fans.length > 0, impact: 8, question: "Какой вентилятор установлен или планируется?" },
     { key: "DELTA_T", complete: project.thermal.deltaTK > 0, impact: 5, question: "Какой расчётный перепад температуры ΔT?" },
-    { key: "FLOOR_LOADING", complete: !project.constraints.floorLoadingUnknown, impact: 4, question: "Какая допустимая нагрузка на перекрытие?" },
+    {
+      key: "FLOOR_LOADING",
+      complete: !project.constraints.floorLoadingUnknown && floorKnown,
+      impact: 4,
+      question: "Какая допустимая нагрузка на перекрытие?",
+    },
   ];
 
   return {
@@ -320,6 +363,7 @@ export function calculateAll(project: Project, catalogs: Catalogs): EngineeringR
     pressure,
     fan,
     racks,
+    floor,
     capacity,
     warnings,
     missing,

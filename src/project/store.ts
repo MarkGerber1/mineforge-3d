@@ -146,6 +146,7 @@ interface ProjectStore {
   setPower(watts: number, reservePct?: number): { ok: boolean; reason?: string };
   setRoomHeight(heightM: number): { ok: boolean; reason?: string };
   setRackAsicCount(id: string, count: number): { ok: boolean; reason?: string };
+  setFloorLoading(unknown: boolean, limitPa?: number): { ok: boolean; reason?: string };
   setDeltaT(k: number): { ok: boolean; reason?: string };
   setFan(specId: string, count?: number, arrangement?: "single" | "parallel"): { ok: boolean; reason?: string };
   autoLayout(): { ok: boolean; reason?: string };
@@ -531,6 +532,21 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       },
       "Set rack ASIC",
     );
+    if (!ok) return { ok: false, reason: get().lastMutationError ?? "Каноническая проверка не пройдена." };
+    return { ok: true };
+  },
+  setFloorLoading(unknown, limitPa) {
+    const src = get().project;
+    const nextConstraints = unknown
+      ? { ...src.constraints, floorLoadingUnknown: true }
+      : { ...src.constraints, floorLoadingUnknown: false, maxFloorLoadPa: limitPa };
+    const next = { ...src, constraints: nextConstraints };
+    const domains = validateCanonicalProjectDomains(next, get().catalogs);
+    if (!domains.ok) {
+      set({ lastMutationError: domains.errors[0] ?? "Каноническая проверка не пройдена." });
+      return { ok: false, reason: domains.errors[0] };
+    }
+    const ok = get().commit(next, unknown ? "Floor loading unknown" : "Set floor payload");
     if (!ok) return { ok: false, reason: get().lastMutationError ?? "Каноническая проверка не пройдена." };
     return { ok: true };
   },

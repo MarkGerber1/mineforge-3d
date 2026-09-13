@@ -171,6 +171,32 @@ export function Inspector({ hideGrok }: { hideGrok?: boolean }) {
               />
               Грязный фильтр
             </label>
+            <label className="flex items-center gap-2 text-[12px]">
+              <input
+                suppressHydrationWarning
+                type="checkbox"
+                checked={project.constraints.floorLoadingUnknown}
+                onChange={(e) => {
+                  if (e.target.checked) store.setFloorLoading(true);
+                }}
+              />
+              Нагрузка на перекрытие неизвестна
+            </label>
+            <Field
+              label="Нагрузка на перекрытие, kN/m² (нетто)"
+              value={
+                project.constraints.floorLoadingUnknown
+                  ? ""
+                  : `${((project.constraints.maxFloorLoadPa ?? 0) / 1000).toString()}`
+              }
+              mfId="inspector-floor"
+              onCommit={(v) => {
+                const n = Number(String(v).trim().replace(",", "."));
+                if (!Number.isFinite(n) || !(n > 0)) return "Задайте допустимую нагрузку > 0 kN/m².";
+                const res = store.setFloorLoading(false, n * 1000);
+                if (!res.ok) return res.reason;
+              }}
+            />
           </div>
         )}
 

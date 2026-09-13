@@ -10,6 +10,7 @@ import {
   K_FILTER_CLEAN,
   K_ROOF_OUTLET,
   K_SILENCER,
+  STANDARD_NET_FLOOR_PAYLOAD_PA,
   SUPPLY_FREQUENCY_HZ,
   SUPPLY_VOLTAGE_V,
 } from "../engineering/constants.ts";
@@ -275,6 +276,12 @@ export function testAsicAProject(): Project {
   p.electrical.auxiliaryW = 0;
   p.electrical.lightingW = 0;
   p.electrical.networkW = 0;
+  return p;
+}
+
+export function withKnownFloor(p: Project, limitPa = STANDARD_NET_FLOOR_PAYLOAD_PA): Project {
+  p.constraints.floorLoadingUnknown = false;
+  p.constraints.maxFloorLoadPa = limitPa;
   return p;
 }
 

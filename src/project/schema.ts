@@ -53,6 +53,12 @@ const asicSchema = z.object({
   manufacturerAirflowM3h: z.number().finite().nonnegative().optional(),
   noiseDba: z.number().finite().optional(),
   source: sourceSchema,
+}).refine((a) => a.designPowerW >= a.typicalPowerW, {
+  message: "designPowerW must be ≥ typicalPowerW",
+  path: ["designPowerW"],
+}).refine((a) => a.voltageMin <= a.voltageMax, {
+  message: "voltageMin must be ≤ voltageMax",
+  path: ["voltageMin"],
 });
 
 export const projectSchema = z.object({
@@ -174,6 +180,16 @@ export const projectSchema = z.object({
     frontServiceClearanceM: z.number().finite().nonnegative(),
     rearServiceClearanceM: z.number().finite().nonnegative(),
     minAisleM: z.number().finite().nonnegative(),
+  }).superRefine((c, ctx) => {
+    if (!c.floorLoadingUnknown) {
+      if (c.maxFloorLoadPa == null || !Number.isFinite(c.maxFloorLoadPa) || !(c.maxFloorLoadPa > 0)) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Known floor loading requires a finite net payload pressure > 0 Pa.",
+          path: ["maxFloorLoadPa"],
+        });
+      }
+    }
   }),
   lockedObjectIds: z.array(z.string()),
   notes: z.string().optional(),

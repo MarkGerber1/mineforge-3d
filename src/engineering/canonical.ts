@@ -13,6 +13,7 @@ import {
   MIN_RESERVE_PCT,
   isSupportedRackRotationDeg,
 } from "./constants.ts";
+import { validateAsicSpecRelations } from "./asic-spec.ts";
 import { validateAvailablePowerW } from "./electrical.ts";
 import { resolveAsic, type Catalogs } from "./pipeline.ts";
 import { rackAsicCapacity, validateRackAsicCount } from "./racks.ts";
@@ -228,27 +229,9 @@ function validateFanInstance(f: FanInstance, errors: string[]): void {
 }
 
 function validateImportedAsic(asic: AsicSpec, errors: string[]): void {
-  const tag = `Импортированный ASIC ${asic.model || asic.id}`;
-  if (pushFinite(errors, asic.hashrateThs, `${tag} hashrate`)) pushNonNegative(errors, asic.hashrateThs, `${tag} hashrate`);
-  if (pushFinite(errors, asic.typicalPowerW, `${tag} typicalPowerW`)) pushPositive(errors, asic.typicalPowerW, `${tag} typicalPowerW`);
-  if (pushFinite(errors, asic.designPowerW, `${tag} designPowerW`)) pushPositive(errors, asic.designPowerW, `${tag} designPowerW`);
-  const vminOk = pushFinite(errors, asic.voltageMin, `${tag} voltageMin`) && pushPositive(errors, asic.voltageMin, `${tag} voltageMin`);
-  const vmaxOk = pushFinite(errors, asic.voltageMax, `${tag} voltageMax`) && pushPositive(errors, asic.voltageMax, `${tag} voltageMax`);
-  if (vminOk && vmaxOk && asic.voltageMin > asic.voltageMax) {
-    errors.push(`${tag}: voltageMin больше voltageMax.`);
-  }
-  if (asic.currentA != null) {
-    if (pushFinite(errors, asic.currentA, `${tag} currentA`)) pushNonNegative(errors, asic.currentA, `${tag} currentA`);
-  }
-  if (pushFinite(errors, asic.widthM, `${tag} ширина`)) pushPositive(errors, asic.widthM, `${tag} ширина`);
-  if (pushFinite(errors, asic.heightM, `${tag} высота`)) pushPositive(errors, asic.heightM, `${tag} высота`);
-  if (pushFinite(errors, asic.lengthM, `${tag} длина`)) pushPositive(errors, asic.lengthM, `${tag} длина`);
-  if (pushFinite(errors, asic.weightKg, `${tag} масса`)) pushPositive(errors, asic.weightKg, `${tag} масса`);
-  if (asic.manufacturerAirflowM3h != null) {
-    if (pushFinite(errors, asic.manufacturerAirflowM3h, `${tag} расход`)) {
-      pushNonNegative(errors, asic.manufacturerAirflowM3h, `${tag} расход`);
-    }
-  }
+  const tag = asic.model || asic.id;
+  const rel = validateAsicSpecRelations(asic, tag);
+  if (!rel.ok) errors.push(...rel.errors);
 }
 
 function validateAsBuilt(obj: AsBuiltObject, errors: string[]): void {
@@ -342,6 +325,11 @@ export function validateCanonicalProjectDomains(project: Project, catalogs: Cata
   if (cons.maxFloorLoadPa != null) {
     if (pushFinite(errors, cons.maxFloorLoadPa, "Нагрузка на перекрытие")) {
       pushPositive(errors, cons.maxFloorLoadPa, "Нагрузка на перекрытие");
+    }
+  }
+  if (!cons.floorLoadingUnknown) {
+    if (cons.maxFloorLoadPa == null) {
+      errors.push("Нагрузка на перекрытие: если известна, задайте допустимое давление > 0 Па.");
     }
   }
 

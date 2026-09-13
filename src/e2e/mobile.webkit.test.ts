@@ -1392,13 +1392,14 @@ describe("QX-02B HUD + numeric fail-closed", () => {
     await page.evaluate(() => {
       const s = (window as unknown as { __MF_STORE__: { getState: () => {
         project: {
-          constraints: { floorLoadingUnknown: boolean };
+          constraints: { floorLoadingUnknown: boolean; maxFloorLoadPa?: number };
           fleet: { requestedCount: number };
         };
         loadProject: (p: unknown) => void;
       } } }).__MF_STORE__.getState();
-      const p = structuredClone(s.project) as typeof s.project & { constraints: { floorLoadingUnknown: boolean } };
+      const p = structuredClone(s.project) as typeof s.project & { constraints: { floorLoadingUnknown: boolean; maxFloorLoadPa?: number } };
       p.constraints.floorLoadingUnknown = false;
+      p.constraints.maxFloorLoadPa = 10_000;
       p.fleet.requestedCount = 24;
       s.loadProject(p);
     });

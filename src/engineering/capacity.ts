@@ -25,6 +25,10 @@ export interface CapacityInputs {
   rackKnown: boolean;
   rackDetail: string;
   rackTrace: CalcTrace[];
+  maxByFloor: number | null;
+  floorKnown: boolean;
+  floorDetail: string;
+  floorTrace: CalcTrace[];
   maxByUser: number | null;
   userKnown: boolean;
   geometryValid: boolean;
@@ -72,6 +76,14 @@ export function calculateCapacity(input: CapacityInputs) {
       detail: input.rackDetail,
       trace: input.rackTrace,
     },
+    {
+      kind: "FLOOR",
+      label: "Floor loading",
+      value: input.maxByFloor,
+      known: input.floorKnown,
+      detail: input.floorDetail,
+      trace: input.floorTrace,
+    },
   ];
   if (input.userKnown && input.maxByUser != null) {
     slots.push({
@@ -117,7 +129,7 @@ export function calculateCapacity(input: CapacityInputs) {
     why.push({
       id: "safe",
       label: "SAFE COUNT",
-      formula: "min(electrical, ventilation, space, rack, user) among known constraints",
+      formula: "min(electrical, ventilation, space, rack, floor, user) among known constraints",
       inputs: Object.fromEntries(slots.map((s) => [s.kind, s.value ?? "UNKNOWN"])),
       raw: safe,
       unit: "ASIC",
