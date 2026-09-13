@@ -422,137 +422,54 @@ describe("QX-MFQ OBJECT-PLACE-09/10 mobile CREATE", () => {
     const { ctx, page } = await openPhone("375x812");
     try {
       await mf(page, "cad").waitFor();
+      type Store = {
+        getState: () => {
+          project: {
+            room: { widthM: number; depthM: number; heightM: number; wallThicknessM: number; kind: "rectangular" };
+            openings: unknown[];
+            racks: Array<{ x: number; y: number }>;
+            fans: unknown[];
+          };
+          loadProject: (p: unknown) => void;
+          addRack: (r: Record<string, unknown>) => { ok: boolean };
+        };
+      };
       await page.evaluate(() => {
-        const s = (
-          window as unknown as {
-            __MF_STORE__: {
-              getState: () => {
-                project: {
-                  room: { kind: "rectangular"; widthM: number; depthM: number; heightM: number; wallThicknessM: number };
-                  openings: unknown[];
-                  racks: unknown[];
-                  fans: unknown[];
-                };
-                loadProject: (p: unknown) => void;
-                addRack: (r: unknown) => { ok: boolean };
-              };
-            };
-          }
-        ).__MF_STORE__.getState();
-        const p = structuredClone(s.project);
+        const live = () => (window as unknown as { __MF_STORE__: Store }).__MF_STORE__.getState();
+        const p = structuredClone(live().project);
         p.racks = [];
         p.fans = [];
         p.openings = [];
         p.room = { ...p.room, widthM: 8, depthM: 5, heightM: 2.8 };
-        s.loadProject(p);
+        live().loadProject(p);
       });
-      const fp0 = await page.evaluate(() =>
-        JSON.stringify(
-          (
-            window as unknown as {
-              __MF_STORE__: { getState: () => { project: { room: unknown; racks: unknown[]; openings: unknown[] } } };
-            }
-          ).__MF_STORE__.getState().project.racks,
-        ),
-      );
-      const outside = await page.evaluate(() => {
-        const s = (
-          window as unknown as {
-            __MF_STORE__: {
-              getState: () => {
-                addRack: (r: {
-                  id: string;
-                  name: string;
-                  x: number;
-                  y: number;
-                  widthM: number;
-                  depthM: number;
-                  heightM: number;
-                  shelves: number;
-                  usableShelfWidthM: number;
-                  usableShelfDepthM: number;
-                  rotationDeg: number;
-                  asicCount: number;
-                  airflowToward: "south";
-                }) => { ok: boolean };
-                project: { racks: unknown[] };
-              };
-            };
-          }
-        ).__MF_STORE__.getState();
-        const res = s.addRack({
-          id: "bad_out",
-          name: "bad",
-          x: 40,
-          y: 40,
-          widthM: 1.6,
-          depthM: 0.6,
-          heightM: 2.0,
-          shelves: 4,
-          usableShelfWidthM: 1.5,
-          usableShelfDepthM: 0.55,
-          rotationDeg: 0,
-          asicCount: 0,
-          airflowToward: "south",
-        });
-        return { ok: res.ok, n: s.project.racks.length };
-      });
+      const fixture = {
+        widthM: 1.6,
+        depthM: 0.6,
+        heightM: 2.0,
+        shelves: 4,
+        usableShelfWidthM: 1.5,
+        usableShelfDepthM: 0.55,
+        rotationDeg: 0,
+        asicCount: 0,
+        airflowToward: "south" as const,
+      };
+      const outside = await page.evaluate((spec) => {
+        const live = () => (window as unknown as { __MF_STORE__: Store }).__MF_STORE__.getState();
+        const before = live().project.racks.length;
+        const res = live().addRack({ id: "bad_out", name: "bad", x: 40, y: 40, ...spec });
+        return { ok: res.ok, before, n: live().project.racks.length };
+      }, fixture);
       assert.equal(outside.ok, false);
       assert.equal(outside.n, 0);
-      const fp1 = await page.evaluate(() =>
-        JSON.stringify(
-          (
-            window as unknown as {
-              __MF_STORE__: { getState: () => { project: { racks: unknown[] } } };
-            }
-          ).__MF_STORE__.getState().project.racks,
-        ),
-      );
-      assert.equal(fp1, fp0);
+      assert.equal(outside.before, 0);
 
-      const placed = await page.evaluate(() => {
-        const s = (
-          window as unknown as {
-            __MF_STORE__: {
-              getState: () => {
-                addRack: (r: {
-                  id: string;
-                  name: string;
-                  x: number;
-                  y: number;
-                  widthM: number;
-                  depthM: number;
-                  heightM: number;
-                  shelves: number;
-                  usableShelfWidthM: number;
-                  usableShelfDepthM: number;
-                  rotationDeg: number;
-                  asicCount: number;
-                  airflowToward: "south";
-                }) => { ok: boolean };
-                project: { racks: Array<{ x: number; y: number }> };
-              };
-            };
-          }
-        ).__MF_STORE__.getState();
-        const res = s.addRack({
-          id: "ok_in",
-          name: "ok",
-          x: 2.25,
-          y: 1.5,
-          widthM: 1.6,
-          depthM: 0.6,
-          heightM: 2.0,
-          shelves: 4,
-          usableShelfWidthM: 1.5,
-          usableShelfDepthM: 0.55,
-          rotationDeg: 0,
-          asicCount: 0,
-          airflowToward: "south",
-        });
-        const r = s.project.racks[0];
-        return { ok: res.ok, x: r?.x, y: r?.y, n: s.project.racks.length };
-      });
+      const placed = await page.evaluate((spec) => {
+        const live = () => (window as unknown as { __MF_STORE__: Store }).__MF_STORE__.getState();
+        const res = live().addRack({ id: "ok_in", name: "ok", x: 2.25, y: 1.5, ...spec });
+        const r = live().project.racks[0];
+        return { ok: res.ok, x: r?.x, y: r?.y, n: live().project.racks.length };
+      }, fixture);
       assert.equal(placed.ok, true);
       assert.equal(placed.x, 2.25);
       assert.equal(placed.y, 1.5);
