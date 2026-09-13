@@ -31,8 +31,8 @@ export const SAFETY_NUMERIC_INVENTORY: NumericInventoryEntry[] = [
   { path: "room.wallThicknessM", class: "SAFETY_GEOMETRY", rule: "finite; > 0; ≤ MAX_ROOM_DIM_M", invalid: 0 },
 
   // Openings — primitives; spatial wall-fit remains validateOpening
-  { path: "openings[].widthM", class: "SAFETY_DRIVING", rule: "finite; > 0", invalid: 0 },
-  { path: "openings[].heightM", class: "SAFETY_DRIVING", rule: "finite; > 0", invalid: -1 },
+  { path: "openings[].widthM", class: "SAFETY_DRIVING", rule: "finite; spatial >0 remains validateOpening", invalid: Number.NaN },
+  { path: "openings[].heightM", class: "SAFETY_DRIVING", rule: "finite; spatial >0 remains validateOpening", invalid: Number.NaN },
   { path: "openings[].bottomElevationM", class: "SAFETY_GEOMETRY", rule: "finite", invalid: Number.NaN },
   { path: "openings[].offsetFromWallStartM", class: "SAFETY_GEOMETRY", rule: "finite", invalid: Number.POSITIVE_INFINITY },
 

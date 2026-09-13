@@ -655,4 +655,17 @@ describe("REG-01 previous QX-02B-R factory still canonical", () => {
     assert.equal(empty.electrical.availablePowerW, 0);
     assert.equal(validateCanonicalProjectDomains(empty, catalogs).ok, true);
   });
+
+  it("exhaust widthM=0 still loads (Engineering INCOMPLETE, not domain reject)", () => {
+    const p = verifiedBase();
+    const exhaust = p.openings.find((o) => o.type === "EXHAUST");
+    assert.ok(exhaust);
+    exhaust!.widthM = 0;
+    assert.equal(validateCanonicalProjectDomains(p, catalogs).ok, true);
+    live().loadProject(verifiedBase(), false);
+    assert.equal(live().loadProject(p, false).ok, true);
+    assert.equal(live().project.openings.find((o) => o.type === "EXHAUST")?.widthM, 0);
+    assert.notEqual(live().result.capacity.safety, "VERIFIED");
+    assert.equal(live().result.capacity.verified, false);
+  });
 });

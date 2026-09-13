@@ -134,8 +134,10 @@ function validateFacilityLoadW(n: number, label: string, errors: string[]): void
 
 function validateOpeningPrimitives(o: Opening, errors: string[]): void {
   const tag = o.name ?? o.id;
-  if (pushFinite(errors, o.widthM, `Проём ${tag} ширина`)) pushPositive(errors, o.widthM, `Проём ${tag} ширина`);
-  if (pushFinite(errors, o.heightM, `Проём ${tag} высота`)) pushPositive(errors, o.heightM, `Проём ${tag} высота`);
+  // Spatial >0 / on-wall rules stay in validateOpening (Engineering fail-closed).
+  // Domain here only rejects non-finite primitives so NaN cannot reach SAFE.
+  pushFinite(errors, o.widthM, `Проём ${tag} ширина`);
+  pushFinite(errors, o.heightM, `Проём ${tag} высота`);
   pushFinite(errors, o.bottomElevationM, `Проём ${tag} отметка низа`);
   pushFinite(errors, o.offsetFromWallStartM, `Проём ${tag} смещение`);
 }
