@@ -1402,7 +1402,23 @@ describe("QX-02B HUD + numeric fail-closed", () => {
       p.fleet.requestedCount = 24;
       s.loadProject(p);
     });
-    await mf(page, "hud-safe").first().waitFor({ timeout: 8000 });
+    await page.waitForFunction(
+      () => {
+        const s = (
+          window as unknown as {
+            __MF_STORE__: {
+              getState: () => {
+                project: { fleet: { requestedCount: number }; constraints: { floorLoadingUnknown: boolean } };
+                result: { capacity: { verified: boolean } };
+              };
+            };
+          }
+        ).__MF_STORE__.getState();
+        return s.project.fleet.requestedCount === 24 && s.project.constraints.floorLoadingUnknown === false && s.result.capacity.verified === true;
+      },
+      null,
+      { timeout: 8000 },
+    );
   }
 
   function hudMobile(page: Page) {
