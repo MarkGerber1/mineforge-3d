@@ -149,8 +149,8 @@ export function hudSafetyKind(input: {
   hasBlocker: boolean;
   hasCriticalConflict: boolean;
 }): HudSafetyKind {
-  if (input.hasCriticalConflict || input.confidence === "CRITICAL") return "CRITICAL";
   if (input.hasBlocker || input.confidence === "INCOMPLETE") return "INCOMPLETE";
+  if (input.hasCriticalConflict || input.confidence === "CRITICAL") return "CRITICAL";
   if (input.confidence === "PRELIMINARY") return "PRELIMINARY";
   if (input.safe != null && input.requested > input.safe) return "OVER_CAPACITY";
   return "VERIFIED";
