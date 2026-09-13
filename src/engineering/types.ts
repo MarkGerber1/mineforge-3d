@@ -20,7 +20,8 @@ export type AppMode = "project" | "xray" | "twin";
 export type ViewMode = "2d" | "3d" | "split";
 
 export type ProjectStatus = "PASS" | "WARNING" | "FAIL" | "INCOMPLETE";
-export type SafeConfidence = "VERIFIED" | "PRELIMINARY" | "INCOMPLETE";
+export type SafeConfidence = "VERIFIED" | "PRELIMINARY" | "INCOMPLETE" | "CRITICAL";
+export type HudSafetyKind = "VERIFIED" | "PRELIMINARY" | "INCOMPLETE" | "CRITICAL" | "OVER_CAPACITY";
 
 export type BottleneckKind = "ELECTRICAL" | "VENTILATION" | "SPACE" | "RACK" | "USER" | "UNKNOWN";
 
@@ -450,6 +451,7 @@ export interface EngineeringResult {
     totalPa: number;
     systemK: number;
     traces: CalcTrace[];
+    dirtyExtraPa?: number;
   };
   fan: {
     instances: FanInstance[];
@@ -475,6 +477,7 @@ export interface EngineeringResult {
     wallHits: Array<{ id: string; reason: string }>;
     doorHits: Array<{ id: string; reason: string }>;
     ceilingHits: Array<{ id: string; reason: string }>;
+    clearanceHits: Array<{ id: string; reason: string }>;
     recirculation: Array<{ from: string; to: string; distanceM: number }>;
     placedAsics: number;
     asBuiltHits: Array<{ id: string; objectId: string; reason: string }>;
@@ -486,6 +489,8 @@ export interface EngineeringResult {
     bottlenecks: BottleneckKind[];
     confidence: SafeConfidence;
     status: ProjectStatus;
+    safety: HudSafetyKind;
+    verified: boolean;
     why: CalcTrace[];
   };
   warnings: Warning[];

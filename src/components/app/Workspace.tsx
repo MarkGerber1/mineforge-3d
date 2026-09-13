@@ -5,6 +5,7 @@ import { emptyRectangularProject, undergroundParkingFarm } from "@/project/facto
 import { loadLastProject } from "@/project/persistence";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { HUD_SAFETY_LABEL_RU } from "@/engineering/capacity";
 import { FAILURE_LABELS } from "@/ai/failure";
 
 const Twin3D = lazy(() => import("@/components/twin/Twin3D").then((m) => ({ default: m.Twin3D })));
@@ -20,7 +21,9 @@ export function Workspace() {
   const store = useProjectStore();
   const project = useLiveProject();
   const result = useLiveResult();
-  const safeWarn = result.capacity.safe != null && project.fleet.requestedCount > result.capacity.safe;
+  const safety = result.capacity.safety;
+  const verifiedGreen = result.capacity.verified;
+  const safetyTone = verifiedGreen ? "text-ok" : safety === "OVER_CAPACITY" || safety === "PRELIMINARY" ? "text-warn" : "text-crit";
 
   useEffect(() => {
     void loadLastProject().then((p) => {
@@ -94,13 +97,22 @@ export function Workspace() {
           store.setInspectorOpen(true);
         }}
       >
-        <div className="font-mono text-[16px] leading-tight tabular sm:text-[18px]" data-mf-id="hud-safe" data-mf-safe={result.capacity.safe ?? ""} data-mf-requested={project.fleet.requestedCount}>
+        <div
+          className="font-mono text-[16px] leading-tight tabular sm:text-[18px]"
+          data-mf-id="hud-safe"
+          data-mf-hud="desktop"
+          data-mf-safe={result.capacity.safe ?? ""}
+          data-mf-requested={project.fleet.requestedCount}
+          data-mf-confidence={result.capacity.confidence}
+          data-mf-safety={safety}
+          data-mf-verified={verifiedGreen ? "1" : "0"}
+        >
           <span className="text-fg">{project.fleet.requestedCount}</span>
           <span className="text-muted"> REQUESTED / </span>
-          <span className={safeWarn ? "text-warn" : "text-ok"}>{result.capacity.safe ?? "—"} SAFE</span>
+          <span className={safetyTone}>{result.capacity.safe ?? "—"} SAFE</span>
         </div>
-        <div className="mt-0.5 text-[10px] uppercase tracking-[0.12em] text-muted">
-          {result.capacity.bottlenecks.join(" · ") || "—"} · {result.capacity.confidence}
+        <div className={cn("mt-0.5 text-[10px] uppercase tracking-[0.12em]", safetyTone)}>
+          {HUD_SAFETY_LABEL_RU[safety]} · {result.capacity.bottlenecks.join(" · ") || "—"} · {result.capacity.confidence}
         </div>
       </button>
 

@@ -1,4 +1,4 @@
-import { MAX_ROOM_DIM_M, MIN_ROOM_DIM_M } from "./constants.ts";
+import { MAX_ROOM_DIM_M, MAX_ROOM_HEIGHT_M, MIN_ROOM_DIM_M, MIN_USABLE_OPENING_AREA_M2 } from "./constants.ts";
 import type { AsBuiltObject, FanInstance, Opening, Project, Rack, RealityFinding, RealityState, WallId } from "./types.ts";
 
 export function wallLength(project: Project, wallId: WallId): number {
@@ -28,7 +28,7 @@ export function analyzeGeometry(project: Project) {
     heightM >= MIN_ROOM_DIM_M &&
     widthM <= MAX_ROOM_DIM_M &&
     depthM <= MAX_ROOM_DIM_M &&
-    heightM <= 50;
+    heightM <= MAX_ROOM_HEIGHT_M;
   return { ...roomMetrics(widthM, depthM, heightM), valid };
 }
 
@@ -118,6 +118,36 @@ export function analyzeOpenings(project: Project) {
     return { id: o.id, areaM2: v.areaM2, topElevationM: v.topElevationM, insideWall: v.insideWall, errors: v.errors };
   });
   return { valid: items.every((i) => i.errors.length === 0), items };
+}
+
+/** Geometrically valid opening of the given types with usable area. Not an airflow model. */
+export function openingIsUsable(
+  project: Project,
+  o: Opening,
+  types: Opening["type"][],
+  items?: Array<{ id: string; areaM2: number; errors: string[] }>,
+): boolean {
+  if (!types.includes(o.type)) return false;
+  const row = items?.find((i) => i.id === o.id);
+  const errors = row ? row.errors : validateOpening(project, o).errors;
+  const area = row ? row.areaM2 : openingAreaM2(o);
+  return errors.length === 0 && area + 1e-12 >= MIN_USABLE_OPENING_AREA_M2;
+}
+
+export function validExhaustAvailable(
+  project: Project,
+  openings = analyzeOpenings(project),
+): boolean {
+  return project.openings.some((o) =>
+    openingIsUsable(project, o, ["EXHAUST", "SHAFT_CONNECTION"], openings.items),
+  );
+}
+
+export function validIntakeAvailable(
+  project: Project,
+  openings = analyzeOpenings(project),
+): boolean {
+  return project.openings.some((o) => openingIsUsable(project, o, ["INTAKE"], openings.items));
 }
 
 export function canPlaceOpening(project: Project, o: Opening): boolean {

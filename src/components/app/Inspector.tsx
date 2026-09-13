@@ -3,7 +3,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useLiveProject, useLiveResult, useProjectStore } from "@/project/store";
 import { parseLengthToMeters, formatAmps, formatKw, formatM3h, formatPa } from "@/engineering/units";
-import { validateRoomLengthInput } from "@/engineering/room-resize";
+import { validateRoomHeightInput, validateRoomLengthInput } from "@/engineering/room-resize";
+import { validateAvailablePowerInput } from "@/engineering/electrical";
+import { rackAsicCapacity, validateRackAsicCountInput } from "@/engineering/racks";
 import { getAsic } from "@/equipment/asic-catalog";
 import { getFan } from "@/equipment/fan-catalog";
 import { generateUpgradeOptions, solveForTarget, sensitivity } from "@/engineering/upgrade";
@@ -13,7 +15,17 @@ import { Line, LineChart, ResponsiveContainer, XAxis, YAxis } from "recharts";
 import { critiqueProject } from "@/ai/critic";
 import { FAILURE_LABELS, type FailureKind } from "@/ai/failure";
 
-function Field({ label, value, onCommit }: { label: string; value: string; onCommit: (v: string) => string | void }) {
+function Field({
+  label,
+  value,
+  onCommit,
+  mfId,
+}: {
+  label: string;
+  value: string;
+  onCommit: (v: string) => string | void;
+  mfId?: string;
+}) {
   const [v, setV] = useState(value);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -29,6 +41,7 @@ function Field({ label, value, onCommit }: { label: string; value: string; onCom
       <div className="mb-1 text-[10px] uppercase tracking-[0.12em] text-muted">{label}</div>
       <Input
         value={v}
+        data-mf-id={mfId}
         onChange={(e) => setV(e.target.value)}
         onBlur={() => commit(v)}
         onKeyDown={(e) => {
@@ -88,9 +101,12 @@ export function Inspector({ hideGrok }: { hideGrok?: boolean }) {
             <Field
               label="Высота потолка"
               value={`${project.room.heightM}`}
+              mfId="inspector-height"
               onCommit={(v) => {
-                const m = parseLengthToMeters(v);
-                if (m) store.commit({ ...store.project, room: { ...store.project.room, heightM: m } }, "Set height");
+                const check = validateRoomHeightInput(v);
+                if (!check.ok) return check.reason;
+                const res = store.setRoomHeight(check.meters);
+                if (!res.ok) return res.reason;
               }}
             />
             <Field
@@ -101,7 +117,13 @@ export function Inspector({ hideGrok }: { hideGrok?: boolean }) {
             <Field
               label="Мощность, kW"
               value={`${project.electrical.availablePowerW / 1000}`}
-              onCommit={(v) => store.setPower(Number(v.replace(",", ".")) * 1000)}
+              mfId="inspector-power"
+              onCommit={(v) => {
+                const check = validateAvailablePowerInput(v, "kW");
+                if (!check.ok) return check.reason;
+                const res = store.setPower(check.watts);
+                if (!res.ok) return res.reason;
+              }}
             />
             <label className="block">
               <div className="mb-1 text-[10px] uppercase tracking-[0.12em] text-muted">Резерв %</div>
@@ -197,12 +219,14 @@ export function Inspector({ hideGrok }: { hideGrok?: boolean }) {
             <Field
               label="ASIC on rack"
               value={`${rack.asicCount}`}
-              onCommit={(v) =>
-                store.commit(
-                  { ...store.project, racks: store.project.racks.map((r) => (r.id === rack.id ? { ...r, asicCount: Number(v) || 0 } : r)) },
-                  "Set rack ASIC",
-                )
-              }
+              mfId="inspector-rack-asic"
+              onCommit={(v) => {
+                const cap = asic ? rackAsicCapacity(rack, asic) : 0;
+                const check = validateRackAsicCountInput(v, cap);
+                if (!check.ok) return check.reason;
+                const res = store.setRackAsicCount(rack.id, check.count);
+                if (!res.ok) return res.reason;
+              }}
             />
             <div className="grid grid-cols-2 gap-1">
               <Button variant="outline" data-mf-id="rotate-rack" onClick={() => store.rotateSelectedRack()}>

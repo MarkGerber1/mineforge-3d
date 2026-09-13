@@ -76,8 +76,12 @@ describe("STATE-03 AI must obey engineering core", () => {
       geometryValid: true,
       asicKnown: true,
       exhaustKnown: true,
+      intakeKnown: true,
+      openingsValid: true,
       fanKnown: true,
       floorUnknown: false,
+      hasBlocker: false,
+      hasCriticalConflict: false,
     });
     assert.equal(r.safe, 24);
     assert.deepEqual(r.bottlenecks, ["VENTILATION"]);
@@ -104,8 +108,12 @@ describe("STATE-03 AI must obey engineering core", () => {
       geometryValid: true,
       asicKnown: true,
       exhaustKnown: true,
+      intakeKnown: true,
+      openingsValid: true,
       fanKnown: true,
       floorUnknown: false,
+      hasBlocker: false,
+      hasCriticalConflict: false,
     });
     assert.equal(afterElec.safe, 24);
   });

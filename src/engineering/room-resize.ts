@@ -1,4 +1,4 @@
-import { MAX_ROOM_DIM_M, MIN_ROOM_DIM_M } from "./constants.ts";
+import { MAX_ROOM_DIM_M, MAX_ROOM_HEIGHT_M, MIN_ROOM_DIM_M } from "./constants.ts";
 import { originDeltaForWallResize } from "./geometry.ts";
 import { parseLengthToMeters } from "./units.ts";
 import type { WallId } from "./types.ts";
@@ -43,6 +43,38 @@ export function validateRoomLengthInput(raw: string): RoomLengthResult {
     return { ok: false, code: "PARSE", reason: "Некорректный размер." };
   }
   return validateRoomLengthM(m);
+}
+
+export type RoomHeightResult = RoomLengthResult;
+
+export function validateRoomHeightM(meters: number): RoomHeightResult {
+  if (!Number.isFinite(meters)) {
+    return { ok: false, code: "PARSE", reason: "Некорректная высота." };
+  }
+  if (meters < 0) {
+    return { ok: false, code: "NEGATIVE", reason: "Высота не может быть отрицательной." };
+  }
+  if (meters === 0) {
+    return { ok: false, code: "ZERO", reason: "Высота должна быть больше нуля." };
+  }
+  if (meters < MIN_ROOM_DIM_M) {
+    return { ok: false, code: "MIN", reason: `Минимальная высота потолка — ${fmtM(MIN_ROOM_DIM_M)} м.` };
+  }
+  if (meters > MAX_ROOM_HEIGHT_M) {
+    return { ok: false, code: "MAX", reason: `Максимальная высота потолка — ${fmtM(MAX_ROOM_HEIGHT_M)} м.` };
+  }
+  return { ok: true, meters };
+}
+
+export function validateRoomHeightInput(raw: string): RoomHeightResult {
+  if (!raw.trim()) {
+    return { ok: false, code: "BLANK", reason: "Введите высоту потолка." };
+  }
+  const m = parseLengthToMeters(raw);
+  if (m == null) {
+    return { ok: false, code: "PARSE", reason: "Некорректная высота." };
+  }
+  return validateRoomHeightM(m);
 }
 
 export interface WallResizeContract {

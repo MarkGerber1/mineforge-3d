@@ -81,6 +81,13 @@ repair (unique duplicate ids, nearest-wall over SVG z-order, Measure A/B in
 history). It does not publish, does not perform physical iPhone acceptance,
 and does not reopen MFQ-001…006 or FINAL-SEC-001/002.
 
+QX-02B (this candidate) is Engineering safety + SAFE fail-closed + numeric
+integrity from `39ea17b`. Conflicting racks, service/aisle, dimensional space
+packing, intake availability, invalid openings, HUD safety states, electrical
+power / room height / rack asicCount domain, and a single dirty-filter
+pressure penalty. Does not start QX-02C. Does not publish. Does not declare
+FINAL PASSED.
+
 ## Important historical SHAs
 
 | Milestone | SHA |

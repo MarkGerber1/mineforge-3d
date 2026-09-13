@@ -201,5 +201,29 @@ Starting SHA `b4241e985b78e98cb9902687f54aec83de763e99`. Branch
 
 Does not start QX-02B. Does not publish. Does not declare FINAL PASSED.
 
+## QX-02B — ENGINEERING SAFETY + SAFE FAIL-CLOSED + NUMERIC INTEGRITY
+
+Starting SHA `39ea17b241d1d556656d3bdec1245352d844ca32`. Branch
+`repair/qx-02b-engineering-safety`.
+
+- MF-SWEEP-004: overlap / wall / door / as-built / ceiling racks are blocked
+  from usableCapacity (both members of a rack-rack collision).
+- MF-SWEEP-005: front/rear service envelopes and facing min-aisle; exact
+  boundary accepted (`>=`); legacy invalid data is not VERIFIED SAFE.
+- MF-SWEEP-006: rectangular packing upper bound (0°/90°); zero if the rack
+  footprint cannot fit; never exceeds the body grid.
+- MF-SWEEP-007/008: valid usable intake and exhaust (geometry + min area
+  0.05 m²). Invalid openings cannot satisfy availability. BLOCKER → INCOMPLETE.
+- MF-SWEEP-009: HUD `data-mf-safety` / `data-mf-verified`; green only when
+  VERIFIED. CRITICAL / INCOMPLETE / PRELIMINARY / OVER_CAPACITY are explicit.
+- MF-SWEEP-011/019/020: `setPower` / `setRoomHeight` / `setRackAsicCount`
+  fail closed. 80 kW → 80000 W. Height 0.50…50.00 m. asicCount integer,
+  0…per-rack, fractions rejected.
+- MF-SWEEP-016: dirty-filter extraPa added once at the network (pressure
+  trace and fan extraFixedPa share the same penalty).
+
+Does not start QX-02C. Does not publish. Does not declare FINAL PASSED.
+Does not reopen QX-01 / QX-02A / FINAL-SEC.
+
 
 

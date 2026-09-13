@@ -17,14 +17,24 @@ export function parseLengthToMeters(raw: string): number | null {
 }
 
 export function parsePowerToWatts(raw: string): number | null {
+  return parsePowerInputToWatts(raw, "W");
+}
+
+/**
+ * Parse a power string. Bare numbers use `defaultUnit`.
+ * "80" + kW → 80000 W; "80 kW" → 80000 W; "80000 W" → 80000 W.
+ */
+export function parsePowerInputToWatts(raw: string, defaultUnit: "W" | "kW" = "W"): number | null {
   const s = raw.trim().toLowerCase().replace(",", ".").replace(/\s+/g, "");
+  if (!s) return null;
   const m = s.match(/^(-?\d+(?:\.\d+)?)(kw|w|kвт|вт)?$/);
   if (!m) return null;
   const n = Number(m[1]);
   if (!Number.isFinite(n)) return null;
   const unit = m[2];
   if (unit === "kw" || unit === "kвт") return n * 1000;
-  return n;
+  if (unit === "w" || unit === "вт") return n;
+  return defaultUnit === "kW" ? n * 1000 : n;
 }
 
 export function metersToMm(m: number): number {
