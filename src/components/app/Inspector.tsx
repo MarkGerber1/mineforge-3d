@@ -14,6 +14,14 @@ import { GrokPanel } from "./GrokPanel";
 import { Line, LineChart, ResponsiveContainer, XAxis, YAxis } from "recharts";
 import { critiqueProject } from "@/ai/critic";
 import { FAILURE_LABELS, type FailureKind } from "@/ai/failure";
+import type { WallId } from "@/engineering/types";
+
+const WALL_OPTIONS: Array<{ id: WallId; label: string }> = [
+  { id: "south", label: "Юг" },
+  { id: "north", label: "Север" },
+  { id: "west", label: "Запад" },
+  { id: "east", label: "Восток" },
+];
 
 function Field({
   label,
@@ -67,6 +75,8 @@ export function Inspector({ hideGrok }: { hideGrok?: boolean }) {
   const opening = project.openings.find((o) => o.id === id);
   const rack = project.racks.find((r) => r.id === id);
   const fanInst = project.fans.find((f) => f.id === id);
+  const overlayPhoto = project.reality?.photos.find((p) => (p.overlays ?? []).some((o) => o.id === id || o.linkedObjectId === id));
+  const overlay = overlayPhoto?.overlays?.find((o) => o.id === id || o.linkedObjectId === id);
   const asic = getAsic(project.fleet.asicId) ?? project.fleet.imported;
   const catalogs = useMemo(() => defaultCatalogs(), []);
   const why = store.whyOpen;
@@ -206,6 +216,31 @@ export function Inspector({ hideGrok }: { hideGrok?: boolean }) {
         {opening && (
           <div className="mt-3 space-y-2">
             <div className="text-[13px] font-medium">{opening.name ?? opening.type}</div>
+            <label className="block">
+              <div className="mb-1 text-[10px] uppercase tracking-[0.12em] text-muted">Стена</div>
+              <select
+                className="h-11 w-full rounded-[6px] border border-border bg-bg px-2 text-[13px]"
+                data-mf-id="opening-wall"
+                value={opening.wallId}
+                disabled={Boolean(opening.locked)}
+                onChange={(e) => {
+                  const wall = e.target.value as WallId;
+                  const res = store.reassignOpeningWall(opening.id, wall);
+                  if (!res.ok) e.target.value = opening.wallId;
+                }}
+              >
+                {WALL_OPTIONS.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.label}
+                  </option>
+                ))}
+              </select>
+              {store.lastMutationError && (
+                <div className="mt-1 text-[12px] text-crit" data-mf-id="wall-reassign-error">
+                  {store.lastMutationError}
+                </div>
+              )}
+            </label>
             <Field
               label="Ширина"
               value={`${opening.widthM}`}
@@ -241,6 +276,9 @@ export function Inspector({ hideGrok }: { hideGrok?: boolean }) {
             <div className="font-mono text-[11px] text-muted">
               S = {(opening.widthM * opening.heightM).toFixed(3)} m²
             </div>
+            <Button variant="outline" className="h-11 w-full" data-mf-id="inspector-delete" onClick={() => store.deleteSelected()}>
+              Удалить
+            </Button>
           </div>
         )}
 
@@ -270,6 +308,9 @@ export function Inspector({ hideGrok }: { hideGrok?: boolean }) {
                 Дублировать
               </Button>
             </div>
+            <Button variant="outline" className="h-11 w-full" data-mf-id="inspector-delete" onClick={() => store.deleteSelected()}>
+              Удалить
+            </Button>
           </div>
         )}
 
@@ -310,6 +351,18 @@ export function Inspector({ hideGrok }: { hideGrok?: boolean }) {
               Qop {result.fan.operatingQ_m3h?.toFixed(0) ?? "—"} m³/h · {formatPa(result.fan.operatingP_pa ?? 0)}
             </div>
             <div className={result.fan.pass ? "text-ok" : "text-crit"}>{result.fan.pass ? "PASS" : "FAIL"}</div>
+            <Button variant="outline" className="h-11 w-full" data-mf-id="inspector-delete" onClick={() => store.deleteSelected()}>
+              Удалить
+            </Button>
+          </div>
+        )}
+
+        {overlay && !opening && !rack && !fanInst && overlayPhoto && (
+          <div className="mt-3 space-y-2" data-mf-id="inspector-overlay">
+            <div className="text-[13px] font-medium">{overlay.kind} · {overlay.applied ? "linked" : "draft"}</div>
+            <Button variant="outline" className="h-11 w-full" data-mf-id="inspector-delete" onClick={() => store.deleteSelected()}>
+              Удалить с фото
+            </Button>
           </div>
         )}
 

@@ -102,7 +102,13 @@ unknown topology is not VERIFIED. Inventory: `placedAsicCount ≤ requestedCount
 canonical; `engineeringDemandCount = max(requested, placed)` for electrical
 and thermal. Floor OPTION A calculation is not reopened.
 
-Do not start QX-02C. Do not reopen QX-01 / QX-02A / FINAL-SEC.
+Do not start QX-02C. Do not reopen QX-01 / QX-02A / QX-02B / FINAL-SEC.
+
+QX-03: Owner Editor + interactive photo workspace (PHASE 1 calibrated 2D
+overlay, not photogrammetry). Persistent AI in 2D/3D/Photo, mobile and
+desktop. Photo overlays ↔ canonical via `linkedObjectId` after APPLY TO
+MODEL. Wall reassignment for openings. 3D is an editor. Same validators.
+Draft overlays do not change SAFE.
 
 Evidence: [docs/FINAL-01.md](docs/FINAL-01.md).
 

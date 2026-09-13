@@ -43,6 +43,8 @@ Product auth / shared database: **OFF** (`.grok/app-env.json` `VITE_AUTH_ENABLED
 | App Edit | owner session, isolated git job, fail-closed preview, exact SHA promote; UI paths only |
 | Persistence | IndexedDB `mineforge` (projects + JPEG media). Raw video **not** stored |
 | Mobile | separate shell (CAD + HUD + toolbar + sheet), not a shrunk desktop |
+| Owner editor (QX-03) | persistent AI; photo overlay workspace; wall reassignment; 3D select/edit/delete |
+| Playwright WebKit | CI-mandatory iPhone profiles 375×812 / 390×844 / 430×932 |
 | Playwright WebKit | CI-mandatory iPhone profiles 375×812 / 390×844 / 430×932 |
 | Video | real browser decode → bounded JPEG stills → `VIDEO_FRAME_ESTIMATE` |
 | AI OFFLINE | explicit; CAD / Reality / extract / Engineering / Undo remain |

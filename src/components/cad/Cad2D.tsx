@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { openingWorldRect, rackAabb, wallLength } from "@/engineering/geometry";
 import { formatMeters, formatLengthHuman, snapTo } from "@/engineering/units";
-import type { Opening, OpeningType, Rack, WallId } from "@/engineering/types";
+import type { FanInstance, Opening, OpeningType, Rack, WallId } from "@/engineering/types";
 import { MAX_ROOM_DIM_M, MIN_ROOM_DIM_M, SNAP_MODES_M } from "@/engineering/constants";
 import { useLiveProject, useLiveResult, useProjectStore } from "@/project/store";
-import { nid } from "@/project/factory";
-import { TEST_RACK_A } from "@/project/factory";
+import { nid, TEST_RACK_A } from "@/project/factory";
+import { FAN_STRONG } from "@/equipment/fan-catalog";
 import { validateRacksConfiguration, validateRackPlacement } from "@/engineering/placement";
 import { validateRoomLengthInput, wallResizeContract, createWallDragContext, wallDragLengthM, originShiftForResize, wallCursor, pickWallHit, wallIdFromEventTarget, resolveWallDragTarget, type WallDragContext } from "@/engineering/room-resize";
 
@@ -147,6 +147,15 @@ export function Cad2D() {
     return null;
   };
 
+  const hitFan = (wx: number, wy: number) => {
+    const tol = 18 / cam.ppm;
+    for (let i = project.fans.length - 1; i >= 0; i--) {
+      const f = project.fans[i];
+      if (Math.hypot(wx - f.x, wy - f.y) <= tol) return f;
+    }
+    return null;
+  };
+
   const applySnap = (v: number) => snapTo(v, snapM);
 
   function nearestWall(wx: number, wy: number): { wall: WallId; offset: number } | null {
@@ -251,6 +260,25 @@ export function Cad2D() {
       setPlaceHint(null);
       return;
     }
+    if (store.tool === "fan") {
+      const fan: FanInstance = {
+        id: nid("fan"),
+        specId: project.fans[0]?.specId ?? FAN_STRONG.id,
+        name: `F${project.fans.length + 1}`,
+        x: applySnap(p.x),
+        y: applySnap(p.y),
+        arrangement: "single",
+        count: 1,
+        dirtyFilter: false,
+      };
+      const placed = store.addFanInstance(fan);
+      if (!placed.ok) {
+        setBadge({ x: e.clientX, y: e.clientY, text: "НЕДОПУСТИМО", sub: placed.errors[0] });
+        return;
+      }
+      store.setTool("select");
+      return;
+    }
 
     const opening = hitOpening(p.x, p.y);
     if (opening) {
@@ -282,6 +310,11 @@ export function Cad2D() {
       store.select(ids);
       const sel = project.racks.filter((r) => ids.includes(r.id));
       beginDrag({ kind: "rack", ids, dx: p.x, dy: p.y, ox: sel.map((r) => r.x), oy: sel.map((r) => r.y) });
+      return;
+    }
+    const fanHit = hitFan(p.x, p.y);
+    if (fanHit) {
+      store.select([fanHit.id], e.shiftKey || store.multiSelect);
       return;
     }
     const wall = resolveWallDragTarget(
@@ -497,13 +530,32 @@ export function Cad2D() {
         store.setPreview(null);
         setCam(drag.startCam);
       }
-    } else if (drag?.kind === "opening" || drag?.kind === "openingWidth" || drag?.kind === "rack") {
+    } else if (drag?.kind === "opening") {
+      const el = wrapRef.current;
+      let reassigned = false;
+      if (e && el) {
+        const p = clientToWorld(el, cam, e.clientX, e.clientY);
+        const nw = nearestWall(p.x, p.y);
+        const o = store.project.openings.find((x) => x.id === drag.id);
+        if (nw && o && nw.wall !== o.wallId) {
+          store.setPreview(null);
+          const res = store.reassignOpeningWall(o.id, nw.wall, applySnap(nw.offset) - o.widthM / 2);
+          reassigned = res.ok;
+          if (!res.ok) {
+            setBadge({ x: e.clientX, y: e.clientY, text: "ОТКЛОНЕНО", sub: res.errors[0] });
+          }
+        }
+      }
+      if (!reassigned && store.preview) {
+        store.commitGeometryPreview("Move opening");
+      } else if (!reassigned) {
+        store.setPreview(null);
+      }
+    } else if (drag?.kind === "openingWidth" || drag?.kind === "rack") {
       if (drag.kind === "rack" && collisionRef.current) {
         store.setPreview(null);
       } else {
-        store.commitGeometryPreview(
-          drag.kind === "opening" ? "Move opening" : drag.kind === "openingWidth" ? "Resize opening" : "Move rack",
-        );
+        store.commitGeometryPreview(drag.kind === "openingWidth" ? "Resize opening" : "Move rack");
       }
     }
     collisionRef.current = false;

@@ -53,14 +53,16 @@ export function TopBar() {
       </div>
 
       <div className="ml-1 hidden rounded-[10px] bg-raised p-0.5 md:flex">
-        {(["2d", "split", "3d"] as const).map((v) => (
+        {(["2d", "split", "3d", "photo"] as const).map((v) => (
           <button
             key={v}
             type="button"
+            data-mf-id={`view-${v}`}
             onClick={() => store.setView(v)}
             className={cn(
               "h-7 rounded-[8px] px-2.5 font-mono text-[11px] uppercase",
               store.view === v ? "bg-panel text-fg" : "text-muted hover:text-fg",
+              v === "photo" && !store.activePhotoId && "opacity-40",
             )}
           >
             {v}
@@ -92,9 +94,10 @@ export function TopBar() {
         <Button
           className="hidden h-8 px-2.5 text-[12px] md:inline-flex"
           variant={store.sheet !== "closed" && store.sheetTab === "reality" ? "default" : "outline"}
-          onClick={() =>
-            store.openSheet("reality", store.sheet !== "closed" && store.sheetTab === "reality" ? "closed" : "half")
-          }
+          onClick={() => {
+            if (store.activePhotoId) store.setView("photo");
+            store.openSheet("reality", store.sheet !== "closed" && store.sheetTab === "reality" ? "closed" : "half");
+          }}
         >
           Фото
         </Button>
@@ -106,10 +109,15 @@ export function TopBar() {
           App
         </Button>
         <Button
-          className="h-11 min-w-11 px-2.5 text-[12px] md:hidden"
+          className="h-11 min-w-11 px-2.5 text-[12px] md:h-8"
           variant={store.sheet !== "closed" && store.sheetTab === "grok" ? "default" : "outline"}
           data-mf-id="mobile-ai"
           onClick={() => {
+            if (typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches) {
+              store.setInspectorOpen(true);
+              document.querySelector("[data-mf-id=grok]")?.scrollIntoView({ block: "nearest" });
+              return;
+            }
             if (store.sheet !== "closed" && store.sheetTab === "grok") store.setSheet("closed");
             else store.openSheet("grok", store.sheet === "closed" ? "half" : store.sheet);
           }}

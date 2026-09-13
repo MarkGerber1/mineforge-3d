@@ -53,7 +53,16 @@ function Ceiling({ project, visible }: { project: Project; visible: boolean }) {
   );
 }
 
+function selectObject(id: string) {
+  const store = useProjectStore.getState();
+  store.select([id]);
+  if (typeof window !== "undefined" && window.innerWidth < 768) {
+    store.openSheet("props", "half");
+  }
+}
+
 function Openings({ project }: { project: Project }) {
+  const selectedIds = useProjectStore((s) => s.selectedIds);
   return (
     <group>
       {project.openings.map((o) => {
@@ -64,7 +73,7 @@ function Openings({ project }: { project: Project }) {
         const alongX = Math.abs(r.x2 - r.x1);
         const alongZ = Math.abs(r.y2 - r.y1);
         const color = o.type === "INTAKE" ? "#5aa7c7" : o.type === "EXHAUST" || o.type === "SHAFT_CONNECTION" ? "#c47a52" : "#d9dee6";
-        const selected = useProjectStore.getState().selectedIds.includes(o.id);
+        const selected = selectedIds.includes(o.id);
         const jamb = 0.04;
         const isNS = o.wallId === "south" || o.wallId === "north";
         const depth = 0.1;
@@ -90,7 +99,7 @@ function Openings({ project }: { project: Project }) {
             key={o.id}
             onClick={(e: ThreeEvent<MouseEvent>) => {
               e.stopPropagation();
-              useProjectStore.getState().select([o.id]);
+              selectObject(o.id);
             }}
           >
             {posts.map((p, i) => (
@@ -146,7 +155,7 @@ function Racks({ project }: { project: Project }) {
               castShadow
               onClick={(e: ThreeEvent<MouseEvent>) => {
                 e.stopPropagation();
-                useProjectStore.getState().select([r.id]);
+                selectObject(r.id);
               }}
             >
               <boxGeometry args={[ww, r.heightM, dd]} />
@@ -213,14 +222,32 @@ function Shaft({ project }: { project: Project }) {
 }
 
 function Fans({ project }: { project: Project }) {
+  const selectedIds = useProjectStore((s) => s.selectedIds);
   return (
     <group>
-      {project.fans.map((f) => (
-        <mesh key={f.id} position={[f.x, 0.4, f.y]} rotation={[Math.PI / 2, 0, 0]}>
-          <cylinderGeometry args={[0.28, 0.28, 0.18, 16]} />
-          <meshStandardMaterial color="#7b8ca3" metalness={0.4} roughness={0.4} />
-        </mesh>
-      ))}
+      {project.fans.map((f) => {
+        const sel = selectedIds.includes(f.id);
+        return (
+          <mesh
+            key={f.id}
+            position={[f.x, 0.4, f.y]}
+            rotation={[Math.PI / 2, 0, 0]}
+            onClick={(e: ThreeEvent<MouseEvent>) => {
+              e.stopPropagation();
+              selectObject(f.id);
+            }}
+          >
+            <cylinderGeometry args={[0.28, 0.28, 0.18, 16]} />
+            <meshStandardMaterial
+              color={sel ? "#c5ced8" : "#7b8ca3"}
+              metalness={0.4}
+              roughness={0.4}
+              emissive={sel ? "#5aa7c7" : "#000000"}
+              emissiveIntensity={sel ? 0.35 : 0}
+            />
+          </mesh>
+        );
+      })}
     </group>
   );
 }
@@ -308,10 +335,18 @@ export function Twin3D() {
           const mode = project.reality?.compareMode ?? "as-designed";
           if (mode === "as-designed") return null;
           const opacity = mode === "as-built" ? 0.65 : 0.45;
+          const sel = store.selectedIds.includes(obj.id);
           return (
-            <mesh key={obj.id} position={[obj.x + obj.widthM / 2, obj.z + obj.heightM / 2, obj.y + obj.depthM / 2]}>
+            <mesh
+              key={obj.id}
+              position={[obj.x + obj.widthM / 2, obj.z + obj.heightM / 2, obj.y + obj.depthM / 2]}
+              onClick={(e: ThreeEvent<MouseEvent>) => {
+                e.stopPropagation();
+                selectObject(obj.id);
+              }}
+            >
               <boxGeometry args={[obj.widthM, obj.heightM, obj.depthM]} />
-              <meshStandardMaterial color="#c4a35a" transparent opacity={opacity} />
+              <meshStandardMaterial color={sel ? "#e0c070" : "#c4a35a"} transparent opacity={opacity} />
             </mesh>
           );
         })}
@@ -322,6 +357,35 @@ export function Twin3D() {
       </Canvas>
       <div className="pointer-events-none absolute left-3 top-3 rounded-[8px] border border-border bg-panel/90 px-2 py-1 font-mono text-[11px] text-muted">
         1:1 Digital Twin · {project.room.widthM.toFixed(3)} × {project.room.depthM.toFixed(3)} × {project.room.heightM.toFixed(3)} m
+      </div>
+      <div className="absolute left-3 bottom-3 z-10 flex flex-wrap gap-1" data-mf-id="twin-editor">
+        <button
+          type="button"
+          data-mf-id="twin-props"
+          className="min-h-11 rounded-[8px] border border-border bg-panel/90 px-3 py-2 text-[11px] text-fg"
+          onClick={() => {
+            store.setInspectorOpen(true);
+            store.openSheet("props", "half");
+          }}
+        >
+          Свойства
+        </button>
+        <button
+          type="button"
+          data-mf-id="twin-delete"
+          className="min-h-11 rounded-[8px] border border-border bg-panel/90 px-3 py-2 text-[11px] text-fg"
+          onClick={() => store.deleteSelected()}
+        >
+          Удалить
+        </button>
+        <button
+          type="button"
+          data-mf-id="twin-ai"
+          className="min-h-11 rounded-[8px] border border-border bg-panel/90 px-3 py-2 text-[11px] text-fg"
+          onClick={() => store.openSheet("grok", "half")}
+        >
+          AI
+        </button>
       </div>
       <button
         type="button"
