@@ -59,6 +59,12 @@ Owner action required to mint the public URL: **Publish** in Grok Build (`*.grok
 
 Do not reopen MFQ-001…MFQ-006 unless a real regression appears.
 
+QX-02A repairs wall-drag origin (West/South), preview/canonical isolation,
+shared rack-transform validation, auto-layout target semantics, validated
+`applyPatch`, and fan spatial integrity. Do not mix `live()` (visual, may
+include failure overlay or drag preview) into canonical writes — use
+`project` / `canonical()`.
+
 Evidence: [docs/FINAL-01.md](docs/FINAL-01.md).
 
 ## How to start work

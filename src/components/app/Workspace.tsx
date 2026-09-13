@@ -4,7 +4,6 @@ import { useLiveProject, useLiveResult, useProjectStore } from "@/project/store"
 import { emptyRectangularProject, undergroundParkingFarm } from "@/project/factory";
 import { loadLastProject } from "@/project/persistence";
 import { Button } from "@/components/ui/button";
-import { applyPatch } from "@/engineering/upgrade";
 import { cn } from "@/lib/utils";
 import { FAILURE_LABELS } from "@/ai/failure";
 
@@ -181,10 +180,8 @@ export function Workspace() {
             <Button
               variant="default"
               onClick={() => {
-                const next = applyPatch(store.project, store.proposed!.patch);
                 store.duplicateScenario("Before");
-                store.commit(next, store.proposed!.summary);
-                store.cancelProposed();
+                store.applyProposed();
               }}
             >
               APPLY

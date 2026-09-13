@@ -1,5 +1,8 @@
 import { FAN_STRONG, FAN_WEAK, getFan } from "../equipment/fan-catalog.ts";
+import { openingMaxWidthOnWallM, validateOpening, fanIsSpatiallyValid } from "./geometry.ts";
 import { calculateAll, type Catalogs } from "./pipeline.ts";
+import { validateRacksConfiguration } from "./placement.ts";
+import { validateRoomLengthM } from "./room-resize.ts";
 import type { Project } from "./types.ts";
 
 export interface UpgradeOption {
@@ -25,12 +28,14 @@ export type PartialProjectPatch = {
   thermal?: Partial<Project["thermal"]>;
   fleet?: Partial<Project["fleet"]>;
   reality?: Partial<Project["reality"]> & { asBuilt?: NonNullable<Project["reality"]>["asBuilt"] };
+  racks?: Project["racks"];
 };
 
 export function applyPatch(project: Project, patch: PartialProjectPatch): Project {
   let next: Project = { ...project, updatedAt: Date.now() };
   if (patch.room) next = { ...next, room: { ...next.room, ...patch.room } };
   if (patch.openings) next = { ...next, openings: patch.openings };
+  if (patch.racks) next = { ...next, racks: patch.racks };
   if (patch.ventilation) {
     const { componentResize, ...rest } = patch.ventilation;
     next = { ...next, ventilation: { ...next.ventilation, ...rest } };
@@ -90,6 +95,64 @@ export function applyPatch(project: Project, patch: PartialProjectPatch): Projec
   return next;
 }
 
+export interface PatchApplyResult {
+  ok: boolean;
+  project: Project;
+  errors: string[];
+}
+
+function patchTouchesGeometry(patch: PartialProjectPatch): boolean {
+  return Boolean(
+    patch.room ||
+      patch.openings ||
+      patch.racks ||
+      patch.fans ||
+      patch.reality?.asBuilt ||
+      patch.ventilation?.componentResize,
+  );
+}
+
+export function applyPatchValidated(project: Project, patch: PartialProjectPatch): PatchApplyResult {
+  const next = applyPatch(project, patch);
+  if (!patchTouchesGeometry(patch)) {
+    return { ok: true, project: next, errors: [] };
+  }
+  const errors: string[] = [];
+  if (patch.room) {
+    if (patch.room.widthM != null) {
+      const w = validateRoomLengthM(patch.room.widthM);
+      if (!w.ok) errors.push(w.reason);
+    }
+    if (patch.room.depthM != null) {
+      const d = validateRoomLengthM(patch.room.depthM);
+      if (!d.ok) errors.push(d.reason);
+    }
+    if (patch.room.heightM != null && !(patch.room.heightM > 0)) {
+      errors.push("Высота должна быть больше нуля.");
+    }
+  }
+  for (const o of next.openings) {
+    const v = validateOpening(next, o);
+    if (!v.ok) errors.push(...v.errors.map((e) => `${o.name ?? o.id}: ${e}`));
+  }
+  if (patch.racks || patch.room) {
+    const ids = next.racks.map((r) => r.id);
+    const v = validateRacksConfiguration(next, next.racks, ids);
+    if (!v.ok) errors.push(...v.errors);
+  }
+  if (patch.fans) {
+    for (const f of next.fans) {
+      if (!fanIsSpatiallyValid(next, f)) {
+        errors.push(`Вентилятор ${f.name} вне помещения.`);
+      }
+    }
+  }
+  if (errors.length) {
+    return { ok: false, project, errors };
+  }
+  return { ok: true, project: next, errors: [] };
+}
+
 function optionFrom(
   id: string,
   title: string,
@@ -125,20 +188,28 @@ export function generateUpgradeOptions(project: Project, catalogs: Catalogs, tar
 
   const exhaust = project.openings.find((o) => o.type === "EXHAUST" || o.type === "SHAFT_CONNECTION");
   if (exhaust) {
-    const wider = project.openings.map((o) => (o.id === exhaust.id ? { ...o, widthM: Math.max(o.widthM, 1.4) } : o));
-    const patchedOpenings = wider.map((o) => (o.id === exhaust.id ? { ...o, widthM: Math.min(project.room.widthM, Math.max(o.widthM * 1.25, o.widthM + 0.3)) } : o));
-    options.push(
-      optionFrom(
-        "open-wider",
-        "Increase exhaust opening",
-        `${exhaust.widthM.toFixed(3)} × ${exhaust.heightM.toFixed(3)} m`,
-        `Widen exhaust opening`,
-        project,
-        applyPatch(project, { openings: patchedOpenings }),
-        catalogs,
-        { openings: patchedOpenings },
-      ),
-    );
+    const span = openingMaxWidthOnWallM(project, exhaust);
+    const desired = Math.max(exhaust.widthM * 1.25, exhaust.widthM + 0.3);
+    const newWidth = Math.min(span, desired);
+    if (newWidth > exhaust.widthM + 1e-9) {
+      const patchedOpenings = project.openings.map((o) => (o.id === exhaust.id ? { ...o, widthM: newWidth } : o));
+      const candidate = applyPatch(project, { openings: patchedOpenings });
+      const v = validateOpening(candidate, candidate.openings.find((o) => o.id === exhaust.id)!);
+      if (v.ok) {
+        options.push(
+          optionFrom(
+            "open-wider",
+            "Increase exhaust opening",
+            `${exhaust.widthM.toFixed(3)} × ${exhaust.heightM.toFixed(3)} m`,
+            `Widen exhaust opening`,
+            project,
+            candidate,
+            catalogs,
+            { openings: patchedOpenings },
+          ),
+        );
+      }
+    }
   }
 
   const shaft = project.ventilation.components.find((c) => c.kind === "duct" && c.lengthM >= 10);
@@ -146,18 +217,23 @@ export function generateUpgradeOptions(project: Project, catalogs: Catalogs, tar
     const w = Math.max((shaft.widthM ?? 0.9) + 0.3, 1.4);
     const h = Math.max(shaft.heightM ?? 0.9, 0.9);
     const next = applyPatch(project, { ventilation: { componentResize: { id: shaft.id, widthM: w, heightM: h } } });
-    options.push(
-      optionFrom(
-        "shaft-section",
-        "Increase shaft section",
-        `${shaft.widthM ?? "?"} × ${shaft.heightM ?? "?"} m`,
-        `Shaft → ${w.toFixed(2)} × ${h.toFixed(2)} m`,
-        project,
-        next,
-        catalogs,
-        { ventilation: { componentResize: { id: shaft.id, widthM: w, heightM: h } } },
-      ),
-    );
+    const openingId = next.ventilation.components.find((c) => c.id === shaft.id)?.openingId;
+    const opening = openingId ? next.openings.find((o) => o.id === openingId) : undefined;
+    const openingOk = !opening || validateOpening(next, opening).ok;
+    if (openingOk) {
+      options.push(
+        optionFrom(
+          "shaft-section",
+          "Increase shaft section",
+          `${shaft.widthM ?? "?"} × ${shaft.heightM ?? "?"} m`,
+          `Shaft → ${w.toFixed(2)} × ${h.toFixed(2)} m`,
+          project,
+          next,
+          catalogs,
+          { ventilation: { componentResize: { id: shaft.id, widthM: w, heightM: h } } },
+        ),
+      );
+    }
   }
 
   const primary = project.fans[0];
@@ -227,8 +303,10 @@ export function solveForTarget(project: Project, catalogs: Catalogs, target: num
     const opts = generateUpgradeOptions(current, catalogs, target).filter((o) => (o.newSafe ?? 0) > (now.capacity.safe ?? 0));
     if (!opts.length) break;
     const best = opts[0];
+    const applied = applyPatchValidated(current, best.patch);
+    if (!applied.ok) break;
     steps.push(best);
-    current = applyPatch(current, best.patch);
+    current = applied.project;
     guard += 1;
   }
   const result = calculateAll(current, catalogs);
@@ -247,7 +325,11 @@ export function sensitivity(project: Project, catalogs: Catalogs) {
 
   const exhaust = project.openings.find((o) => o.type === "EXHAUST" || o.type === "SHAFT_CONNECTION");
   if (exhaust) {
-    tryRow("Opening area", "+20%", applyPatch(project, { openings: project.openings.map((o) => (o.id === exhaust.id ? { ...o, widthM: o.widthM * 1.2 } : o)) }));
+    const span = openingMaxWidthOnWallM(project, exhaust);
+    const w = Math.min(span, exhaust.widthM * 1.2);
+    if (w > exhaust.widthM + 1e-9) {
+      tryRow("Opening area", "+20%", applyPatch(project, { openings: project.openings.map((o) => (o.id === exhaust.id ? { ...o, widthM: w } : o)) }));
+    }
   }
   const shaft = project.ventilation.components.find((c) => c.kind === "duct" && (c.lengthM ?? 0) >= 10);
   if (shaft) {

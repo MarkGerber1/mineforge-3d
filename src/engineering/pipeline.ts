@@ -101,6 +101,14 @@ export function calculateAll(project: Project, catalogs: Catalogs): EngineeringR
       title: "No fan selected",
       detail: "Ventilation capacity cannot be verified without a fan curve.",
     });
+  } else if (fan.reason.includes("outside the room")) {
+    warnings.push({
+      id: "fan-outside",
+      severity: "CRITICAL",
+      objectId: project.fans[0]?.id,
+      title: "Fan outside room",
+      detail: fan.reason,
+    });
   }
   if (fan.pass === false) {
     warnings.push({

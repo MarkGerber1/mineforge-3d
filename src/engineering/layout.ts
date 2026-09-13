@@ -21,6 +21,8 @@ export function defaultRackTemplate(): Omit<Rack, "id" | "x" | "y" | "name" | "a
 /**
  * Deterministic hot/cold aisle heuristic.
  * Rows run along X (width). Intake faces the cold aisle (south of first row).
+ * Target semantics: place exactly `fleet.requestedCount` ASICs, never more.
+ * target = 0 → no racks. A rack never exceeds per-rack capacity.
  */
 export function generateAutoLayout(project: Project, asic: AsicSpec | null): Rack[] {
   if (!asic) return [];
@@ -28,6 +30,9 @@ export function generateAutoLayout(project: Project, asic: AsicSpec | null): Rac
   const perShelf = asicsPerShelf({ ...tmpl, id: "_", name: "_", x: 0, y: 0, rotationDeg: 0, asicCount: 0, airflowToward: "south" }, asic);
   const perRack = perShelf * tmpl.shelves;
   if (perRack <= 0) return [];
+
+  const target = Math.max(0, Math.floor(project.fleet.requestedCount));
+  if (target <= 0) return [];
 
   const front = project.constraints.frontServiceClearanceM;
   const rear = project.constraints.rearServiceClearanceM;
@@ -40,13 +45,14 @@ export function generateAutoLayout(project: Project, asic: AsicSpec | null): Rac
   let y = margin + front;
   let row = 0;
   let id = 1;
-  const target = project.fleet.requestedCount;
   let placed = 0;
 
-  while (y + tmpl.depthM + margin <= project.room.depthM && placed < Math.max(target, perRack)) {
+  while (y + tmpl.depthM + margin <= project.room.depthM && placed < target) {
     const toward = row % 2 === 0 ? "south" : "north";
     let x = margin;
-    while (x + tmpl.widthM + margin <= project.room.widthM && placed < Math.max(target, perRack)) {
+    while (x + tmpl.widthM + margin <= project.room.widthM && placed < target) {
+      const remaining = target - placed;
+      if (remaining <= 0) break;
       const candidate: Rack = {
         ...tmpl,
         id: nid("rack", id),
@@ -61,8 +67,8 @@ export function generateAutoLayout(project: Project, asic: AsicSpec | null): Rac
       const inside = aabbInside(bb, room);
       const hitsRack = racks.some((r) => aabbOverlap(bb, rackAabb(r)) > 0);
       if (inside && !hitsDoor && !hitsRack) {
-        const remaining = Math.max(0, target - placed);
-        candidate.asicCount = Math.min(perRack, remaining || perRack);
+        candidate.asicCount = Math.min(perRack, remaining);
+        if (candidate.asicCount <= 0) break;
         placed += candidate.asicCount;
         racks.push(candidate);
         id += 1;
@@ -81,7 +87,9 @@ export function generateAutoLayout(project: Project, asic: AsicSpec | null): Rac
   return racks;
 }
 
-export function alignRacks(racks: Rack[], ids: string[], edge: "left" | "right" | "top" | "bottom" | "centerX" | "centerY"): Rack[] {
+export type AlignEdge = "left" | "right" | "top" | "bottom" | "centerX" | "centerY";
+
+export function alignRacks(racks: Rack[], ids: string[], edge: AlignEdge): Rack[] {
   const sel = racks.filter((r) => ids.includes(r.id));
   if (sel.length < 2) return racks;
   const bbs = sel.map((r) => ({ r, bb: rackAabb(r) }));
@@ -121,4 +129,25 @@ export function distributeRacks(racks: Rack[], ids: string[], axis: "x" | "y"): 
     if (p == null) return r;
     return axis === "x" ? { ...r, x: p } : { ...r, y: p };
   });
+}
+
+export function rotateRack90(racks: Rack[], id: string): Rack[] {
+  return racks.map((r) => {
+    if (r.id !== id) return r;
+    return { ...r, rotationDeg: (r.rotationDeg + 90) % 360 };
+  });
+}
+
+export function duplicateRackOffset(racks: Rack[], id: string, dx?: number, dy = 0.2): Rack | null {
+  const src = racks.find((r) => r.id === id);
+  if (!src) return null;
+  const bb = rackAabb(src);
+  const shiftX = dx ?? bb.x2 - bb.x1 + 0.2;
+  return {
+    ...src,
+    id: `${src.id}_copy`,
+    name: `${src.name}′`,
+    x: src.x + shiftX,
+    y: src.y + dy,
+  };
 }
