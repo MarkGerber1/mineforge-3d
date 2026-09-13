@@ -1,4 +1,5 @@
 import type { FanCurvePoint, FanInstance, FanSpec, Project, VentComponent } from "./types.ts";
+import { fanIsSpatiallyValid } from "./geometry.ts";
 import { systemPressurePa } from "./pressure.ts";
 
 export function fanPressurePa(spec: FanSpec, flowM3h: number): number {
@@ -224,6 +225,24 @@ export function evaluateProjectFans(
 
   // PHASE 1: evaluate the primary fan group (first instance). Parallel count is on the instance.
   const inst = project.fans[0];
+  if (!fanIsSpatiallyValid(project, inst)) {
+    return {
+      instances: project.fans,
+      combinedLabel: "Fan outside room",
+      operatingQ_m3h: null,
+      operatingP_pa: null,
+      requiredQ_m3h: requiredM3h,
+      requiredP_pa: systemPressurePa(components, requiredM3h, 0),
+      pass: null,
+      dirtyPass: null,
+      cleanQ_m3h: null,
+      dirtyQ_m3h: null,
+      marginM3h: null,
+      reason: "Fan is outside the room. Operating point is not valid.",
+      curve: [],
+      systemCurve: [],
+    };
+  }
   const spec = specs[inst.specId];
   if (!spec) {
     return {

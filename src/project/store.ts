@@ -1,9 +1,9 @@
 import { create } from "zustand";
 import { defaultCatalogs } from "../engineering/catalogs.ts";
 import { calculateAll, type Catalogs } from "../engineering/pipeline.ts";
-import { generateAutoLayout } from "../engineering/layout.ts";
-import { resizeRectangularRoom, validateOpening } from "../engineering/geometry.ts";
-import { applyPatch, type PartialProjectPatch } from "../engineering/upgrade.ts";
+import { alignRacks, distributeRacks, duplicateRackOffset, generateAutoLayout, rotateRack90, type AlignEdge } from "../engineering/layout.ts";
+import { originDeltaForWallResize, resizeRectangularRoom, validateOpening } from "../engineering/geometry.ts";
+import { applyPatchValidated, type PartialProjectPatch } from "../engineering/upgrade.ts";
 import type { AppMode, EngineeringResult, Opening, Project, Rack, ViewMode, WallId } from "../engineering/types.ts";
 import { SNAP_MODES_M, type SnapMode } from "../engineering/constants.ts";
 import { undergroundParkingFarm } from "./factory.ts";
@@ -13,7 +13,7 @@ import { emptyReality, type AsBuiltObject, type PhotoMarker, type PhotoMarkerKin
 import { applyFinding, attachVideoFrames, recordAnnotation } from "../engineering/reality.ts";
 import type { RuntimeSnapshot } from "../ai/runtime-client.ts";
 import { validateRoomLengthM } from "../engineering/room-resize.ts";
-import { validateRackPlacement } from "../engineering/placement.ts";
+import { validateRackPlacement, validateRacksConfiguration } from "../engineering/placement.ts";
 import { saveScheduler, type PersistState } from "./save-scheduler.ts";
 
 export type CadTool = "select" | "pan" | "measure" | "door" | "intake" | "exhaust" | "rack" | "fan";
@@ -100,6 +100,9 @@ interface ProjectStore {
   pickedUi: { id: string; name: string; file: string } | null;
   multiSelect: boolean;
   failureSim: FailureKind;
+  failureVisual: Project | null;
+  failureResult: EngineeringResult | null;
+  lastMutationError: string | null;
   appEditJobs: AppEditJob[];
   pendingAppEdit: AppEditJob | null;
   activePhotoId: string | null;
@@ -113,8 +116,10 @@ interface ProjectStore {
 
   live(): Project;
   liveResult(): EngineeringResult;
+  canonical(): Project;
   commit(next: Project, label: string): void;
   setPreview(next: Project | null): void;
+  commitGeometryPreview(label: string): void;
   undo(): void;
   redo(): void;
   select(ids: string[], additive?: boolean): void;
@@ -134,10 +139,14 @@ interface ProjectStore {
   setPower(watts: number, reservePct?: number): void;
   setDeltaT(k: number): void;
   setFan(specId: string, count?: number, arrangement?: "single" | "parallel"): void;
-  autoLayout(): void;
-  applyProposed(): void;
+  autoLayout(): { ok: boolean; reason?: string };
+  applyProposed(): { ok: boolean; errors: string[] };
   cancelProposed(): void;
   propose(change: ProposedChange): void;
+  alignSelection(edge: AlignEdge): { ok: boolean; errors: string[] };
+  distributeSelection(axis: "x" | "y"): { ok: boolean; errors: string[] };
+  rotateSelectedRack(): { ok: boolean; errors: string[] };
+  duplicateSelectedRack(): { ok: boolean; errors: string[] };
   duplicateScenario(name: string): void;
   loadProject(p: Project, asFirstRun?: boolean): void;
   pushGrok(msg: GrokMessage): void;
@@ -183,6 +192,32 @@ function scheduleSave(p: Project, set: (s: Partial<ProjectStore>) => void) {
   saveScheduler.schedule(p, (s) => set(s));
 }
 
+function visualProject(project: Project, preview: Project | null, failureSim: FailureKind, failureVisual: Project | null): Project {
+  if (failureSim === "none") return preview ?? project;
+  return failureVisual ?? applyFailure(preview ?? project, failureSim);
+}
+
+function overlayFrom(
+  project: Project,
+  preview: Project | null,
+  kind: FailureKind,
+  catalogs: Catalogs,
+): { failureVisual: Project | null; failureResult: EngineeringResult | null } {
+  if (kind === "none") return { failureVisual: null, failureResult: null };
+  const vis = applyFailure(preview ?? project, kind);
+  return { failureVisual: vis, failureResult: calculateAll(vis, catalogs) };
+}
+
+function shiftMeasure(
+  measure: { a: { x: number; y: number; z?: number } | null; b: { x: number; y: number; z?: number } | null },
+  dx: number,
+  dy: number,
+) {
+  if (!dx && !dy) return measure;
+  const shift = (p: { x: number; y: number; z?: number } | null) => (p ? { ...p, x: p.x + dx, y: p.y + dy } : p);
+  return { a: shift(measure.a), b: shift(measure.b) };
+}
+
 export const useProjectStore = create<ProjectStore>((set, get) => ({
   project: initial,
   preview: null,
@@ -226,6 +261,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   pickedUi: null,
   multiSelect: false,
   failureSim: "none",
+  failureVisual: null,
+  failureResult: null,
+  lastMutationError: null,
   appEditJobs: [],
   pendingAppEdit: null,
   activePhotoId: null,
@@ -233,14 +271,21 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   videoJob: { status: "idle" },
 
   live() {
-    return get().preview ?? get().project;
+    const s = get();
+    return visualProject(s.project, s.preview, s.failureSim, s.failureVisual);
   },
   liveResult() {
-    return get().previewResult ?? get().result;
+    const s = get();
+    if (s.failureSim !== "none") return s.failureResult ?? s.previewResult ?? s.result;
+    return s.previewResult ?? s.result;
+  },
+  canonical() {
+    return get().project;
   },
   commit(next, label) {
-    const { project, past } = get();
-    const result = calculateAll(next, get().catalogs);
+    const { project, past, catalogs, failureSim } = get();
+    const result = calculateAll(next, catalogs);
+    const overlay = overlayFrom(next, null, failureSim, catalogs);
     set({
       past: [...past.slice(-99), { label, project }],
       future: [],
@@ -248,21 +293,33 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       preview: null,
       previewResult: null,
       result,
+      lastMutationError: null,
+      ...overlay,
     });
     scheduleSave(get().project, (s) => set(s));
   },
   setPreview(next) {
+    const { catalogs, failureSim, project } = get();
     if (!next) {
-      set({ preview: null, previewResult: null });
+      set({ preview: null, previewResult: null, ...overlayFrom(project, null, failureSim, catalogs) });
       return;
     }
-    set({ preview: next, previewResult: calculateAll(next, get().catalogs) });
+    set({
+      preview: next,
+      previewResult: calculateAll(next, catalogs),
+      ...overlayFrom(project, next, failureSim, catalogs),
+    });
+  },
+  commitGeometryPreview(label) {
+    const geo = get().preview;
+    if (!geo) return;
+    get().commit(geo, label);
   },
   undo() {
-    const { past, project, future } = get();
+    const { past, project, future, catalogs, failureSim } = get();
     if (!past.length) return;
     const prev = past[past.length - 1];
-    const result = calculateAll(prev.project, get().catalogs);
+    const result = calculateAll(prev.project, catalogs);
     set({
       project: prev.project,
       past: past.slice(0, -1),
@@ -270,14 +327,15 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       result,
       preview: null,
       previewResult: null,
+      ...overlayFrom(prev.project, null, failureSim, catalogs),
     });
     scheduleSave(prev.project, (s) => set(s));
   },
   redo() {
-    const { future, project, past } = get();
+    const { future, project, past, catalogs, failureSim } = get();
     if (!future.length) return;
     const nxt = future[0];
-    const result = calculateAll(nxt.project, get().catalogs);
+    const result = calculateAll(nxt.project, catalogs);
     set({
       project: nxt.project,
       future: future.slice(1),
@@ -285,6 +343,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       result,
       preview: null,
       previewResult: null,
+      ...overlayFrom(nxt.project, null, failureSim, catalogs),
     });
     scheduleSave(nxt.project, (s) => set(s));
   },
@@ -325,14 +384,20 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       get().setPreview(null);
       return { ok: false, reason: check.reason };
     }
-    const src = get().live();
+    const src = get().project;
+    const prevLen = wall === "east" || wall === "west" ? src.room.widthM : src.room.depthM;
     const next = resizeRectangularRoom(src, wall, check.meters);
-    if (preview) get().setPreview(next);
-    else get().commit(next, `Resize ${wall} wall`);
+    if (preview) {
+      get().setPreview(next);
+      return { ok: true };
+    }
+    const { dx, dy } = originDeltaForWallResize(wall, prevLen, check.meters);
+    get().commit(next, `Resize ${wall} wall`);
+    if (dx || dy) set({ measure: shiftMeasure(get().measure, dx, dy) });
     return { ok: true };
   },
   addOpening(o) {
-    const src = get().live();
+    const src = get().project;
     const v = validateOpening(src, o);
     if (!v.ok) return { ok: false, errors: v.errors };
     get().commit({ ...src, openings: [...src.openings, o], updatedAt: Date.now() }, `Add ${o.type}`);
@@ -340,7 +405,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     return { ok: true, errors: [] };
   },
   updateOpening(id, patch, preview) {
-    const src = get().live();
+    const src = get().project;
     const nextO = src.openings.map((o) => (o.id === id ? { ...o, ...patch } : o));
     const candidate = nextO.find((o) => o.id === id);
     if (!candidate) return { ok: false, errors: ["Missing opening"] };
@@ -360,7 +425,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     return { ok: true, errors: [] };
   },
   moveRack(id, x, y, preview) {
-    const src = get().live();
+    const src = get().project;
     const nextRacks = src.racks.map((r) => (r.id === id ? { ...r, x, y } : r));
     const candidate = nextRacks.find((r) => r.id === id);
     if (!candidate) return { ok: false, errors: ["Missing rack"] };
@@ -420,20 +485,89 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     const src = get().project;
     const asic = src.fleet.imported ?? get().catalogs.asics[src.fleet.asicId] ?? null;
     const racks = generateAutoLayout(src, asic);
+    const v = validateRacksConfiguration(src, racks, racks.map((r) => r.id));
+    if (!v.ok) {
+      set({ lastMutationError: v.errors[0] ?? "Авторасстановка недопустима." });
+      return { ok: false, reason: v.errors[0] };
+    }
     get().commit({ ...src, racks }, "Auto layout");
+    return { ok: true };
   },
   applyProposed() {
     const { proposed, project } = get();
-    if (!proposed) return;
-    const next = applyPatch(project, proposed.patch);
-    get().commit(next, proposed.summary);
-    set({ proposed: null });
+    if (!proposed) return { ok: false, errors: ["Нет предложения."] };
+    const applied = applyPatchValidated(project, proposed.patch);
+    if (!applied.ok) {
+      set({ lastMutationError: applied.errors[0] ?? "Патч отклонён." });
+      get().pushGrok({
+        id: `rej${Date.now()}`,
+        role: "assistant",
+        text: `Патч отклонён: ${applied.errors.join("; ")}. Каноническая геометрия не изменена.`,
+      });
+      return { ok: false, errors: applied.errors };
+    }
+    get().commit(applied.project, proposed.summary);
+    set({ proposed: null, lastMutationError: null });
+    return { ok: true, errors: [] };
   },
   cancelProposed() {
     set({ proposed: null });
   },
   propose(change) {
     set({ proposed: change });
+  },
+  alignSelection(edge) {
+    const src = get().project;
+    const ids = get().selectedIds.filter((id) => src.racks.some((r) => r.id === id));
+    const nextRacks = alignRacks(src.racks, ids, edge);
+    const v = validateRacksConfiguration(src, nextRacks, ids);
+    if (!v.ok) {
+      set({ lastMutationError: v.errors[0] ?? "Выравнивание недопустимо." });
+      return { ok: false, errors: v.errors };
+    }
+    get().commit({ ...src, racks: nextRacks }, `Align ${edge}`);
+    return { ok: true, errors: [] };
+  },
+  distributeSelection(axis) {
+    const src = get().project;
+    const ids = get().selectedIds.filter((id) => src.racks.some((r) => r.id === id));
+    const nextRacks = distributeRacks(src.racks, ids, axis);
+    const v = validateRacksConfiguration(src, nextRacks, ids);
+    if (!v.ok) {
+      set({ lastMutationError: v.errors[0] ?? "Распределение недопустимо." });
+      return { ok: false, errors: v.errors };
+    }
+    get().commit({ ...src, racks: nextRacks }, `Distribute ${axis}`);
+    return { ok: true, errors: [] };
+  },
+  rotateSelectedRack() {
+    const src = get().project;
+    const id = get().selectedIds.find((i) => src.racks.some((r) => r.id === i));
+    if (!id) return { ok: false, errors: ["Стойка не выбрана."] };
+    const nextRacks = rotateRack90(src.racks, id);
+    const v = validateRacksConfiguration(src, nextRacks, [id]);
+    if (!v.ok) {
+      set({ lastMutationError: v.errors[0] ?? "Поворот недопустим." });
+      return { ok: false, errors: v.errors };
+    }
+    get().commit({ ...src, racks: nextRacks }, "Rotate rack");
+    return { ok: true, errors: [] };
+  },
+  duplicateSelectedRack() {
+    const src = get().project;
+    const id = get().selectedIds.find((i) => src.racks.some((r) => r.id === i));
+    if (!id) return { ok: false, errors: ["Стойка не выбрана."] };
+    const copy = duplicateRackOffset(src.racks, id);
+    if (!copy) return { ok: false, errors: ["Стойка не найдена."] };
+    const nextRacks = [...src.racks, copy];
+    const v = validateRacksConfiguration(src, nextRacks, [copy.id]);
+    if (!v.ok) {
+      set({ lastMutationError: v.errors[0] ?? "Дублирование недопустимо." });
+      return { ok: false, errors: v.errors };
+    }
+    get().commit({ ...src, racks: nextRacks }, "Duplicate rack");
+    set({ selectedIds: [copy.id] });
+    return { ok: true, errors: [] };
   },
   duplicateScenario(name) {
     const { project, scenarios } = get();
@@ -442,7 +576,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     });
   },
   loadProject(p, asFirstRun = false) {
-    const result = calculateAll(p, get().catalogs);
+    const catalogs = get().catalogs;
+    const result = calculateAll(p, catalogs);
     set({
       project: p,
       result,
@@ -452,6 +587,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       previewResult: null,
       firstRun: asFirstRun,
       selectedIds: [],
+      failureSim: "none",
+      failureVisual: null,
+      failureResult: null,
     });
     scheduleSave(p, (s) => set(s));
   },
@@ -474,12 +612,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   setPickedUi: (pickedUi) => set({ pickedUi, uiPick: false, sheet: "half", sheetTab: "app" }),
   setMultiSelect: (multiSelect) => set({ multiSelect }),
   setFailureSim: (kind) => {
-    if (kind === "none") {
-      set({ failureSim: "none", preview: null, previewResult: null });
-      return;
-    }
-    const next = applyFailure(get().project, kind);
-    set({ failureSim: kind, preview: next, previewResult: calculateAll(next, get().catalogs) });
+    const { project, preview, catalogs } = get();
+    set({ failureSim: kind, ...overlayFrom(project, preview, kind, catalogs) });
   },
   setPendingAppEdit: (pendingAppEdit) => set({ pendingAppEdit }),
   pushAppEditJob: (job) => set({ appEditJobs: [job, ...get().appEditJobs].slice(0, 40) }),
@@ -597,11 +731,13 @@ export function snapStep(): number {
 }
 
 export function useLiveProject(): Project {
-  return useProjectStore((s) => s.preview ?? s.project);
+  return useProjectStore((s) => (s.failureSim === "none" ? (s.preview ?? s.project) : (s.failureVisual ?? s.preview ?? s.project)));
 }
 
 export function useLiveResult(): EngineeringResult {
-  return useProjectStore((s) => s.previewResult ?? s.result);
+  return useProjectStore((s) =>
+    s.failureSim === "none" ? (s.previewResult ?? s.result) : (s.failureResult ?? s.previewResult ?? s.result),
+  );
 }
 
 if (typeof window !== "undefined") {

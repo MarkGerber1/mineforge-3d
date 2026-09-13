@@ -159,4 +159,27 @@ Starting SHA `37eef679e4b027abda37c0a494613130d23eabe1`. Branch
 - CAD / Engineering Core unchanged. No publish, no tunnels, no iPhone.
 - Does not reopen MFQ-001…006. Does not declare FINAL PASSED.
 
+## QX-02A — GEOMETRY + CANONICAL MUTATION INTEGRITY
+
+Starting SHA `1bd8473c41507f2ea231e9d4bf3225beca164d7c`. Branch
+`repair/qx-02a-geometry-integrity`.
+
+- Wall drag is event-count invariant from an immutable pointer-down context.
+  West/South rebase origin; opposite wall stays fixed in world, screen, and
+  Engineering. Cancel/Escape restores camera and leaves canonical unchanged.
+- Canonical mutations start from `project`, never `preview ?? project`.
+  Failure simulation is a visual overlay and cannot leak into SAVE/UNDO.
+- West/South resize translates racks, fans, openings, as-built, PENDING
+  findings, and measure points. Photo markers stay photo-space.
+- `validateOpening` requires the opening to lie on the assigned wall AABB.
+- Align / center / distribute / rotate / duplicate / auto-layout share
+  `validateRacksConfiguration` and fail closed.
+- Auto-layout target=0 generates no racks; a rack never exceeds capacity.
+- `applyPatchValidated` uses the same opening/room/rack validators. Exhaust
+  widen uses wall length − offset, not an unrelated room dimension.
+- A fan outside the room is not treated as a valid operating fan.
+
+Public deploy and physical iPhone were not performed. Does not declare
+FINAL PASSED. Does not reopen MFQ-001…006 or FINAL-SEC-001/002.
+
 

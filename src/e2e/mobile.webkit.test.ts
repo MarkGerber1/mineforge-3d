@@ -1079,6 +1079,250 @@ describe("PHOTO orientation files keep distinct sizes", () => {
   });
 });
 
+type MfStore = {
+  getState: () => {
+    project: {
+      room: { widthM: number; depthM: number };
+      racks: Array<{ id: string; x: number; y: number }>;
+      fans: Array<{ id: string; x: number; y: number }>;
+      reality?: { asBuilt: Array<{ id: string; x: number; y: number }> };
+    };
+    preview: unknown;
+    loadProject: (p: unknown) => void;
+  };
+};
+
+async function seedQx02aRoom(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const store = (window as unknown as { __MF_STORE__: MfStore }).__MF_STORE__.getState();
+    const p = structuredClone(store.project) as {
+      room: { widthM: number; depthM: number; heightM: number; wallThicknessM: number; kind: "rectangular" };
+      racks: unknown[];
+      fans: unknown[];
+      openings: unknown[];
+      reality?: {
+        photos: unknown[];
+        videos: unknown[];
+        findings: unknown[];
+        asBuilt: unknown[];
+        compareMode: string;
+        interview: unknown[];
+      };
+    };
+    p.room = { ...p.room, widthM: 8, depthM: 5, heightM: 2.8 };
+    p.racks = [
+      {
+        id: "e2e_r",
+        name: "R",
+        x: 4,
+        y: 1.5,
+        widthM: 1.6,
+        depthM: 0.6,
+        heightM: 2.0,
+        rotationDeg: 0,
+        shelves: 4,
+        usableShelfWidthM: 1.5,
+        usableShelfDepthM: 0.55,
+        asicCount: 0,
+        airflowToward: "south",
+      },
+    ];
+    p.fans = [{ id: "e2e_f", specId: "FAN_STRONG", name: "f", x: 3, y: 2, arrangement: "single", count: 1, dirtyFilter: false }];
+    p.openings = [];
+    p.reality = {
+      photos: p.reality?.photos ?? [],
+      videos: p.reality?.videos ?? [],
+      findings: [],
+      asBuilt: [
+        {
+          id: "e2e_col",
+          kind: "column",
+          name: "C",
+          x: 4.1,
+          y: 1.6,
+          z: 0,
+          widthM: 0.4,
+          heightM: 2.8,
+          depthM: 0.4,
+          provenance: "USER_CONFIRMED",
+          confidence: "HIGH",
+        },
+      ],
+      compareMode: "as-designed",
+      interview: [],
+    };
+    store.loadProject(p);
+  });
+  await mf(page, "cad").waitFor();
+  await page.waitForFunction(
+    () => Number(document.querySelector("[data-mf-id='cad']")?.getAttribute("data-mf-cam-ppm") ?? "0") > 1,
+    null,
+    { timeout: 8000 },
+  );
+  await mf(page, "wall-hit-west").waitFor({ state: "attached", timeout: 8000 });
+  await page.waitForTimeout(200);
+}
+
+function worldToClient(
+  box: { x: number; y: number; width: number; height: number },
+  cam: { x: number; y: number; ppm: number },
+  x: number,
+  y: number,
+) {
+  const sx = (x - cam.x) * cam.ppm + box.width / 2;
+  const sy = box.height / 2 - (y - cam.y) * cam.ppm;
+  return { x: box.x + sx, y: box.y + sy };
+}
+
+async function readCadCam(page: Page) {
+  const cad = mf(page, "cad");
+  const box = await cad.boundingBox();
+  assert.ok(box);
+  const cam = {
+    x: Number(await cad.getAttribute("data-mf-cam-x")),
+    y: Number(await cad.getAttribute("data-mf-cam-y")),
+    ppm: Number(await cad.getAttribute("data-mf-cam-ppm")),
+  };
+  assert.ok(cam.ppm > 1);
+  return { box, cam };
+}
+
+describe("QX-02A WebKit West/South wall drag", () => {
+  it("375×812 west drag 1 m inward keeps east fixed in world and screen", async () => {
+    const { ctx, page } = await openPhone("375x812");
+    try {
+      await seedQx02aRoom(page);
+      const beforeCam = await readCadCam(page);
+      const eastBefore = worldToClient(beforeCam.box, beforeCam.cam, 8, 2.5);
+      const start = worldToClient(beforeCam.box, beforeCam.cam, 0, 1.2);
+      const end = worldToClient(beforeCam.box, beforeCam.cam, 1, 1.2);
+      await page.mouse.move(start.x, start.y);
+      await page.mouse.down();
+      await page.mouse.move((start.x + end.x) / 2, start.y);
+      await page.mouse.move(end.x, end.y, { steps: 8 });
+      await page.mouse.up();
+      await page.waitForFunction(
+        () =>
+          (window as unknown as { __MF_STORE__: MfStore }).__MF_STORE__.getState().project.room.widthM === 7,
+        null,
+        { timeout: 8000 },
+      );
+      const geo = await storeEval(page, () => {
+        const s = (window as unknown as { __MF_STORE__: MfStore }).__MF_STORE__.getState();
+        return {
+          w: s.project.room.widthM,
+          d: s.project.room.depthM,
+          rx: s.project.racks[0]?.x,
+          fx: s.project.fans[0]?.x,
+          cx: s.project.reality?.asBuilt[0]?.x,
+          preview: s.preview,
+        };
+      });
+      assert.equal(geo.w, 7);
+      assert.equal(geo.d, 5);
+      assert.equal(geo.rx, 3);
+      assert.equal(geo.fx, 2);
+      assert.equal(geo.cx, 3.1);
+      assert.equal(geo.preview, null);
+      const afterCam = await readCadCam(page);
+      const eastAfter = worldToClient(afterCam.box, afterCam.cam, 7, 2.5);
+      assert.ok(Math.abs(eastAfter.x - eastBefore.x) < 6, `east screen ${eastBefore.x} → ${eastAfter.x}`);
+    } finally {
+      await ctx.close();
+    }
+  });
+
+  it("390×844 south drag 1 m inward keeps north fixed", async () => {
+    const { ctx, page } = await openPhone("390x844");
+    try {
+      await seedQx02aRoom(page);
+      const beforeCam = await readCadCam(page);
+      const northBefore = worldToClient(beforeCam.box, beforeCam.cam, 4, 5);
+      const start = worldToClient(beforeCam.box, beforeCam.cam, 1.5, 0);
+      const end = worldToClient(beforeCam.box, beforeCam.cam, 1.5, 1);
+      await page.mouse.move(start.x, start.y);
+      await page.mouse.down();
+      await page.mouse.move(start.x, (start.y + end.y) / 2);
+      await page.mouse.move(end.x, end.y, { steps: 8 });
+      await page.mouse.up();
+      await page.waitForFunction(
+        () =>
+          (window as unknown as { __MF_STORE__: MfStore }).__MF_STORE__.getState().project.room.depthM === 4,
+        null,
+        { timeout: 8000 },
+      );
+      const geo = await storeEval(page, () => {
+        const s = (window as unknown as { __MF_STORE__: MfStore }).__MF_STORE__.getState();
+        return {
+          w: s.project.room.widthM,
+          d: s.project.room.depthM,
+          ry: s.project.racks[0]?.y,
+          fy: s.project.fans[0]?.y,
+          cy: s.project.reality?.asBuilt[0]?.y,
+        };
+      });
+      assert.equal(geo.w, 8);
+      assert.equal(geo.d, 4);
+      assert.equal(geo.ry, 0.5);
+      assert.equal(geo.fy, 1);
+      assert.equal(geo.cy, 0.6);
+      const afterCam = await readCadCam(page);
+      const northAfter = worldToClient(afterCam.box, afterCam.cam, 4, 4);
+      assert.ok(Math.abs(northAfter.y - northBefore.y) < 6, `north screen ${northBefore.y} → ${northAfter.y}`);
+    } finally {
+      await ctx.close();
+    }
+  });
+
+  it("375×812 west drag cancel leaves canonical unchanged", async () => {
+    const { ctx, page } = await openPhone("375x812");
+    try {
+      await seedQx02aRoom(page);
+      const before = await storeEval(page, () => {
+        const s = (window as unknown as { __MF_STORE__: MfStore }).__MF_STORE__.getState();
+        return { w: s.project.room.widthM, rx: s.project.racks[0]?.x };
+      });
+      const { box, cam } = await readCadCam(page);
+      const start = worldToClient(box, cam, 0, 1.2);
+      const mid = worldToClient(box, cam, 0.8, 1.2);
+      await page.mouse.move(start.x, start.y);
+      await page.mouse.down();
+      await page.mouse.move(mid.x, mid.y, { steps: 4 });
+      await page.keyboard.press("Escape");
+      await page.mouse.up();
+      const after = await storeEval(page, () => {
+        const s = (window as unknown as { __MF_STORE__: MfStore }).__MF_STORE__.getState();
+        return { w: s.project.room.widthM, rx: s.project.racks[0]?.x, preview: s.preview };
+      });
+      assert.equal(after.w, before.w);
+      assert.equal(after.rx, before.rx);
+      assert.equal(after.preview, null);
+    } finally {
+      await ctx.close();
+    }
+  });
+
+  it("390×844 west vs east cursor affordance", async () => {
+    const { ctx, page } = await openPhone("390x844");
+    try {
+      await seedQx02aRoom(page);
+      const { box, cam } = await readCadCam(page);
+      const west = worldToClient(box, cam, 0, 1.2);
+      await page.mouse.move(west.x, west.y);
+      await page.waitForTimeout(80);
+      const westCursor = await mf(page, "cad").getAttribute("data-mf-cursor");
+      assert.equal(westCursor, "ew-resize");
+      const north = worldToClient(box, cam, 1.2, 5);
+      await page.mouse.move(north.x, north.y);
+      await page.waitForTimeout(80);
+      const northCursor = await mf(page, "cad").getAttribute("data-mf-cursor");
+      assert.equal(northCursor, "ns-resize");
+    } finally {
+      await ctx.close();
+    }
+  });
+});
+
 describe("console cleanliness", () => {
   it("no unexplained page errors", () => {
     const severe = errors.filter((e) => !/ResizeObserver|hydration|webkit fake|Importing a module script failed/i.test(e));

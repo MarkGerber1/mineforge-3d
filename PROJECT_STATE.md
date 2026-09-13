@@ -76,6 +76,10 @@ static demo only. Playwright WebKit is not physical iPhone.
 
 Evidence: `docs/FINAL-01.md`, `docs/final-01.json`, `docs/CANONICAL-RUNTIME.md`.
 
+QX-02A is an in-progress geometry/canonical-mutation repair on live HEAD. It
+does not publish, does not perform physical iPhone acceptance, and does not
+reopen MFQ-001…006 or FINAL-SEC-001/002.
+
 ## Important historical SHAs
 
 | Milestone | SHA |

@@ -8,7 +8,6 @@ import { getAsic } from "@/equipment/asic-catalog";
 import { getFan } from "@/equipment/fan-catalog";
 import { generateUpgradeOptions, solveForTarget, sensitivity } from "@/engineering/upgrade";
 import { defaultCatalogs } from "@/engineering/catalogs";
-import { alignRacks, distributeRacks } from "@/engineering/layout";
 import { GrokPanel } from "./GrokPanel";
 import { Line, LineChart, ResponsiveContainer, XAxis, YAxis } from "recharts";
 import { critiqueProject } from "@/ai/critic";
@@ -205,6 +204,14 @@ export function Inspector({ hideGrok }: { hideGrok?: boolean }) {
                 )
               }
             />
+            <div className="grid grid-cols-2 gap-1">
+              <Button variant="outline" data-mf-id="rotate-rack" onClick={() => store.rotateSelectedRack()}>
+                Поворот 90°
+              </Button>
+              <Button variant="outline" data-mf-id="duplicate-rack" onClick={() => store.duplicateSelectedRack()}>
+                Дублировать
+              </Button>
+            </div>
           </div>
         )}
 
@@ -214,20 +221,23 @@ export function Inspector({ hideGrok }: { hideGrok?: boolean }) {
               <Button
                 key={e}
                 variant="outline"
-                onClick={() => store.commit({ ...store.project, racks: alignRacks(store.project.racks, store.selectedIds, e) }, `Align ${e}`)}
+                data-mf-id={`align-${e}`}
+                onClick={() => store.alignSelection(e)}
               >
                 Align {e}
               </Button>
             ))}
             <Button
               variant="outline"
-              onClick={() => store.commit({ ...store.project, racks: distributeRacks(store.project.racks, store.selectedIds, "x") }, "Distribute X")}
+              data-mf-id="distribute-x"
+              onClick={() => store.distributeSelection("x")}
             >
               Dist X
             </Button>
             <Button
               variant="outline"
-              onClick={() => store.commit({ ...store.project, racks: distributeRacks(store.project.racks, store.selectedIds, "y") }, "Distribute Y")}
+              data-mf-id="distribute-y"
+              onClick={() => store.distributeSelection("y")}
             >
               Dist Y
             </Button>

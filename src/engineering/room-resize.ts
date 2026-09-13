@@ -1,4 +1,5 @@
 import { MAX_ROOM_DIM_M, MIN_ROOM_DIM_M } from "./constants.ts";
+import { originDeltaForWallResize } from "./geometry.ts";
 import { parseLengthToMeters } from "./units.ts";
 import type { WallId } from "./types.ts";
 
@@ -85,4 +86,64 @@ const CONTRACTS: Record<WallId, WallResizeContract> = {
 
 export function wallResizeContract(wall: WallId): WallResizeContract {
   return CONTRACTS[wall];
+}
+
+/** Immutable pointer-down snapshot. Every pointermove is computed only from this. */
+export interface WallDragContext {
+  wall: WallId;
+  startWidthM: number;
+  startDepthM: number;
+  startPointerX: number;
+  startPointerY: number;
+  fixed: WallId;
+}
+
+export function createWallDragContext(
+  wall: WallId,
+  startWidthM: number,
+  startDepthM: number,
+  startPointerX: number,
+  startPointerY: number,
+): WallDragContext {
+  return {
+    wall,
+    startWidthM,
+    startDepthM,
+    startPointerX,
+    startPointerY,
+    fixed: wallResizeContract(wall).fixed,
+  };
+}
+
+/**
+ * Event-count invariant length. Same start + same final pointer ⇒ same length,
+ * regardless of how many intermediate pointermove events were delivered.
+ */
+export function wallDragLengthM(ctx: WallDragContext, pointerX: number, pointerY: number): number {
+  switch (ctx.wall) {
+    case "east":
+      return ctx.startWidthM + (pointerX - ctx.startPointerX);
+    case "west":
+      return ctx.startWidthM - (pointerX - ctx.startPointerX);
+    case "north":
+      return ctx.startDepthM + (pointerY - ctx.startPointerY);
+    case "south":
+      return ctx.startDepthM - (pointerY - ctx.startPointerY);
+  }
+}
+
+export function originShiftForResize(
+  wall: WallId,
+  startWidthM: number,
+  startDepthM: number,
+  newWidthM: number,
+  newDepthM: number,
+): { dx: number; dy: number } {
+  if (wall === "west") return originDeltaForWallResize("west", startWidthM, newWidthM);
+  if (wall === "south") return originDeltaForWallResize("south", startDepthM, newDepthM);
+  return { dx: 0, dy: 0 };
+}
+
+export function wallCursor(wall: WallId): "ew-resize" | "ns-resize" {
+  return wall === "east" || wall === "west" ? "ew-resize" : "ns-resize";
 }
