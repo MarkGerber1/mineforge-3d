@@ -17,3 +17,4 @@ attachments/
 screenshots/*.png
 screenshots/*.json
 qa-evidence/
+test-results/

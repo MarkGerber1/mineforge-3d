@@ -42,9 +42,24 @@ export function guessVideoMime(file: { type?: string; name?: string }): string {
   if (file.type && file.type.startsWith("video/")) return file.type;
   const n = (file.name ?? "").toLowerCase();
   if (n.endsWith(".webm")) return "video/webm";
+  if (n.endsWith(".ogv") || n.endsWith(".ogg")) return "video/ogg";
   if (n.endsWith(".mov")) return "video/quicktime";
   if (n.endsWith(".mp4") || n.endsWith(".m4v")) return "video/mp4";
   return file.type ?? "";
+}
+
+/** Bare container MIME plus codec-parameterized strings WebKit often requires. */
+export function mimeCandidates(mime: string): string[] {
+  const base = mime.split(";")[0]!.trim();
+  const out: string[] = [mime, base];
+  if (base === "video/webm") {
+    out.push('video/webm; codecs="vp8"', 'video/webm; codecs="vp8.0"', 'video/webm; codecs="vp9"');
+  } else if (base === "video/mp4") {
+    out.push('video/mp4; codecs="avc1.42E01E"', 'video/mp4; codecs="avc1.4D401E"');
+  } else if (base === "video/ogg") {
+    out.push('video/ogg; codecs="theora"');
+  }
+  return [...new Set(out.filter(Boolean))];
 }
 
 /**
@@ -58,9 +73,11 @@ export function classifyVideoFile(
   if (file.size > VIDEO_LIMITS.maxBytes) return { ok: false, code: "VIDEO_TOO_LARGE" };
   const mime = guessVideoMime(file);
   if (!mime.startsWith("video/")) return { ok: false, code: "VIDEO_UNSUPPORTED" };
-  const play = canPlay(mime);
-  if (play !== "probably" && play !== "maybe") return { ok: false, code: "VIDEO_UNSUPPORTED" };
-  return { ok: true, mime };
+  for (const cand of mimeCandidates(mime)) {
+    const play = canPlay(cand);
+    if (play === "probably" || play === "maybe") return { ok: true, mime: cand };
+  }
+  return { ok: false, code: "VIDEO_UNSUPPORTED" };
 }
 
 export function framePhotoMeta(args: {
@@ -71,6 +88,7 @@ export function framePhotoMeta(args: {
   widthPx: number;
   heightPx: number;
   createdAt: number;
+  extractionMethod?: RealityPhotoMeta["extractionMethod"];
 }): RealityPhotoMeta {
   return {
     id: args.id,
@@ -82,7 +100,7 @@ export function framePhotoMeta(args: {
     sourceVideoId: args.videoId,
     sourceFilename: args.filename,
     timestampMs: args.timestampMs,
-    extractionMethod: "video-seek-canvas",
+    extractionMethod: args.extractionMethod ?? "video-seek-canvas",
     widthPx: args.widthPx,
     heightPx: args.heightPx,
     markers: [],

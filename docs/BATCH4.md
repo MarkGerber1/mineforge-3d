@@ -29,7 +29,9 @@ Touch:
 Browser decode only. Extension never claims support (`canPlayType`).
 
 ```
-File → object URL → <video> metadata → seek → canvas JPEG → Reality photo-like evidence
+File → object URL → visible <video> play-through → canvas/ImageBitmap/VideoFrame JPEG
+                 ↳ seek retry
+                 ↳ WebCodecs VP8 (WebM demux) if the element presents no pixels
 ```
 
 | Limit | Value |
@@ -77,6 +79,22 @@ Playwright WebKit MOB-01…10 + video ingest + orientation + console cleanliness
 ## CI
 
 `.github/workflows/batch1-gate.yml` installs Playwright WebKit with OS deps, then `scripts/ci-gate.sh` (typecheck, `npm test`, WebKit install, `test:mobile`, secrets, build).
+
+Artifact `batch4-webkit-video-evidence` uploads `test-results/batch4-webkit-video.json` (`if: always()`). A failed positive decode still fails the gate.
+
+## Correction pass — WebKit positive decode
+
+Starting SHA: `a9c6c64ec0ddc80128881fea4191b347dbf5807a`
+
+Known-good fixture: `tests/fixtures/video/frames-rgb.webm` (VP8, 4.00 s, 320×180, all-intra, 4 colour scenes).
+
+Linux Playwright WebKit may report metadata while `canvas.drawImage(<video>)` stays black (GStreamer DMABuf overlay). Extraction therefore:
+
+1. plays the element on-screen and samples presented frames;
+2. retries seek+canvas;
+3. demuxes VP8 WebM and decodes with `VideoDecoder` (real browser decode, not synthetic stills).
+
+The WebKit E2E **must** reach `READY` with ≥2 real JPEG stills whose hashes differ. `VIDEO_UNSUPPORTED` / `VIDEO_DECODE_FAILED` for this fixture is a **FAIL**. Corrupt `corrupt.mp4` remains a separate negative test.
 
 ## Deferred
 
