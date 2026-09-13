@@ -187,4 +187,19 @@ grab mid-wall world points and move exactly 1 m in pointer space.
 Public deploy and physical iPhone were not performed. Does not declare
 FINAL PASSED. Does not reopen MFQ-001…006 or FINAL-SEC-001/002.
 
+## QX-02A-R — residual identity / corner / measure history
+
+Starting SHA `b4241e985b78e98cb9902687f54aec83de763e99`. Branch
+`repair/qx-02a-r-residual-integrity`.
+
+- Duplicate rack ids are unique (`uniqueRackId`). Duplicate-id configurations
+  fail closed in `validateRacksConfiguration`.
+- Wall drag uses nearest geometric wall first. Overlapping SVG hit-rects
+  cannot override West vs North at a corner.
+- HistoryEntry stores Measure A/B. Undo/Redo restores project and measure
+  together so West/South origin rebase cannot leave stale points.
+
+Does not start QX-02B. Does not publish. Does not declare FINAL PASSED.
+
+
 

@@ -4,7 +4,7 @@ import type { Project, Rack } from "./types.ts";
 export interface PlacementResult {
   ok: boolean;
   errors: string[];
-  code: "OK" | "OUTSIDE" | "RACK_OVERLAP" | "DOOR_SWING";
+  code: "OK" | "OUTSIDE" | "RACK_OVERLAP" | "DOOR_SWING" | "DUPLICATE_ID";
 }
 
 export function validateRackPlacement(
@@ -49,6 +49,17 @@ export function validateRacksConfiguration(
   nextRacks: Rack[],
   movingIds: string[],
 ): PlacementResult {
+  const seen = new Set<string>();
+  for (const r of nextRacks) {
+    if (seen.has(r.id)) {
+      return {
+        ok: false,
+        errors: ["В конфигурации есть стойки с одинаковым идентификатором."],
+        code: "DUPLICATE_ID",
+      };
+    }
+    seen.add(r.id);
+  }
   const next = { ...project, racks: nextRacks };
   for (const id of movingIds) {
     const rack = nextRacks.find((r) => r.id === id);

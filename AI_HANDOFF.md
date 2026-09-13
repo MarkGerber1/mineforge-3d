@@ -63,7 +63,9 @@ QX-02A repairs wall-drag origin (West/South), preview/canonical isolation,
 shared rack-transform validation, auto-layout target semantics, validated
 `applyPatch`, and fan spatial integrity. Do not mix `live()` (visual, may
 include failure overlay or drag preview) into canonical writes — use
-`project` / `canonical()`.
+`project` / `canonical()`. QX-02A-R: duplicate rack ids must be unique;
+`resolveWallDragTarget` prefers nearest geometry over SVG hit-rect z-order;
+HistoryEntry stores Measure A/B with the project snapshot.
 
 Evidence: [docs/FINAL-01.md](docs/FINAL-01.md).
 

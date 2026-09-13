@@ -182,3 +182,18 @@ export function wallIdFromEventTarget(target: EventTarget | null): WallId | null
   return null;
 }
 
+/**
+ * Wall chosen for a pointer-down. Nearest geometric wall is authoritative.
+ * Overlapping SVG hit-rects (DOM paint / z-order) must not override it.
+ */
+export function resolveWallDragTarget(
+  worldX: number,
+  worldY: number,
+  widthM: number,
+  depthM: number,
+  tolM: number,
+  eventTargetWall: WallId | null,
+): WallId | null {
+  return pickWallHit(worldX, worldY, widthM, depthM, tolM) ?? eventTargetWall;
+}
+

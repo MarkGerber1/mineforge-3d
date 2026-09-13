@@ -1339,6 +1339,52 @@ describe("QX-02A WebKit West/South wall drag", () => {
       await ctx.close();
     }
   });
+
+  it("375×812 NW overlap SVG hit-area still starts West drag", async () => {
+    const { ctx, page } = await openPhone("375x812");
+    try {
+      await seedQx02aRoom(page);
+      await mf(page, "wall-hit-west").waitFor({ state: "attached", timeout: 8000 });
+      await mf(page, "wall-hit-north").waitFor({ state: "attached", timeout: 8000 });
+      const westBox = await mf(page, "wall-hit-west").boundingBox();
+      const northBox = await mf(page, "wall-hit-north").boundingBox();
+      assert.ok(westBox && northBox);
+      const ox1 = Math.max(westBox.x, northBox.x);
+      const oy1 = Math.max(westBox.y, northBox.y);
+      const ox2 = Math.min(westBox.x + westBox.width, northBox.x + northBox.width);
+      const oy2 = Math.min(westBox.y + westBox.height, northBox.y + northBox.height);
+      assert.ok(ox2 - ox1 > 8 && oy2 - oy1 > 8, `no NW overlap ${ox1},${oy1} ${ox2},${oy2}`);
+      const x = Math.round(westBox.x + westBox.width / 2);
+      const y = Math.round(oy1 + (oy2 - oy1) * 0.72);
+      assert.ok(x >= ox1 && x <= ox2 && y >= oy1 && y <= oy2, `click ${x},${y} outside overlap`);
+      const before = await storeEval(page, () => {
+        const s = (window as unknown as { __MF_STORE__: MfStore }).__MF_STORE__.getState();
+        return { w: s.project.room.widthM, d: s.project.room.depthM };
+      });
+      await page.mouse.move(x, y);
+      await page.mouse.down();
+      await page.waitForFunction(
+        () => document.querySelector("[data-mf-id='cad']")?.getAttribute("data-mf-drag-wall") === "west",
+        null,
+        { timeout: 2500 },
+      );
+      const dragWall = await mf(page, "cad").getAttribute("data-mf-drag-wall");
+      assert.equal(dragWall, "west", "DOM north hit-rect must not override nearest west");
+      await page.evaluate(() => {
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+      });
+      await page.mouse.up();
+      const after = await storeEval(page, () => {
+        const s = (window as unknown as { __MF_STORE__: MfStore }).__MF_STORE__.getState();
+        return { w: s.project.room.widthM, d: s.project.room.depthM, preview: s.preview };
+      });
+      assert.equal(after.w, before.w);
+      assert.equal(after.d, before.d);
+      assert.equal(after.preview, null);
+    } finally {
+      await ctx.close();
+    }
+  });
 });
 
 describe("console cleanliness", () => {

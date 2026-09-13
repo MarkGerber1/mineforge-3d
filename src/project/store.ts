@@ -35,9 +35,12 @@ export interface AppEditJob {
   jobCommitSha?: string;
 }
 
+export type MeasureState = { a: { x: number; y: number; z?: number } | null; b: { x: number; y: number; z?: number } | null };
+
 export interface HistoryEntry {
   label: string;
   project: Project;
+  measure: MeasureState;
 }
 
 export interface ProposedChange {
@@ -208,11 +211,14 @@ function overlayFrom(
   return { failureVisual: vis, failureResult: calculateAll(vis, catalogs) };
 }
 
-function shiftMeasure(
-  measure: { a: { x: number; y: number; z?: number } | null; b: { x: number; y: number; z?: number } | null },
-  dx: number,
-  dy: number,
-) {
+function cloneMeasure(m: MeasureState): MeasureState {
+  return {
+    a: m.a ? { ...m.a } : null,
+    b: m.b ? { ...m.b } : null,
+  };
+}
+
+function shiftMeasure(measure: MeasureState, dx: number, dy: number): MeasureState {
   if (!dx && !dy) return measure;
   const shift = (p: { x: number; y: number; z?: number } | null) => (p ? { ...p, x: p.x + dx, y: p.y + dy } : p);
   return { a: shift(measure.a), b: shift(measure.b) };
@@ -283,11 +289,11 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     return get().project;
   },
   commit(next, label) {
-    const { project, past, catalogs, failureSim } = get();
+    const { project, past, catalogs, failureSim, measure } = get();
     const result = calculateAll(next, catalogs);
     const overlay = overlayFrom(next, null, failureSim, catalogs);
     set({
-      past: [...past.slice(-99), { label, project }],
+      past: [...past.slice(-99), { label, project, measure: cloneMeasure(measure) }],
       future: [],
       project: { ...next, updatedAt: Date.now() },
       preview: null,
@@ -316,14 +322,15 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     get().commit(geo, label);
   },
   undo() {
-    const { past, project, future, catalogs, failureSim } = get();
+    const { past, project, future, catalogs, failureSim, measure } = get();
     if (!past.length) return;
     const prev = past[past.length - 1];
     const result = calculateAll(prev.project, catalogs);
     set({
       project: prev.project,
+      measure: cloneMeasure(prev.measure),
       past: past.slice(0, -1),
-      future: [{ label: "Redo", project }, ...future],
+      future: [{ label: "Redo", project, measure: cloneMeasure(measure) }, ...future],
       result,
       preview: null,
       previewResult: null,
@@ -332,14 +339,15 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     scheduleSave(prev.project, (s) => set(s));
   },
   redo() {
-    const { future, project, past, catalogs, failureSim } = get();
+    const { future, project, past, catalogs, failureSim, measure } = get();
     if (!future.length) return;
     const nxt = future[0];
     const result = calculateAll(nxt.project, catalogs);
     set({
       project: nxt.project,
+      measure: cloneMeasure(nxt.measure),
       future: future.slice(1),
-      past: [...past, { label: "Undo", project }],
+      past: [...past, { label: "Undo", project, measure: cloneMeasure(measure) }],
       result,
       preview: null,
       previewResult: null,
