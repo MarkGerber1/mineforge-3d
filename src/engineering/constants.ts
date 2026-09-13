@@ -56,3 +56,23 @@ export const SNAP_MODES_M = {
 } as const;
 
 export type SnapMode = keyof typeof SNAP_MODES_M;
+
+/** Electrical reserve as percent of available power. Inspector options are a subset. */
+export const MIN_RESERVE_PCT = 0;
+export const MAX_RESERVE_PCT = 90;
+
+/** Parallel / grouped fan instances on one FanInstance. Product uses 1–2; 16 is the hard cap. */
+export const MIN_FAN_GROUP_COUNT = 1;
+export const MAX_FAN_GROUP_COUNT = 16;
+
+/** Physical shelf count on one rack body. TEST_RACK_A uses 4. */
+export const MIN_RACK_SHELVES = 1;
+export const MAX_RACK_SHELVES = 50;
+
+/** Deterministic plan AABB only treats these orientations as rotated. */
+export const SUPPORTED_RACK_ROTATION_DEG = [0, 90, 180, 270] as const;
+export type SupportedRackRotationDeg = (typeof SUPPORTED_RACK_ROTATION_DEG)[number];
+
+export function isSupportedRackRotationDeg(n: number): n is SupportedRackRotationDeg {
+  return (SUPPORTED_RACK_ROTATION_DEG as readonly number[]).includes(n);
+}

@@ -245,5 +245,28 @@ Starting SHA `b47dea66db96559461b11ed90338409f0f8d6e8e`. Branch
 
 Does not start QX-02C. Does not publish. Does not declare FINAL PASSED.
 
+## QX-02B-R5 — COMPLETE SAFETY-NUMERIC DOMAIN BOUNDARY
+
+Starting SHA `56d8b33f4c2a4e9879edcbb8cd094cee033873ed`. Branch
+`repair/qx-02b-r5-complete-numeric-boundary`.
+
+- Machine-readable inventory in `src/engineering/numeric-inventory.ts`
+  classifies every Project numeric as SAFETY_DRIVING / SAFETY_GEOMETRY /
+  NON_SAFETY_METADATA. DOMAIN-INV-01 walks a fully populated fixture.
+- `validateCanonicalProjectDomains` is still the single ingress boundary.
+  Added: ΔT 5…15 K, reserve 0…90 %, facility loads ≥ 0, voltage/frequency > 0,
+  vent length/f/K/extraPa ≥ 0, dirty-filter extraPa ≥ 0, fan count 1…16,
+  service clearances ≥ 0, rack body/shelves/usable shelf vs body, supported
+  rotations 0/90/180/270, imported ASIC primitives, as-built AABB primitives.
+- No silent clamp. `setDeltaT` / `setFan` / `setPower(reserve)` fail closed.
+  APPLY / commit / load / import / persist / solveForTarget share the same
+  validator. Upgrade options that fail the boundary are not proposed.
+- `thermal.outdoorTempC` / `intakeTempC` / `ventilation.outdoorTempC` do not
+  drive SAFE (visual / overlay only); finite hygiene only.
+
+Does not start QX-02C. Does not publish. Does not declare FINAL PASSED.
+Does not reopen QX-01 / QX-02A / QX-02B-R2…R4 / FINAL-SEC.
+
+
 
 
