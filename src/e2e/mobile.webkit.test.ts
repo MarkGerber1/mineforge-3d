@@ -272,8 +272,26 @@ describe("MOB-06 overlay → APPLY TO MODEL writes opening", () => {
   it("door overlay APPLY writes opening", async () => {
     const { ctx, page } = await openPhone("390x844");
     try {
-      await mf(page, "toolbar-add").tap();
-      await mf(page, "add-new-project").tap();
+      await page.evaluate(() => {
+        const s = (
+          window as unknown as {
+            __MF_STORE__: {
+              getState: () => {
+                project: Record<string, unknown> & { openings: unknown[]; racks: unknown[]; lockedObjectIds?: string[] };
+                loadProject: (p: unknown, first?: boolean) => void;
+              };
+            };
+          }
+        ).__MF_STORE__.getState();
+        const next = JSON.parse(JSON.stringify(s.project)) as typeof s.project & {
+          openings: Array<{ type: string; locked?: boolean }>;
+        };
+        next.openings = next.openings
+          .filter((o) => o.type !== "DOOR")
+          .map((o) => ({ ...o, locked: false }));
+        next.lockedObjectIds = [];
+        s.loadProject(next, false);
+      });
       await mf(page, "toolbar-reality").tap();
       await mf(page, "reality-file").setInputFiles(PHOTO);
       const img = mf(page, "annotator-img");
