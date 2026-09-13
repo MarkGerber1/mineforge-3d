@@ -225,5 +225,25 @@ Starting SHA `39ea17b241d1d556656d3bdec1245352d844ca32`. Branch
 Does not start QX-02C. Does not publish. Does not declare FINAL PASSED.
 Does not reopen QX-01 / QX-02A / FINAL-SEC.
 
+## QX-02B-R — CANONICAL SAFETY INGRESS + FEASIBLE SPACE + AISLE + CRITICAL
+
+Starting SHA `b47dea66db96559461b11ed90338409f0f8d6e8e`. Branch
+`repair/qx-02b-r-safety-integrity`.
+
+- R1: `validateCanonicalProjectDomains` is the single numeric boundary for
+  room W/D/H, known electrical watts, requestedCount, rack asicCount
+  (including per-rack cap when ASIC is resolvable). APPLY / patch / commit /
+  load / import / persist share it. 9 MW +25% is capped at 10 MW or omitted.
+- R2: Physical Space / empty-room rack fallback use `feasibleSpacePacking`.
+  Every counted rack has a realizable body + service envelope; metamorphic
+  analyzeRacks on the predicted arrangement does not collapse to 0.
+- R3: `facingAisleGapM` requires opposing airflow, perpendicular overlap, and
+  spatial order of intake faces. Looking-away pairs are not a facing aisle.
+- R4: every Engineering CRITICAL warning sets `hasCriticalConflict`. Typical
+  policy cannot hide design-load fail. Fan duty FAIL / fan outside / no fan
+  cannot coexist with VERIFIED.
+
+Does not start QX-02C. Does not publish. Does not declare FINAL PASSED.
+
 
 

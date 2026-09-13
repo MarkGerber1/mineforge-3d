@@ -3,6 +3,7 @@ import { defaultCatalogs } from "../engineering/catalogs.ts";
 import { calculateAll, type Catalogs } from "../engineering/pipeline.ts";
 import { alignRacks, distributeRacks, duplicateRackOffset, generateAutoLayout, rotateRack90, type AlignEdge } from "../engineering/layout.ts";
 import { originDeltaForWallResize, resizeRectangularRoom, validateOpening } from "../engineering/geometry.ts";
+import { validateCanonicalProjectDomains, validateRequestedCount } from "../engineering/canonical.ts";
 import { applyPatchValidated, type PartialProjectPatch } from "../engineering/upgrade.ts";
 import type { AppMode, EngineeringResult, Opening, Project, Rack, ViewMode, WallId } from "../engineering/types.ts";
 import { SNAP_MODES_M, type SnapMode } from "../engineering/constants.ts";
@@ -123,7 +124,7 @@ interface ProjectStore {
   live(): Project;
   liveResult(): EngineeringResult;
   canonical(): Project;
-  commit(next: Project, label: string): void;
+  commit(next: Project, label: string): boolean;
   setPreview(next: Project | null): void;
   commitGeometryPreview(label: string): void;
   undo(): void;
@@ -141,7 +142,7 @@ interface ProjectStore {
   updateOpening(id: string, patch: Partial<Opening>, preview?: boolean): { ok: boolean; errors: string[] };
   addRack(rack: Rack): { ok: boolean; errors: string[] };
   moveRack(id: string, x: number, y: number, preview?: boolean): { ok: boolean; errors: string[] };
-  setFleet(asicId: string, count: number): void;
+  setFleet(asicId: string, count: number): { ok: boolean; reason?: string };
   setPower(watts: number, reservePct?: number): { ok: boolean; reason?: string };
   setRoomHeight(heightM: number): { ok: boolean; reason?: string };
   setRackAsicCount(id: string, count: number): { ok: boolean; reason?: string };
@@ -156,7 +157,7 @@ interface ProjectStore {
   rotateSelectedRack(): { ok: boolean; errors: string[] };
   duplicateSelectedRack(): { ok: boolean; errors: string[] };
   duplicateScenario(name: string): void;
-  loadProject(p: Project, asFirstRun?: boolean): void;
+  loadProject(p: Project, asFirstRun?: boolean): { ok: boolean; reason?: string };
   pushGrok(msg: GrokMessage): void;
   setGrokBusy(v: boolean): void;
   setGrokOffline(v: boolean): void;
@@ -295,6 +296,11 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
   commit(next, label) {
     const { project, past, catalogs, failureSim, measure } = get();
+    const domains = validateCanonicalProjectDomains(next, catalogs);
+    if (!domains.ok) {
+      set({ lastMutationError: domains.errors[0] ?? "Каноническая проверка не пройдена." });
+      return false;
+    }
     const result = calculateAll(next, catalogs);
     const overlay = overlayFrom(next, null, failureSim, catalogs);
     set({
@@ -308,6 +314,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       ...overlay,
     });
     scheduleSave(get().project, (s) => set(s));
+    return true;
   },
   setPreview(next) {
     const { catalogs, failureSim, project } = get();
@@ -453,8 +460,20 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     return { ok: true, errors: [] };
   },
   setFleet(asicId, count) {
+    const check = validateRequestedCount(count);
+    if (!check.ok) {
+      set({ lastMutationError: check.reason });
+      return { ok: false, reason: check.reason };
+    }
     const src = get().project;
-    get().commit({ ...src, fleet: { ...src.fleet, asicId, requestedCount: Math.max(0, Math.floor(count)) } }, "Set ASIC fleet");
+    const next = { ...src, fleet: { ...src.fleet, asicId, requestedCount: check.count } };
+    const domains = validateCanonicalProjectDomains(next, get().catalogs);
+    if (!domains.ok) {
+      set({ lastMutationError: domains.errors[0] ?? "Каноническая проверка не пройдена." });
+      return { ok: false, reason: domains.errors[0] };
+    }
+    get().commit(next, "Set ASIC fleet");
+    return { ok: true };
   },
   setPower(watts, reservePct) {
     const check = validateAvailablePowerW(watts);
@@ -549,7 +568,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   applyProposed() {
     const { proposed, project } = get();
     if (!proposed) return { ok: false, errors: ["Нет предложения."] };
-    const applied = applyPatchValidated(project, proposed.patch);
+    const applied = applyPatchValidated(project, proposed.patch, get().catalogs);
     if (!applied.ok) {
       set({ lastMutationError: applied.errors[0] ?? "Патч отклонён." });
       get().pushGrok({
@@ -630,6 +649,11 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
   loadProject(p, asFirstRun = false) {
     const catalogs = get().catalogs;
+    const domains = validateCanonicalProjectDomains(p, catalogs);
+    if (!domains.ok) {
+      set({ lastMutationError: domains.errors[0] ?? "Проект отклонён: недопустимые канонические поля." });
+      return { ok: false, reason: domains.errors[0] };
+    }
     const result = calculateAll(p, catalogs);
     set({
       project: p,
@@ -643,8 +667,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       failureSim: "none",
       failureVisual: null,
       failureResult: null,
+      lastMutationError: null,
     });
     scheduleSave(p, (s) => set(s));
+    return { ok: true };
   },
   pushGrok(msg) {
     set({ grok: [...get().grok, msg] });

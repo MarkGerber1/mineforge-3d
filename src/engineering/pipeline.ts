@@ -1,11 +1,11 @@
 import { AIR_CP_J_KG_K, AIR_DENSITY_KG_M3 } from "./constants.ts";
-import { calculateCapacity, theoreticalSpaceCapacity } from "./capacity.ts";
+import { calculateCapacity } from "./capacity.ts";
 import { calculateElectrical } from "./electrical.ts";
 import { evaluateProjectFans } from "./fans.ts";
 import { analyzeGeometry, analyzeOpenings, validExhaustAvailable, validIntakeAvailable } from "./geometry.ts";
-import { defaultRackTemplate } from "./layout.ts";
+import { feasibleSpacePacking } from "./space-pack.ts";
 import { calculatePressure, resolvedVentComponents } from "./pressure.ts";
-import { analyzeRacks, rackAsicCapacity } from "./racks.ts";
+import { analyzeRacks } from "./racks.ts";
 import { calculateThermal, requiredAirflowPerAsicM3h, thermalAirflowM3s } from "./thermal.ts";
 import type { AsicSpec, EngineeringResult, FanSpec, Project, Warning } from "./types.ts";
 import { m3sToM3h } from "./units.ts";
@@ -194,30 +194,8 @@ export function calculateAll(project: Project, catalogs: Catalogs): EngineeringR
     });
   }
 
-  const tmpl = defaultRackTemplate();
-  const dummyRack = {
-    ...tmpl,
-    id: "tmpl",
-    name: "tmpl",
-    x: 0,
-    y: 0,
-    rotationDeg: 0,
-    asicCount: 0,
-    airflowToward: "south" as const,
-  };
-  const perTmpl = asic ? rackAsicCapacity(dummyRack, asic) : 0;
-  const spaceN = asic
-    ? theoreticalSpaceCapacity(
-        project.room.widthM,
-        project.room.depthM,
-        dummyRack.widthM,
-        dummyRack.depthM,
-        perTmpl,
-        project.constraints.frontServiceClearanceM,
-        project.constraints.rearServiceClearanceM,
-        project.constraints.minAisleM,
-      )
-    : null;
+  const tmplPack = feasibleSpacePacking(project, asic);
+  const spaceN = asic ? tmplPack.asicCount : null;
 
   const ventKnown = fan.operatingQ_m3h != null && asic != null;
   const ventN =
@@ -235,13 +213,7 @@ export function calculateAll(project: Project, catalogs: Catalogs): EngineeringR
 
   const qPer = asic ? requiredAirflowPerAsicM3h(asic, project.thermal.deltaTK) : 0;
 
-  const hasCriticalConflict =
-    racks.collisions.length > 0 ||
-    racks.wallHits.length > 0 ||
-    racks.doorHits.length > 0 ||
-    racks.asBuiltHits.length > 0 ||
-    racks.ceilingHits.some((h) => project.racks.some((r) => r.id === h.id)) ||
-    racks.clearanceHits.length > 0;
+  const hasCriticalConflict = warnings.some((w) => w.severity === "CRITICAL");
   const hasBlocker =
     !geometry.valid ||
     !openings.valid ||
@@ -290,7 +262,7 @@ export function calculateAll(project: Project, catalogs: Catalogs): EngineeringR
     ],
     maxBySpace: spaceN,
     spaceKnown: geometry.valid,
-    spaceDetail: spaceN == null ? "Geometry invalid." : `Theoretical packing ${spaceN} ASIC.`,
+    spaceDetail: spaceN == null ? "Geometry invalid." : `Feasible packing ${spaceN} ASIC.`,
     spaceTrace: [
       {
         id: "area",
@@ -306,7 +278,7 @@ export function calculateAll(project: Project, catalogs: Catalogs): EngineeringR
     rackKnown: true,
     rackDetail: project.racks.length
       ? `${racks.usableCapacity} usable ASIC on ${project.racks.length} rack(s) (${racks.totalCapacity} shelf capacity, ${racks.totalCapacity - racks.usableCapacity} blocked by 3D/clearance conflict).`
-      : "No racks placed — using theoretical space packing.",
+      : "No racks placed — using feasible space packing.",
     rackTrace: racks.perRackCapacity.map((r) => ({
       id: r.id,
       label: `Rack ${r.id}`,

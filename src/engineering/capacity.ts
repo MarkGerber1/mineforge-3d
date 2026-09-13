@@ -149,8 +149,8 @@ export function hudSafetyKind(input: {
   hasBlocker: boolean;
   hasCriticalConflict: boolean;
 }): HudSafetyKind {
-  if (input.hasCriticalConflict || input.confidence === "CRITICAL") return "CRITICAL";
   if (input.hasBlocker || input.confidence === "INCOMPLETE") return "INCOMPLETE";
+  if (input.hasCriticalConflict || input.confidence === "CRITICAL") return "CRITICAL";
   if (input.confidence === "PRELIMINARY") return "PRELIMINARY";
   if (input.safe != null && input.requested > input.safe) return "OVER_CAPACITY";
   return "VERIFIED";
@@ -165,14 +165,10 @@ export const HUD_SAFETY_LABEL_RU: Record<HudSafetyKind, string> = {
 };
 
 /**
- * Rectangular packing upper bound.
- * Evaluates 0° and 90° orientations. Reports 0 if the rack footprint cannot
- * fit along both room axes in either orientation. Never exceeds the body grid
- * floor(W/rackW)*floor(D/rackD) (and the swapped orientation).
- *
- * Side pitch = rackW + 0.1 m. Depth pitch = rackD + front + rear + aisle/2.
- * A single body-fitting rack is counted even when service pitch exceeds the
- * remaining room (conservative 1-cell, not a planner).
+ * Feasible rectangular packing upper bound used as a numeric diagnostic.
+ * A rack is counted only when body + mandatory front/rear service envelopes
+ * fit in the room in that orientation. Never exceeds the body grid.
+ * Pipeline VERIFIED SAFE uses feasibleSpacePacking() (same rules as analyzeRacks).
  */
 export function theoreticalSpaceCapacity(
   roomWidthM: number,
@@ -185,10 +181,18 @@ export function theoreticalSpaceCapacity(
   aisle: number,
 ): number {
   if (perRack <= 0) return 0;
-  const sideGap = 0.1;
-  const depthExtra = Math.max(0, front) + Math.max(0, rear) + Math.max(0, aisle) * 0.5;
-  const n0 = orientedCount(roomWidthM, roomDepthM, rackWidthM, rackDepthM, sideGap, depthExtra);
-  const n90 = orientedCount(roomWidthM, roomDepthM, rackDepthM, rackWidthM, sideGap, depthExtra);
+  const n0 = Math.max(
+    sameDirCount(roomWidthM, roomDepthM, rackWidthM, rackDepthM, front, rear),
+    facingPairCount(roomWidthM, roomDepthM, rackWidthM, rackDepthM, front, rear, aisle),
+    sameDirCount(roomDepthM, roomWidthM, rackDepthM, rackWidthM, front, rear),
+    facingPairCount(roomDepthM, roomWidthM, rackDepthM, rackWidthM, front, rear, aisle),
+  );
+  const n90 = Math.max(
+    sameDirCount(roomWidthM, roomDepthM, rackDepthM, rackWidthM, front, rear),
+    facingPairCount(roomWidthM, roomDepthM, rackDepthM, rackWidthM, front, rear, aisle),
+    sameDirCount(roomDepthM, roomWidthM, rackWidthM, rackDepthM, front, rear),
+    facingPairCount(roomDepthM, roomWidthM, rackWidthM, rackDepthM, front, rear, aisle),
+  );
   const packed = Math.max(n0, n90);
   const body0 = bodyGrid(roomWidthM, roomDepthM, rackWidthM, rackDepthM);
   const body90 = bodyGrid(roomWidthM, roomDepthM, rackDepthM, rackWidthM);
@@ -209,15 +213,42 @@ function countAlong(room: number, item: number, extraPitch: number): number {
   return 1 + Math.floor((room - item + 1e-12) / step);
 }
 
-function orientedCount(
+function rowsWithService(room: number, body: number, front: number, rear: number): number {
+  if (body <= 0) return 0;
+  const first = Math.max(0, front) + body + Math.max(0, rear);
+  if (room + 1e-12 < first) return 0;
+  const step = body + Math.max(Math.max(0, front), Math.max(0, rear));
+  return 1 + Math.floor((room - first + 1e-12) / step);
+}
+
+function sameDirCount(
   roomW: number,
   roomD: number,
   rackW: number,
   rackD: number,
-  sideGap: number,
-  depthExtra: number,
+  front: number,
+  rear: number,
 ): number {
-  const nx = countAlong(roomW, rackW, sideGap);
-  const ny = countAlong(roomD, rackD, depthExtra);
+  const nx = countAlong(roomW, rackW, 0.1);
+  const ny = rowsWithService(roomD, rackD, front, rear);
   return nx * ny;
+}
+
+function facingPairCount(
+  roomW: number,
+  roomD: number,
+  rackW: number,
+  rackD: number,
+  front: number,
+  rear: number,
+  aisle: number,
+): number {
+  const nx = countAlong(roomW, rackW, 0.1);
+  if (nx <= 0) return 0;
+  const gap = Math.max(Math.max(0, aisle), Math.max(0, front));
+  const pair = Math.max(0, rear) + rackD + gap + rackD + Math.max(0, rear);
+  if (roomD + 1e-12 < pair) return 0;
+  const between = rackD + gap + rackD + Math.max(0, rear) + Math.max(0, rear);
+  const pairs = 1 + Math.floor((roomD - pair + 1e-12) / Math.max(between, pair));
+  return nx * 2 * Math.max(0, pairs);
 }

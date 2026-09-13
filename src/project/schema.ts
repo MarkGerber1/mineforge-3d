@@ -1,5 +1,14 @@
 import { z } from "zod";
 import { emptyReality, type Project } from "../engineering/types.ts";
+import {
+  MAX_RACK_ASIC_COUNT,
+  MAX_ROOM_DIM_M,
+  MAX_ROOM_HEIGHT_M,
+  MIN_ROOM_DIM_M,
+} from "../engineering/constants.ts";
+import { defaultCatalogs } from "../engineering/catalogs.ts";
+import { validateCanonicalProjectDomains } from "../engineering/canonical.ts";
+import type { Catalogs } from "../engineering/pipeline.ts";
 
 const sourceSchema = z.object({
   label: z.string(),
@@ -45,10 +54,10 @@ export const projectSchema = z.object({
   updatedAt: z.number(),
   room: z.object({
     kind: z.literal("rectangular"),
-    widthM: z.number(),
-    depthM: z.number(),
-    heightM: z.number(),
-    wallThicknessM: z.number(),
+    widthM: z.number().finite().min(MIN_ROOM_DIM_M).max(MAX_ROOM_DIM_M),
+    depthM: z.number().finite().min(MIN_ROOM_DIM_M).max(MAX_ROOM_DIM_M),
+    heightM: z.number().finite().min(MIN_ROOM_DIM_M).max(MAX_ROOM_HEIGHT_M),
+    wallThicknessM: z.number().finite(),
   }),
   openings: z.array(
     z.object({
@@ -99,7 +108,7 @@ export const projectSchema = z.object({
     outdoorTempC: z.number(),
   }),
   electrical: z.object({
-    availablePowerW: z.number(),
+    availablePowerW: z.number().finite(),
     voltageV: z.number(),
     frequencyHz: z.number(),
     phases: z.literal(3),
@@ -112,7 +121,7 @@ export const projectSchema = z.object({
   }),
   fleet: z.object({
     asicId: z.string(),
-    requestedCount: z.number(),
+    requestedCount: z.number().finite().int().nonnegative(),
     imported: asicSchema.optional(),
   }),
   racks: z.array(
@@ -128,7 +137,7 @@ export const projectSchema = z.object({
       shelves: z.number(),
       usableShelfWidthM: z.number(),
       usableShelfDepthM: z.number(),
-      asicCount: z.number(),
+      asicCount: z.number().finite().int().nonnegative().max(MAX_RACK_ASIC_COUNT),
       airflowToward: z.enum(["north", "south", "east", "west"]),
       locked: z.boolean().optional(),
     }),
@@ -171,10 +180,14 @@ export const projectSchema = z.object({
     .optional(),
 });
 
-export function parseProject(data: unknown): Project {
+export function parseProject(data: unknown, catalogs: Catalogs = defaultCatalogs()): Project {
   const p = projectSchema.parse(data) as Project;
   if (!p.reality) p.reality = emptyReality();
   if (!p.reality.videos) p.reality.videos = [];
+  const domains = validateCanonicalProjectDomains(p, catalogs);
+  if (!domains.ok) {
+    throw new Error(domains.errors[0] ?? "Invalid canonical project domains.");
+  }
   return p;
 }
 

@@ -1,8 +1,12 @@
 import { FAN_STRONG, FAN_WEAK, getFan } from "../equipment/fan-catalog.ts";
+import { validateCanonicalProjectDomains } from "./canonical.ts";
+import { MAX_AVAILABLE_POWER_W } from "./constants.ts";
+import { defaultCatalogs } from "./catalogs.ts";
+import { validateAvailablePowerW } from "./electrical.ts";
 import { openingMaxWidthOnWallM, validateOpening, fanIsSpatiallyValid } from "./geometry.ts";
 import { calculateAll, type Catalogs } from "./pipeline.ts";
 import { validateRacksConfiguration } from "./placement.ts";
-import { validateRoomLengthM } from "./room-resize.ts";
+import { validateRoomHeightM, validateRoomLengthM } from "./room-resize.ts";
 import type { Project } from "./types.ts";
 
 export interface UpgradeOption {
@@ -112,11 +116,12 @@ function patchTouchesGeometry(patch: PartialProjectPatch): boolean {
   );
 }
 
-export function applyPatchValidated(project: Project, patch: PartialProjectPatch): PatchApplyResult {
+export function applyPatchValidated(
+  project: Project,
+  patch: PartialProjectPatch,
+  catalogs: Catalogs = defaultCatalogs(),
+): PatchApplyResult {
   const next = applyPatch(project, patch);
-  if (!patchTouchesGeometry(patch)) {
-    return { ok: true, project: next, errors: [] };
-  }
   const errors: string[] = [];
   if (patch.room) {
     if (patch.room.widthM != null) {
@@ -127,26 +132,31 @@ export function applyPatchValidated(project: Project, patch: PartialProjectPatch
       const d = validateRoomLengthM(patch.room.depthM);
       if (!d.ok) errors.push(d.reason);
     }
-    if (patch.room.heightM != null && !(patch.room.heightM > 0)) {
-      errors.push("Высота должна быть больше нуля.");
+    if (patch.room.heightM != null) {
+      const h = validateRoomHeightM(patch.room.heightM);
+      if (!h.ok) errors.push(h.reason);
     }
   }
-  for (const o of next.openings) {
-    const v = validateOpening(next, o);
-    if (!v.ok) errors.push(...v.errors.map((e) => `${o.name ?? o.id}: ${e}`));
-  }
-  if (patch.racks || patch.room) {
-    const ids = next.racks.map((r) => r.id);
-    const v = validateRacksConfiguration(next, next.racks, ids);
-    if (!v.ok) errors.push(...v.errors);
-  }
-  if (patch.fans) {
-    for (const f of next.fans) {
-      if (!fanIsSpatiallyValid(next, f)) {
-        errors.push(`Вентилятор ${f.name} вне помещения.`);
+  if (patchTouchesGeometry(patch)) {
+    for (const o of next.openings) {
+      const v = validateOpening(next, o);
+      if (!v.ok) errors.push(...v.errors.map((e) => `${o.name ?? o.id}: ${e}`));
+    }
+    if (patch.racks || patch.room) {
+      const ids = next.racks.map((r) => r.id);
+      const v = validateRacksConfiguration(next, next.racks, ids);
+      if (!v.ok) errors.push(...v.errors);
+    }
+    if (patch.fans) {
+      for (const f of next.fans) {
+        if (!fanIsSpatiallyValid(next, f)) {
+          errors.push(`Вентилятор ${f.name} вне помещения.`);
+        }
       }
     }
   }
+  const domains = validateCanonicalProjectDomains(next, catalogs);
+  if (!domains.ok) errors.push(...domains.errors);
   if (errors.length) {
     return { ok: false, project, errors };
   }
@@ -260,19 +270,23 @@ export function generateUpgradeOptions(project: Project, catalogs: Catalogs, tar
   }
 
   if (project.electrical.known) {
-    const electrical = { ...project.electrical, availablePowerW: project.electrical.availablePowerW * 1.25 };
-    options.push(
-      optionFrom(
-        "more-power",
-        "Increase available electrical power +25%",
-        `${(project.electrical.availablePowerW / 1000).toFixed(1)} kW`,
-        `${(electrical.availablePowerW / 1000).toFixed(1)} kW`,
-        project,
-        applyPatch(project, { electrical }),
-        catalogs,
-        { electrical },
-      ),
-    );
+    const bumped = Math.min(MAX_AVAILABLE_POWER_W, project.electrical.availablePowerW * 1.25);
+    const powerOk = validateAvailablePowerW(bumped);
+    if (powerOk.ok && bumped > project.electrical.availablePowerW + 1e-9) {
+      const electrical = { ...project.electrical, availablePowerW: powerOk.watts };
+      options.push(
+        optionFrom(
+          "more-power",
+          "Increase available electrical power +25%",
+          `${(project.electrical.availablePowerW / 1000).toFixed(1)} kW`,
+          `${(electrical.availablePowerW / 1000).toFixed(1)} kW`,
+          project,
+          applyPatch(project, { electrical }),
+          catalogs,
+          { electrical },
+        ),
+      );
+    }
   }
 
   if (project.thermal.deltaTK < 15) {
@@ -303,7 +317,7 @@ export function solveForTarget(project: Project, catalogs: Catalogs, target: num
     const opts = generateUpgradeOptions(current, catalogs, target).filter((o) => (o.newSafe ?? 0) > (now.capacity.safe ?? 0));
     if (!opts.length) break;
     const best = opts[0];
-    const applied = applyPatchValidated(current, best.patch);
+    const applied = applyPatchValidated(current, best.patch, catalogs);
     if (!applied.ok) break;
     steps.push(best);
     current = applied.project;
@@ -336,7 +350,10 @@ export function sensitivity(project: Project, catalogs: Catalogs) {
     tryRow("Shaft section", "+20%", applyPatch(project, { ventilation: { componentResize: { id: shaft.id, widthM: (shaft.widthM ?? 1) * 1.2, heightM: shaft.heightM } } }));
   }
   if (project.electrical.known) {
-    tryRow("Available power", "+20%", applyPatch(project, { electrical: { availablePowerW: project.electrical.availablePowerW * 1.2 } }));
+    const bumped = Math.min(MAX_AVAILABLE_POWER_W, project.electrical.availablePowerW * 1.2);
+    if (validateAvailablePowerW(bumped).ok && bumped > project.electrical.availablePowerW + 1e-9) {
+      tryRow("Available power", "+20%", applyPatch(project, { electrical: { availablePowerW: bumped } }));
+    }
   }
   tryRow("ΔT", "+2 K", applyPatch(project, { thermal: { deltaTK: Math.min(15, project.thermal.deltaTK + 2) } }));
   const f = project.fans[0];

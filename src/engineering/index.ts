@@ -10,6 +10,8 @@ export * from "./pressure.ts";
 export * from "./fans.ts";
 export * from "./racks.ts";
 export * from "./capacity.ts";
+export * from "./canonical.ts";
+export * from "./space-pack.ts";
 export * from "./layout.ts";
 export * from "./pipeline.ts";
 export * from "./upgrade.ts";

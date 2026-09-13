@@ -112,7 +112,12 @@ export function Inspector({ hideGrok }: { hideGrok?: boolean }) {
             <Field
               label="ASIC count (requested)"
               value={`${project.fleet.requestedCount}`}
-              onCommit={(v) => store.setFleet(project.fleet.asicId, Number(v) || 0)}
+              mfId="inspector-requested"
+              onCommit={(v) => {
+                const n = Number(String(v).trim().replace(",", "."));
+                const res = store.setFleet(project.fleet.asicId, n);
+                if (!res.ok) return res.reason;
+              }}
             />
             <Field
               label="Мощность, kW"

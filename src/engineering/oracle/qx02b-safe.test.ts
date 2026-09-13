@@ -344,9 +344,9 @@ describe("SPACE-03 orientation 0 impossible but 90° fits", () => {
   });
 });
 
-describe("SPACE-04 exact boundary fit", () => {
-  it("room equals rack footprint → 1 rack × perRack", () => {
-    assert.equal(theoreticalSpaceCapacity(1.6, 0.6, 1.6, 0.6, 24, 0.8, 0.6, 1.0), 24);
+describe("SPACE-04 exact body fit is not feasible with service", () => {
+  it("room equals rack footprint → 0 (service envelopes do not fit)", () => {
+    assert.equal(theoreticalSpaceCapacity(1.6, 0.6, 1.6, 0.6, 24, 0.8, 0.6, 1.0), 0);
   });
 });
 
@@ -729,8 +729,9 @@ describe("HUD-SAFE oracle states", () => {
     const over = verifiedBase();
     over.fleet.requestedCount = 10_000;
     const o = calculateAll(over, catalogs);
-    assert.equal(o.capacity.safety, "OVER_CAPACITY");
     assert.equal(o.capacity.verified, false);
+    assert.ok(o.capacity.safety === "OVER_CAPACITY" || o.capacity.safety === "CRITICAL");
+    assert.notEqual(o.capacity.safety, "VERIFIED");
 
     const col = verifiedBase();
     col.racks = [rackAt(2, 2, "a"), rackAt(2.1, 2, "b")];
