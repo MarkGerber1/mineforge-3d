@@ -32,8 +32,8 @@ Date: 2026-09-13
 
 Oracle suite: `src/engineering/oracle/*.test.ts`
 
-TOTAL: 85
-PASSED: 85
+TOTAL: 87
+PASSED: 87
 FAILED: 0
 
 | Test ID | Subsystem | Status |
@@ -51,7 +51,7 @@ FAILED: 0
 | FAIL-01 … FAIL-02 | Failure sim clone | PASS |
 | REAL-01 … REAL-12 | Provenance, calibration, Sync → openings/as-built/wall, undo, persistence | PASS |
 | REAL-13 … REAL-24 | 3D collision consequence, vent opening, AI Reality fail-closed, undo/redo | PASS |
-| VIDEO-01 … VIDEO-12 | Real video policy, provenance, bounded frames, no silent mutate, persistRaw=false | PASS |
+| VIDEO-01 … VIDEO-13 | Real video policy, provenance, bounded frames, no silent mutate, persistRaw=false, VP8 demux | PASS |
 
 ## E2E / UX
 
@@ -80,8 +80,18 @@ SAFE computed by the engine. Floor loading UNKNOWN → confidence PRELIMINARY.
 
 ## CURRENT PHASE
 
-Repair Batch 1 PASSED under owner revised release policy (SHA `8f5c9c0`).
-Repair Batch 2 — Reality geometry pipeline (SHA `7c9f25a`).
-Repair Batch 3 — Reality → Engineering + true 3D vertical geometry (SHA `a783606`).
-Repair Batch 4 — iPhone mobile E2E + real video evidence.
-PUBLIC PRODUCTION DEPLOYMENT deferred to FINAL RELEASE.
+**FUNCTIONAL ACCEPTANCE: BATCHES 1–4 PASSED** at SHA `635fd9e965ed8d9705c310b72b82dde2b81f837f`.
+
+Continuity / recovery package: GitHub is the durable source of truth for non-secret source.
+Start at `AI_HANDOFF.md`. Operational recovery: `RECOVERY.md`. Machine metadata: `project-handoff.json`.
+
+Repair Batch 1 PASSED (SHA `8f5c9c0dd4909db51a28a2e14cff12b29c00b218`).
+Repair Batch 2 — Reality geometry pipeline (SHA `7c9f25ae31fab0fe501f542856210adfb7dcfb4c`).
+Repair Batch 3 — Reality → Engineering + true 3D (SHA `a783606cd2665b57b8247bcb3dcb906221fa8fc1`).
+Repair Batch 4 initial merge (SHA `a9c6c64ec0ddc80128881fea4191b347dbf5807a`).
+Repair Batch 4 WebKit video correction (SHA `635fd9e965ed8d9705c310b72b82dde2b81f837f`).
+
+```
+PHYSICAL_IPHONE_SMOKE: DEFERRED_TO_FINAL_RELEASE
+PUBLIC_PRODUCTION_DEPLOYMENT: DEFERRED_TO_FINAL_RELEASE
+```

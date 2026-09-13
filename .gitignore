@@ -8,7 +8,9 @@ dist
 .DS_Store
 .env
 .env.*
+!.env.example
 /tmp
+tmp-webkit-ev/
 artifacts
 .grok/*
 !.grok/app-env.json
@@ -18,3 +20,4 @@ screenshots/*.png
 screenshots/*.json
 qa-evidence/
 test-results/
+.project_id
