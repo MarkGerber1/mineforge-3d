@@ -1427,13 +1427,21 @@ describe("QX-02B HUD + numeric fail-closed", () => {
   function hudDesktop(page: Page) {
     return page.locator('[data-mf-id="hud-safe"][data-mf-hud="desktop"]');
   }
+  async function waitHudSafety(page: Page, which: "mobile" | "desktop", safety: string): Promise<void> {
+    await page.waitForFunction(
+      ({ which: w, safety: s }) =>
+        document.querySelector(`[data-mf-id="hud-safe"][data-mf-hud="${w}"]`)?.getAttribute("data-mf-safety") === s,
+      { which, safety },
+      { timeout: 8000 },
+    );
+  }
 
   it("HUD-SAFE-01/08 375 verified not green-false", async () => {
     const { ctx, page } = await openPhone("375x812");
     try {
       await seedVerified(page);
+      await waitHudSafety(page, "mobile", "VERIFIED");
       const el = hudMobile(page);
-      await el.waitFor({ timeout: 8000 });
       assert.equal(await el.getAttribute("data-mf-verified"), "1");
       assert.equal(await el.getAttribute("data-mf-safety"), "VERIFIED");
     } finally {
@@ -1445,6 +1453,7 @@ describe("QX-02B HUD + numeric fail-closed", () => {
     const { ctx, page } = await openPhone("390x844");
     try {
       await seedVerified(page);
+      await waitHudSafety(page, "mobile", "VERIFIED");
       await page.evaluate(() => {
         const s = (window as unknown as { __MF_STORE__: { getState: () => {
           project: { fleet: { asicId: string } };
@@ -1452,13 +1461,8 @@ describe("QX-02B HUD + numeric fail-closed", () => {
         } } }).__MF_STORE__.getState();
         s.setFleet(s.project.fleet.asicId, 10000);
       });
-      const el = hudMobile(page);
-      await page.waitForFunction(
-        () => document.querySelector('[data-mf-id="hud-safe"][data-mf-hud="mobile"]')?.getAttribute("data-mf-safety") === "OVER_CAPACITY",
-        null,
-        { timeout: 8000 },
-      );
-      assert.equal(await el.getAttribute("data-mf-verified"), "0");
+      await waitHudSafety(page, "mobile", "OVER_CAPACITY");
+      assert.equal(await hudMobile(page).getAttribute("data-mf-verified"), "0");
     } finally {
       await ctx.close();
     }
@@ -1468,6 +1472,7 @@ describe("QX-02B HUD + numeric fail-closed", () => {
     const { ctx, page } = await openPhone("430x932");
     try {
       await seedVerified(page);
+      await waitHudSafety(page, "mobile", "VERIFIED");
       await page.evaluate(() => {
         const s = (window as unknown as { __MF_STORE__: { getState: () => {
           project: { racks: Array<Record<string, unknown>>; fleet: { requestedCount: number } };
@@ -1480,15 +1485,10 @@ describe("QX-02B HUD + numeric fail-closed", () => {
         p.fleet.requestedCount = 1;
         s.loadProject(p);
       });
-      const el = hudMobile(page);
-      await page.waitForFunction(
-        () => document.querySelector('[data-mf-id="hud-safe"][data-mf-hud="mobile"]')?.getAttribute("data-mf-verified") === "0",
-        null,
-        { timeout: 8000 },
-      );
-      const safety = await el.getAttribute("data-mf-safety");
-      assert.ok(safety === "CRITICAL" || safety === "INCOMPLETE");
-      assert.notEqual(safety, "VERIFIED");
+      await waitHudSafety(page, "mobile", "CRITICAL");
+      const safety = await hudMobile(page).getAttribute("data-mf-safety");
+      assert.equal(safety, "CRITICAL");
+      assert.equal(await hudMobile(page).getAttribute("data-mf-verified"), "0");
     } finally {
       await ctx.close();
     }
@@ -1498,6 +1498,7 @@ describe("QX-02B HUD + numeric fail-closed", () => {
     const { ctx, page } = await openPhone("375x812");
     try {
       await seedVerified(page);
+      await waitHudSafety(page, "mobile", "VERIFIED");
       await page.evaluate(() => {
         const s = (window as unknown as { __MF_STORE__: { getState: () => {
           project: { openings: Array<{ type: string; widthM: number }> };
@@ -1507,11 +1508,7 @@ describe("QX-02B HUD + numeric fail-closed", () => {
         p.openings = p.openings.map((o) => (o.type === "EXHAUST" ? { ...o, widthM: 0 } : o));
         s.loadProject(p);
       });
-      await page.waitForFunction(
-        () => document.querySelector('[data-mf-id="hud-safe"][data-mf-hud="mobile"]')?.getAttribute("data-mf-verified") === "0",
-        null,
-        { timeout: 8000 },
-      );
+      await waitHudSafety(page, "mobile", "INCOMPLETE");
       await page.evaluate(() => {
         const s = (window as unknown as { __MF_STORE__: { getState: () => {
           project: { openings: Array<{ type: string }> };
@@ -1521,8 +1518,9 @@ describe("QX-02B HUD + numeric fail-closed", () => {
         p.openings = p.openings.filter((o) => o.type !== "INTAKE");
         s.loadProject(p);
       });
+      await waitHudSafety(page, "mobile", "INCOMPLETE");
       const safety = await hudMobile(page).getAttribute("data-mf-safety");
-      assert.ok(safety === "INCOMPLETE" || safety === "CRITICAL");
+      assert.equal(safety, "INCOMPLETE");
     } finally {
       await ctx.close();
     }
@@ -1543,6 +1541,7 @@ describe("QX-02B HUD + numeric fail-closed", () => {
       const cont = page.getByText("Продолжить текущий проект");
       if (await cont.count()) await cont.first().click();
       await seedVerified(page);
+      await waitHudSafety(page, "desktop", "VERIFIED");
       const el = hudDesktop(page);
       await el.waitFor({ state: "visible", timeout: 8000 });
       assert.equal(await el.getAttribute("data-mf-verified"), "1");
