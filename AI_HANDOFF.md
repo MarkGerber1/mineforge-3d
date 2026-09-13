@@ -11,7 +11,7 @@ Then read [PROJECT_STATE.md](PROJECT_STATE.md), [ARCHITECTURE.md](ARCHITECTURE.m
 | Product | MINEFORGE 3D |
 | Repository | https://github.com/MarkGerber1/mineforge-3d |
 | Default branch | `main` (protected; required check **`gate`**; `enforce_admins: true`) |
-| Accepted functional baseline | `635fd9e965ed8d9705c310b72b82dde2b81f837f` (Batches 1–4 PASSED) |
+| Accepted functional baseline | `635fd9e965ed8d9705c310b72b82dde2b81f837f` (Batches 1–4 PASSED). Immutable. Live HEAD = `git rev-parse origin/main`. |
 | Language of product UI | Russian |
 | Persistence | Browser IndexedDB (`mineforge`), not GitHub |
 
@@ -63,7 +63,10 @@ Next legitimate phase (do not start unless Owner asks):
 git fetch origin
 git checkout main
 git pull --ff-only origin main
-git rev-parse HEAD   # compare to PROJECT_STATE.md / project-handoff.json
+git fetch origin
+git rev-parse origin/main
+# live HEAD is dynamic. Immutable baseline is acceptedFunctionalBaselineSha
+# (635fd9e = independently accepted Batches 1–4). Do NOT trust a static currentCandidateSha.
 gh run list --branch main --limit 5
 npm ci --legacy-peer-deps
 npm run recovery:verify

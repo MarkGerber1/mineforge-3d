@@ -15,7 +15,17 @@ git checkout main
 git rev-parse HEAD
 ```
 
-Compare HEAD to `acceptedFunctionalBaselineSha` in [project-handoff.json](project-handoff.json) (or a later accepted merge SHA recorded there after this continuity package).
+**Immutable product baseline** (`acceptedFunctionalBaselineSha`):
+`635fd9e965ed8d9705c310b72b82dde2b81f837f` — independently accepted Functional Batches 1–4.
+
+**Current repository state** is not stored as a static SHA in that file. Resolve it with:
+
+```bash
+git fetch origin
+git rev-parse origin/main
+```
+
+HEAD must be the baseline or a descendant (`git merge-base --is-ancestor <baseline> HEAD`). Do not treat any embedded `currentCandidateSha` / `latestSha` as live HEAD.
 
 Protected `main` requires status check **`gate`**. `enforce_admins: true`. Never `--admin`, never force-push.
 

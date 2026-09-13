@@ -5,36 +5,29 @@ import type { ThreeEvent } from "@react-three/fiber";
 import { DoubleSide } from "three";
 import { useLiveProject, useLiveResult, useProjectStore } from "@/project/store";
 import { openingWorldRect, rackAabb } from "@/engineering/geometry";
+import { panelWorldBox, segmentAllWalls } from "@/engineering/apertures";
 import type { Project } from "@/engineering/types";
 
 function RoomShell({ project }: { project: Project }) {
   const w = project.room.widthM;
   const d = project.room.depthM;
-  const h = project.room.heightM;
   const t = 0.08;
+  const panels = segmentAllWalls(project);
   return (
     <group>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[w / 2, 0, d / 2]} receiveShadow>
         <planeGeometry args={[w, d]} />
         <meshStandardMaterial color="#24303c" roughness={0.85} />
       </mesh>
-      {/* walls as thin boxes */}
-      <mesh position={[w / 2, h / 2, 0]} castShadow>
-        <boxGeometry args={[w, h, t]} />
-        <meshStandardMaterial color="#3a4656" transparent opacity={0.82} />
-      </mesh>
-      <mesh position={[w / 2, h / 2, d]} castShadow>
-        <boxGeometry args={[w, h, t]} />
-        <meshStandardMaterial color="#3a4656" transparent opacity={0.82} />
-      </mesh>
-      <mesh position={[0, h / 2, d / 2]} castShadow>
-        <boxGeometry args={[t, h, d]} />
-        <meshStandardMaterial color="#3a4656" transparent opacity={0.82} />
-      </mesh>
-      <mesh position={[w, h / 2, d / 2]} castShadow>
-        <boxGeometry args={[t, h, d]} />
-        <meshStandardMaterial color="#3a4656" transparent opacity={0.82} />
-      </mesh>
+      {panels.map((panel, i) => {
+        const box = panelWorldBox(project, panel, t);
+        return (
+          <mesh key={`${panel.wallId}-${i}`} position={box.position} castShadow>
+            <boxGeometry args={box.size} />
+            <meshStandardMaterial color="#3a4656" transparent opacity={0.82} />
+          </mesh>
+        );
+      })}
     </group>
   );
 }
@@ -72,18 +65,41 @@ function Openings({ project }: { project: Project }) {
         const alongZ = Math.abs(r.y2 - r.y1);
         const color = o.type === "INTAKE" ? "#5aa7c7" : o.type === "EXHAUST" || o.type === "SHAFT_CONNECTION" ? "#c47a52" : "#d9dee6";
         const selected = useProjectStore.getState().selectedIds.includes(o.id);
+        const jamb = 0.04;
+        const isNS = o.wallId === "south" || o.wallId === "north";
+        const depth = 0.1;
+        const posts = isNS
+          ? [
+              { pos: [r.x1, cy, cz] as [number, number, number], size: [jamb, o.heightM, depth] as [number, number, number] },
+              { pos: [r.x2, cy, cz] as [number, number, number], size: [jamb, o.heightM, depth] as [number, number, number] },
+              { pos: [cx, r.z2, cz] as [number, number, number], size: [Math.max(alongX, jamb), jamb, depth] as [number, number, number] },
+              ...(o.bottomElevationM > 1e-6
+                ? [{ pos: [cx, r.z1, cz] as [number, number, number], size: [Math.max(alongX, jamb), jamb, depth] as [number, number, number] }]
+                : []),
+            ]
+          : [
+              { pos: [cx, cy, r.y1] as [number, number, number], size: [depth, o.heightM, jamb] as [number, number, number] },
+              { pos: [cx, cy, r.y2] as [number, number, number], size: [depth, o.heightM, jamb] as [number, number, number] },
+              { pos: [cx, r.z2, cz] as [number, number, number], size: [depth, jamb, Math.max(alongZ, jamb)] as [number, number, number] },
+              ...(o.bottomElevationM > 1e-6
+                ? [{ pos: [cx, r.z1, cz] as [number, number, number], size: [depth, jamb, Math.max(alongZ, jamb)] as [number, number, number] }]
+                : []),
+            ];
         return (
-          <mesh
+          <group
             key={o.id}
-            position={[cx, cy, cz]}
             onClick={(e: ThreeEvent<MouseEvent>) => {
               e.stopPropagation();
               useProjectStore.getState().select([o.id]);
             }}
           >
-            <boxGeometry args={[Math.max(alongX, 0.08), Math.max(o.heightM, 0.08), Math.max(alongZ, 0.08)]} />
-            <meshStandardMaterial color={color} emissive={color} emissiveIntensity={selected ? 0.4 : 0.15} />
-          </mesh>
+            {posts.map((p, i) => (
+              <mesh key={i} position={p.pos}>
+                <boxGeometry args={p.size} />
+                <meshStandardMaterial color={color} emissive={color} emissiveIntensity={selected ? 0.4 : 0.15} />
+              </mesh>
+            ))}
+          </group>
         );
       })}
     </group>

@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useLiveProject, useLiveResult, useProjectStore } from "@/project/store";
 import { parseLengthToMeters, formatAmps, formatKw, formatM3h, formatPa } from "@/engineering/units";
+import { validateRoomLengthInput } from "@/engineering/room-resize";
 import { getAsic } from "@/equipment/asic-catalog";
 import { getFan } from "@/equipment/fan-catalog";
 import { generateUpgradeOptions, solveForTarget, sensitivity } from "@/engineering/upgrade";
@@ -13,24 +14,35 @@ import { Line, LineChart, ResponsiveContainer, XAxis, YAxis } from "recharts";
 import { critiqueProject } from "@/ai/critic";
 import { FAILURE_LABELS, type FailureKind } from "@/ai/failure";
 
-function Field({ label, value, onCommit }: { label: string; value: string; onCommit: (v: string) => void }) {
+function Field({ label, value, onCommit }: { label: string; value: string; onCommit: (v: string) => string | void }) {
   const [v, setV] = useState(value);
+  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     setV(value);
+    setError(null);
   }, [value]);
+  const commit = (raw: string) => {
+    const reason = onCommit(raw);
+    setError(typeof reason === "string" ? reason : null);
+  };
   return (
     <label className="block">
       <div className="mb-1 text-[10px] uppercase tracking-[0.12em] text-muted">{label}</div>
       <Input
         value={v}
         onChange={(e) => setV(e.target.value)}
-        onBlur={() => onCommit(v)}
+        onBlur={() => commit(v)}
         onKeyDown={(e) => {
-          if (e.key === "Enter") onCommit(v);
+          if (e.key === "Enter") commit(v);
         }}
         className="font-mono"
         inputMode="decimal"
       />
+      {error && (
+        <div className="mt-1 text-[12px] text-crit" data-mf-id="inspector-dim-error">
+          {error}
+        </div>
+      )}
     </label>
   );
 }
@@ -60,16 +72,18 @@ export function Inspector({ hideGrok }: { hideGrok?: boolean }) {
               label="Ширина"
               value={`${project.room.widthM}`}
               onCommit={(v) => {
-                const m = parseLengthToMeters(v);
-                if (m) store.resizeWall("east", m);
+                const check = validateRoomLengthInput(v);
+                if (!check.ok) return check.reason;
+                store.resizeWall("east", check.meters);
               }}
             />
             <Field
               label="Глубина"
               value={`${project.room.depthM}`}
               onCommit={(v) => {
-                const m = parseLengthToMeters(v);
-                if (m) store.resizeWall("north", m);
+                const check = validateRoomLengthInput(v);
+                if (!check.ok) return check.reason;
+                store.resizeWall("north", check.meters);
               }}
             />
             <Field

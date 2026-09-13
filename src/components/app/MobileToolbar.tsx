@@ -25,6 +25,7 @@ export function MobileToolbar() {
             key={t.id}
             type="button"
             title={t.label}
+            data-mf-id={`tool-${t.id}`}
             onClick={() => store.setTool(t.id)}
             className={cn(
               "flex size-11 shrink-0 flex-col items-center justify-center rounded-[10px] text-muted",

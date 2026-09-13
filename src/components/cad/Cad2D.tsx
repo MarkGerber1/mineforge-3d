@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { aabbOverlap, doorSwingAabb, openingWorldRect, rackAabb, roomAabb, wallLength } from "@/engineering/geometry";
-import { parseLengthToMeters, formatMeters, formatLengthHuman, snapTo } from "@/engineering/units";
+import { openingWorldRect, rackAabb, wallLength } from "@/engineering/geometry";
+import { formatMeters, formatLengthHuman, snapTo } from "@/engineering/units";
 import type { Opening, OpeningType, Rack, WallId } from "@/engineering/types";
-import { SNAP_MODES_M } from "@/engineering/constants";
+import { MAX_ROOM_DIM_M, MIN_ROOM_DIM_M, SNAP_MODES_M } from "@/engineering/constants";
 import { useLiveProject, useLiveResult, useProjectStore } from "@/project/store";
 import { nid } from "@/project/factory";
 import { TEST_RACK_A } from "@/project/factory";
+import { validateRacksConfiguration, validateRackPlacement } from "@/engineering/placement";
+import { validateRoomLengthInput, wallResizeContract } from "@/engineering/room-resize";
 
 type Cam = { x: number; y: number; ppm: number };
 type Drag =
@@ -38,7 +40,8 @@ export function Cad2D() {
   const [cam, setCam] = useState<Cam>({ x: project.room.widthM / 2, y: project.room.depthM / 2, ppm: 70 });
   const [drag, setDrag] = useState<Drag | null>(null);
   const [hover, setHover] = useState<string | null>(null);
-  const [dimEdit, setDimEdit] = useState<{ wall: WallId; value: string } | null>(null);
+  const [dimEdit, setDimEdit] = useState<{ wall: WallId; value: string; error?: string | null } | null>(null);
+  const [placeHint, setPlaceHint] = useState<{ x: number; y: number; ok: boolean; reason?: string } | null>(null);
   const [badge, setBadge] = useState<{ x: number; y: number; text: string; sub?: string } | null>(null);
   const [guides, setGuides] = useState<Array<{ x1: number; y1: number; x2: number; y2: number }>>([]);
   const [marquee, setMarquee] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
@@ -201,16 +204,26 @@ export function Cad2D() {
       const rack: Rack = {
         id: nid("rack"),
         name: `R${project.racks.length + 1}`,
+        ...TEST_RACK_A,
         x: applySnap(p.x),
         y: applySnap(p.y),
-        ...TEST_RACK_A,
         rotationDeg: 0,
         asicCount: 0,
         airflowToward: "south",
       };
-      store.commit({ ...project, racks: [...project.racks, rack] }, "Add rack");
-      store.select([rack.id]);
+      const placed = store.addRack(rack);
+      if (!placed.ok) {
+        setPlaceHint({ x: rack.x, y: rack.y, ok: false, reason: placed.errors[0] });
+        setBadge({
+          x: e.clientX,
+          y: e.clientY,
+          text: "НЕДОПУСТИМО",
+          sub: placed.errors[0],
+        });
+        return;
+      }
       store.setTool("select");
+      setPlaceHint(null);
       return;
     }
 
@@ -282,6 +295,24 @@ export function Cad2D() {
       return;
     }
     if (!drag) {
+      if (store.tool === "rack") {
+        const x = applySnap(p.x);
+        const y = applySnap(p.y);
+        const ghost: Rack = {
+          id: "__ghost__",
+          name: "R",
+          ...TEST_RACK_A,
+          x,
+          y,
+          rotationDeg: 0,
+          asicCount: 0,
+          airflowToward: "south",
+        };
+        const v = validateRackPlacement(store.project, ghost);
+        setPlaceHint({ x, y, ok: v.ok, reason: v.errors[0] });
+      } else if (placeHint) {
+        setPlaceHint(null);
+      }
       setBadge(null);
       return;
     }
@@ -293,10 +324,10 @@ export function Cad2D() {
     }
     if (drag.kind === "wall") {
       let len = drag.wall === "east" || drag.wall === "west" ? p.x : p.y;
-      if (drag.wall === "east") len = applySnap(Math.max(0.5, p.x));
-      if (drag.wall === "west") len = applySnap(Math.max(0.5, project.room.widthM - p.x));
-      if (drag.wall === "north") len = applySnap(Math.max(0.5, p.y));
-      if (drag.wall === "south") len = applySnap(Math.max(0.5, project.room.depthM - p.y));
+      if (drag.wall === "east") len = applySnap(Math.min(MAX_ROOM_DIM_M, Math.max(MIN_ROOM_DIM_M, p.x)));
+      if (drag.wall === "west") len = applySnap(Math.min(MAX_ROOM_DIM_M, Math.max(MIN_ROOM_DIM_M, project.room.widthM - p.x)));
+      if (drag.wall === "north") len = applySnap(Math.min(MAX_ROOM_DIM_M, Math.max(MIN_ROOM_DIM_M, p.y)));
+      if (drag.wall === "south") len = applySnap(Math.min(MAX_ROOM_DIM_M, Math.max(MIN_ROOM_DIM_M, project.room.depthM - p.y)));
       store.resizeWall(drag.wall, len, true);
       const live = useProjectStore.getState().live();
       const dim = drag.wall === "east" || drag.wall === "west" ? live.room.widthM : live.room.depthM;
@@ -338,20 +369,10 @@ export function Cad2D() {
       });
       const moving = nextRacks.filter((r) => drag.ids.includes(r.id));
       const others = nextRacks.filter((r) => !drag.ids.includes(r.id));
-      let invalid = false;
       const g: typeof guides = [];
+      const v = validateRacksConfiguration(src, nextRacks, drag.ids);
+      const invalid = !v.ok;
       for (const m of moving) {
-        const bb = rackAabb(m);
-        if (aabbOverlap(bb, roomAabb(src)) && (bb.x1 < 0 || bb.y1 < 0 || bb.x2 > src.room.widthM || bb.y2 > src.room.depthM)) {
-          invalid = true;
-        }
-        for (const o of others) {
-          if (aabbOverlap(bb, rackAabb(o)) > 0) invalid = true;
-        }
-        for (const d of src.openings.filter((x) => x.type === "DOOR")) {
-          const sw = doorSwingAabb(src, d);
-          if (sw && aabbOverlap(bb, sw) > 0) invalid = true;
-        }
         for (const o of others) {
           if (Math.abs(m.x - o.x) < 0.02) g.push({ x1: m.x, y1: 0, x2: m.x, y2: src.room.depthM });
           if (Math.abs(m.y - o.y) < 0.02) g.push({ x1: 0, y1: m.y, x2: src.room.widthM, y2: m.y });
@@ -364,7 +385,7 @@ export function Cad2D() {
         x: e.clientX,
         y: e.clientY,
         text: invalid ? "COLLISION" : `${moving[0]?.x.toFixed(3)}, ${moving[0]?.y.toFixed(3)}`,
-        sub: invalid ? "Размещение недопустимо" : undefined,
+        sub: invalid ? v.errors[0] ?? "Размещение недопустимо" : undefined,
       });
       return;
     }
@@ -441,8 +462,22 @@ export function Cad2D() {
 
   const commitDim = () => {
     if (!dimEdit) return;
-    const m = parseLengthToMeters(dimEdit.value);
-    if (m != null && m > 0) store.resizeWall(dimEdit.wall, m, false);
+    const v = validateRoomLengthInput(dimEdit.value);
+    if (!v.ok) {
+      setDimEdit({ ...dimEdit, error: v.reason });
+      store.setPreview(null);
+      return;
+    }
+    const res = store.resizeWall(dimEdit.wall, v.meters, false);
+    if (!res.ok) {
+      setDimEdit({ ...dimEdit, error: res.reason ?? "Некорректный размер." });
+      return;
+    }
+    setDimEdit(null);
+  };
+
+  const cancelDim = () => {
+    store.setPreview(null);
     setDimEdit(null);
   };
 
@@ -667,32 +702,32 @@ export function Cad2D() {
           );
         })}
 
+        {placeHint && store.tool === "rack" &&
+          (() => {
+            const a = toS(placeHint.x, placeHint.y);
+            const b = toS(placeHint.x + TEST_RACK_A.widthM, placeHint.y + TEST_RACK_A.depthM);
+            const x = Math.min(a.sx, b.sx);
+            const y = Math.min(a.sy, b.sy);
+            const ww = Math.abs(b.sx - a.sx);
+            const hh = Math.abs(b.sy - a.sy);
+            return (
+              <rect
+                data-mf-place-preview={placeHint.ok ? "ok" : "invalid"}
+                x={x}
+                y={y}
+                width={ww}
+                height={hh}
+                fill={placeHint.ok ? "rgba(90,167,199,0.18)" : "rgba(196,92,92,0.28)"}
+                stroke={placeHint.ok ? "#5aa7c7" : "#c45c5c"}
+                strokeDasharray="5 3"
+                strokeWidth={1.5}
+              />
+            );
+          })()}
+
         {project.fans.map((f) => {
           const a = toS(f.x, f.y);
           return <circle key={f.id} cx={a.sx} cy={a.sy} r={10} fill="#7b8ca3" stroke="#e8edf3" strokeWidth={1} />;
-        })}
-
-        {walls.map((wall) => {
-          const a = toS((wall.x1 + wall.x2) / 2, (wall.y1 + wall.y2) / 2);
-          const alongWidth = wall.id === "south" || wall.id === "north";
-          const label = alongWidth ? project.room.widthM : project.room.depthM;
-          const ox = wall.id === "west" ? -44 : wall.id === "east" ? 44 : 0;
-          const oy = wall.id === "south" ? -16 : wall.id === "north" ? -14 : 4;
-          return (
-            <text
-              key={wall.id}
-              x={a.sx + ox}
-              y={a.sy + oy}
-              fill="#e8edf3"
-              fontSize={12}
-              fontFamily="IBM Plex Mono, monospace"
-              textAnchor="middle"
-              className="tabular"
-              pointerEvents="none"
-            >
-              {formatMeters(label)}
-            </text>
-          );
         })}
 
         {store.measure.a &&
@@ -739,9 +774,8 @@ export function Cad2D() {
 
       {walls.map((wall) => {
         const a = toS((wall.x1 + wall.x2) / 2, (wall.y1 + wall.y2) / 2);
-        const alongWidth = wall.id === "south" || wall.id === "north";
-        const label = alongWidth ? project.room.widthM : project.room.depthM;
-        const editWall: WallId = alongWidth ? "east" : "north";
+        const contract = wallResizeContract(wall.id);
+        const label = contract.dim === "widthM" ? project.room.widthM : project.room.depthM;
         const ox = wall.id === "west" ? -44 : wall.id === "east" ? 44 : 0;
         const oy = wall.id === "south" ? -16 : wall.id === "north" ? -14 : 4;
         return (
@@ -752,7 +786,7 @@ export function Cad2D() {
             className="absolute z-10 flex h-11 min-w-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-[8px] font-mono text-[11px] text-fg"
             style={{ left: a.sx + ox, top: a.sy + oy }}
             onPointerDown={(e) => e.stopPropagation()}
-            onClick={() => setDimEdit({ wall: editWall, value: label.toFixed(3) })}
+            onClick={() => setDimEdit({ wall: wall.id, value: label.toFixed(3), error: null })}
           >
             {formatMeters(label)}
           </button>
@@ -761,26 +795,59 @@ export function Cad2D() {
 
       {dimEdit && (
         <form
-          className="absolute left-1/2 top-16 z-20 -translate-x-1/2 rounded-[10px] border border-border bg-panel p-2 shadow-panel"
+          className="absolute left-1/2 top-16 z-20 w-[min(20rem,calc(100%-1.5rem))] -translate-x-1/2 rounded-[10px] border border-border bg-panel p-2 shadow-panel"
           onSubmit={(e) => {
             e.preventDefault();
             commitDim();
           }}
         >
+          <div className="mb-1 px-1 text-[11px] leading-snug text-muted" data-mf-id="dim-contract">
+            {wallResizeContract(dimEdit.wall).labelRu}
+          </div>
           <input
             autoFocus
             data-mf-id="dim-input"
-            className="h-11 w-40 rounded-[6px] border border-border bg-bg px-2 font-mono text-[13px] text-fg outline-none"
+            className="h-11 w-full rounded-[6px] border border-border bg-bg px-2 font-mono text-[13px] text-fg outline-none"
             value={dimEdit.value}
-            onChange={(e) => setDimEdit({ ...dimEdit, value: e.target.value })}
+            onChange={(e) => {
+              const value = e.target.value;
+              const v = validateRoomLengthInput(value);
+              setDimEdit({ ...dimEdit, value, error: v.ok ? null : v.reason });
+              if (v.ok) store.resizeWall(dimEdit.wall, v.meters, true);
+              else store.setPreview(null);
+            }}
             onKeyDown={(e) => {
-              if (e.key === "Escape") setDimEdit(null);
+              if (e.key === "Escape") cancelDim();
             }}
           />
-          <button type="submit" className="mt-1 h-11 w-full rounded-[6px] bg-raised text-[12px]" data-mf-id="dim-ok">
-            OK
-          </button>
+          {dimEdit.error && (
+            <div className="mt-1 px-1 text-[12px] text-crit" data-mf-id="dim-error">
+              {dimEdit.error}
+            </div>
+          )}
+          <div className="mt-1 flex gap-1">
+            <button type="submit" className="h-11 min-w-11 flex-1 rounded-[6px] bg-raised text-[12px]" data-mf-id="dim-ok">
+              OK
+            </button>
+            <button
+              type="button"
+              className="h-11 min-w-11 rounded-[6px] border border-border px-3 text-[12px]"
+              data-mf-id="dim-cancel"
+              onClick={cancelDim}
+            >
+              Отмена
+            </button>
+          </div>
         </form>
+      )}
+
+      {placeHint && !placeHint.ok && store.tool === "rack" && (
+        <div
+          data-mf-id="place-error"
+          className="absolute bottom-14 left-1/2 z-20 max-w-[min(20rem,calc(100%-1.5rem))] -translate-x-1/2 rounded-[8px] border border-crit/40 bg-panel px-3 py-2 text-center text-[12px] text-crit"
+        >
+          {placeHint.reason ?? "Размещение недопустимо"}
+        </div>
       )}
 
       {badge && (

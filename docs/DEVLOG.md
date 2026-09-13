@@ -101,3 +101,26 @@ GitHub is the durable source of truth for non-secret source. Read
 `project-handoff.json`. Functional Batches 1–4 remain accepted at
 `635fd9e965ed8d9705c310b72b82dde2b81f837f`. This package does not add product
 features and does not start public deployment or physical iPhone smoke.
+
+## QX-01 — OWNER EXPERIENCE & PRODUCT QUALITY REPAIR
+
+Starting SHA `300f1846886528aed771ff88a9d193bd607070ea` (continuity package on
+protected main). Branch `repair/qx-01-owner-experience`.
+
+- MFQ-001: persist state `idle|saving|saved|error`, generation-guarded
+  concurrent saves, always-visible Russian status, Retry.
+- MFQ-002: deterministic wall segmentation around DOOR/INTAKE/EXHAUST/
+  SHAFT_CONNECTION so the Digital Twin has real apertures, not filled boxes.
+- MFQ-003: dimension control beside a wall edits THAT wall (east/west/north/
+  south) with explicit fixed/moving Russian contract and live preview.
+- MFQ-004: numeric room resize validates against MIN_ROOM_DIM_M / MAX_ROOM_DIM_M
+  before commit; reject, do not clamp; Russian reason stays in the editor.
+- MFQ-005: shared CREATE/MOVE rack validator; fully-outside is invalid;
+  door-swing and rack-rack overlap rejected the same way.
+- MFQ-006: handoff live HEAD is Git-dynamic (`git fetch origin` +
+  `git rev-parse origin/main`). No static `currentCandidateSha`.
+  `recovery:verify` checks baseline exists and HEAD is a descendant.
+
+Does not change Engineering Core formulas, Reality ADD confirmation, App Edit
+security, or video pipeline. Does not start Final Product Acceptance, physical
+iPhone, public deploy, tunnels, or domains.
