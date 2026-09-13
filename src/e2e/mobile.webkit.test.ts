@@ -1197,17 +1197,20 @@ describe("QX-02A WebKit West/South wall drag", () => {
       await seedQx02aRoom(page);
       const beforeCam = await readCadCam(page);
       const eastBefore = worldToClient(beforeCam.box, beforeCam.cam, 8, 2.5);
-      const start = worldToClient(beforeCam.box, beforeCam.cam, 0, 1.2);
-      const end = { x: start.x + beforeCam.cam.ppm, y: start.y };
-      await page.mouse.move(start.x, start.y);
+      const startW = worldToClient(beforeCam.box, beforeCam.cam, 0, 1.2);
+      const dxPx = Math.round(beforeCam.cam.ppm);
+      const x0 = Math.round(startW.x);
+      const y0 = Math.round(startW.y);
+      const expectedW = 8 - dxPx / beforeCam.cam.ppm;
+      await page.mouse.move(x0, y0);
       await page.mouse.down();
       await page.waitForFunction(
         () => document.querySelector("[data-mf-id='cad']")?.getAttribute("data-mf-drag-wall") === "west",
         null,
         { timeout: 2500 },
       );
-      await page.mouse.move((start.x + end.x) / 2, start.y, { steps: 4 });
-      await page.mouse.move(end.x, end.y, { steps: 8 });
+      await page.mouse.move(x0 + dxPx / 2, y0, { steps: 4 });
+      await page.mouse.move(x0 + dxPx, y0, { steps: 8 });
       await page.mouse.up();
       const geo = await storeEval(page, () => {
         const s = (window as unknown as { __MF_STORE__: MfStore }).__MF_STORE__.getState();
@@ -1220,11 +1223,13 @@ describe("QX-02A WebKit West/South wall drag", () => {
           preview: s.preview,
         };
       });
-      assert.ok(Math.abs(geo.w - 7) < 0.02, `width ${geo.w} preview=${String(geo.preview)}`);
+      const dw = 8 - geo.w;
+      assert.ok(Math.abs(geo.w - expectedW) < 0.01, `width ${geo.w} expected ${expectedW} preview=${String(geo.preview)}`);
+      assert.ok(geo.w > 6.9 && geo.w < 7.1, `west drag not ~1 m: width ${geo.w}`);
       assert.equal(geo.d, 5);
-      assert.ok(Math.abs((geo.rx ?? 0) - 3) < 0.02, `rack x ${geo.rx}`);
-      assert.ok(Math.abs((geo.fx ?? 0) - 2) < 0.02, `fan x ${geo.fx}`);
-      assert.ok(Math.abs((geo.cx ?? 0) - 3.1) < 0.02, `as-built x ${geo.cx}`);
+      assert.ok(Math.abs((geo.rx ?? 0) - (4 - dw)) < 0.01, `rack x ${geo.rx} dw=${dw}`);
+      assert.ok(Math.abs((geo.fx ?? 0) - (3 - dw)) < 0.01, `fan x ${geo.fx} dw=${dw}`);
+      assert.ok(Math.abs((geo.cx ?? 0) - (4.1 - dw)) < 0.01, `as-built x ${geo.cx} dw=${dw}`);
       assert.equal(geo.preview, null);
       const afterCam = await readCadCam(page);
       const eastAfter = worldToClient(afterCam.box, afterCam.cam, geo.w, 2.5);
@@ -1240,17 +1245,20 @@ describe("QX-02A WebKit West/South wall drag", () => {
       await seedQx02aRoom(page);
       const beforeCam = await readCadCam(page);
       const northBefore = worldToClient(beforeCam.box, beforeCam.cam, 4, 5);
-      const start = worldToClient(beforeCam.box, beforeCam.cam, 1.5, 0);
-      const end = { x: start.x, y: start.y - beforeCam.cam.ppm };
-      await page.mouse.move(start.x, start.y);
+      const startS = worldToClient(beforeCam.box, beforeCam.cam, 1.5, 0);
+      const dyPx = Math.round(beforeCam.cam.ppm);
+      const x0 = Math.round(startS.x);
+      const y0 = Math.round(startS.y);
+      const expectedD = 5 - dyPx / beforeCam.cam.ppm;
+      await page.mouse.move(x0, y0);
       await page.mouse.down();
       await page.waitForFunction(
         () => document.querySelector("[data-mf-id='cad']")?.getAttribute("data-mf-drag-wall") === "south",
         null,
         { timeout: 2500 },
       );
-      await page.mouse.move(start.x, (start.y + end.y) / 2, { steps: 4 });
-      await page.mouse.move(end.x, end.y, { steps: 8 });
+      await page.mouse.move(x0, y0 - dyPx / 2, { steps: 4 });
+      await page.mouse.move(x0, y0 - dyPx, { steps: 8 });
       await page.mouse.up();
       const geo = await storeEval(page, () => {
         const s = (window as unknown as { __MF_STORE__: MfStore }).__MF_STORE__.getState();
@@ -1262,11 +1270,13 @@ describe("QX-02A WebKit West/South wall drag", () => {
           cy: s.project.reality?.asBuilt[0]?.y,
         };
       });
+      const dd = 5 - geo.d;
       assert.equal(geo.w, 8);
-      assert.ok(Math.abs(geo.d - 4) < 0.02, `depth ${geo.d}`);
-      assert.ok(Math.abs((geo.ry ?? 0) - 0.5) < 0.02, `rack y ${geo.ry}`);
-      assert.ok(Math.abs((geo.fy ?? 0) - 1) < 0.02, `fan y ${geo.fy}`);
-      assert.ok(Math.abs((geo.cy ?? 0) - 0.6) < 0.02, `as-built y ${geo.cy}`);
+      assert.ok(Math.abs(geo.d - expectedD) < 0.01, `depth ${geo.d} expected ${expectedD}`);
+      assert.ok(geo.d > 3.9 && geo.d < 4.1, `south drag not ~1 m: depth ${geo.d}`);
+      assert.ok(Math.abs((geo.ry ?? 0) - (1.5 - dd)) < 0.01, `rack y ${geo.ry} dd=${dd}`);
+      assert.ok(Math.abs((geo.fy ?? 0) - (2 - dd)) < 0.01, `fan y ${geo.fy} dd=${dd}`);
+      assert.ok(Math.abs((geo.cy ?? 0) - (1.6 - dd)) < 0.01, `as-built y ${geo.cy} dd=${dd}`);
       const afterCam = await readCadCam(page);
       const northAfter = worldToClient(afterCam.box, afterCam.cam, 4, geo.d);
       assert.ok(Math.abs(northAfter.y - northBefore.y) < 8, `north screen ${northBefore.y} → ${northAfter.y}`);
