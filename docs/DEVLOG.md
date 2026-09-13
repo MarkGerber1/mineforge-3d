@@ -179,6 +179,11 @@ Starting SHA `1bd8473c41507f2ea231e9d4bf3225beca164d7c`. Branch
   widen uses wall length − offset, not an unrelated room dimension.
 - A fan outside the room is not treated as a valid operating fan.
 
+CI correction (WebKit): wall hit-test is nearest-wall, not first-match, so a
+pointer on the west wall near the north end is still West. Drag state lives
+in a ref so pointermove/up and Escape are not racing React. WebKit tests
+grab mid-wall world points and move exactly 1 m in pointer space.
+
 Public deploy and physical iPhone were not performed. Does not declare
 FINAL PASSED. Does not reopen MFQ-001…006 or FINAL-SEC-001/002.
 

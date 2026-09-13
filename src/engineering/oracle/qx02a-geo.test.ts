@@ -16,7 +16,7 @@ import {
 import { alignRacks, generateAutoLayout } from "../layout.ts";
 import { validateRacksConfiguration } from "../placement.ts";
 import { geometryFingerprint } from "../reality.ts";
-import { createWallDragContext, wallCursor, wallDragLengthM } from "../room-resize.ts";
+import { createWallDragContext, pickWallHit, wallCursor, wallDragLengthM } from "../room-resize.ts";
 import { applyPatchValidated } from "../upgrade.ts";
 import type { AsBuiltObject, Opening, Rack } from "../types.ts";
 
@@ -122,6 +122,16 @@ describe("MF-SWEEP-001 wall drag event-count invariant", () => {
     assert.equal(wallDragLengthM(n, 4, 6.25), 6.25);
     const e2 = [8.3, 8.8, 9].map((x) => wallDragLengthM(e, x, 2.5));
     assert.equal(e2[2], 9);
+  });
+
+  it("GEO-HIT-01 nearest wall wins; west near north is still west", () => {
+    assert.equal(pickWallHit(0, 4.58, 8, 5, 0.67), "west");
+    assert.equal(pickWallHit(0, 2.5, 8, 5, 0.67), "west");
+    assert.equal(pickWallHit(0, 1.2, 8, 5, 0.67), "west");
+    assert.equal(pickWallHit(1.5, 0, 8, 5, 0.67), "south");
+    assert.equal(pickWallHit(1.2, 5, 8, 5, 0.67), "north");
+    assert.equal(pickWallHit(8, 2.5, 8, 5, 0.67), "east");
+    assert.equal(pickWallHit(4, 2.5, 8, 5, 0.67), null);
   });
 
   it("store preview moves never accumulate west origin shift", () => {

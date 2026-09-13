@@ -7,7 +7,7 @@ import { useLiveProject, useLiveResult, useProjectStore } from "@/project/store"
 import { nid } from "@/project/factory";
 import { TEST_RACK_A } from "@/project/factory";
 import { validateRacksConfiguration, validateRackPlacement } from "@/engineering/placement";
-import { validateRoomLengthInput, wallResizeContract, createWallDragContext, wallDragLengthM, originShiftForResize, wallCursor, type WallDragContext } from "@/engineering/room-resize";
+import { validateRoomLengthInput, wallResizeContract, createWallDragContext, wallDragLengthM, originShiftForResize, wallCursor, pickWallHit, wallIdFromEventTarget, type WallDragContext } from "@/engineering/room-resize";
 
 type Cam = { x: number; y: number; ppm: number };
 type Drag =
@@ -62,6 +62,12 @@ export function Cad2D() {
   const pointers = useRef<Map<number, { x: number; y: number }>>(new Map());
   const pinch = useRef<{ dist: number; ppm: number; cx: number; cy: number; mx: number; my: number } | null>(null);
   const collisionRef = useRef(false);
+  const dragRef = useRef<Drag | null>(null);
+
+  const beginDrag = (next: Drag | null) => {
+    dragRef.current = next;
+    setDrag(next);
+  };
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -85,10 +91,11 @@ export function Cad2D() {
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      if (drag?.kind === "wall") {
+      const active = dragRef.current;
+      if (active?.kind === "wall") {
         store.setPreview(null);
-        setCam(drag.startCam);
-        setDrag(null);
+        setCam(active.startCam);
+        beginDrag(null);
         setBadge(null);
       }
     };
@@ -100,7 +107,7 @@ export function Cad2D() {
       window.removeEventListener("keyup", up);
       window.removeEventListener("keydown", onKey);
     };
-  }, [drag, store]);
+  }, [store]);
 
   const snapM = store.snapEnabled ? SNAP_MODES_M[store.snapMode] : 0.0001;
   const { w, h } = size;
@@ -114,13 +121,7 @@ export function Cad2D() {
   ];
 
   const hitWall = (wx: number, wy: number): WallId | null => {
-    const tol = 22 / cam.ppm;
-    for (const wall of walls) {
-      if (wall.id === "east" || wall.id === "west") {
-        if (Math.abs(wx - wall.x1) < tol && wy >= -tol && wy <= project.room.depthM + tol) return wall.id;
-      } else if (Math.abs(wy - wall.y1) < tol && wx >= -tol && wx <= project.room.widthM + tol) return wall.id;
-    }
-    return null;
+    return pickWallHit(wx, wy, project.room.widthM, project.room.depthM, 22 / cam.ppm);
   };
 
   const hitOpening = (wx: number, wy: number) => {
@@ -185,13 +186,13 @@ export function Cad2D() {
       const [a, b] = [...pointers.current.values()];
       const dist = Math.hypot(a.x - b.x, a.y - b.y);
       pinch.current = { dist, ppm: cam.ppm, cx: cam.x, cy: cam.y, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
-      setDrag(null);
+      beginDrag(null);
       return;
     }
     (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
     const p = clientToWorld(el, cam, e.clientX, e.clientY);
     if (e.button === 1 || space.current || store.tool === "pan" || (e.pointerType === "touch" && store.tool === "select" && e.altKey)) {
-      setDrag({ kind: "pan", x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y });
+      beginDrag({ kind: "pan", x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y });
       return;
     }
     if (store.tool === "measure") {
@@ -259,14 +260,14 @@ export function Cad2D() {
       const end = start + opening.widthM;
       const tol = 28 / cam.ppm;
       if (Math.abs(along - start) < tol) {
-        setDrag({ kind: "openingWidth", id: opening.id, edge: "start" });
+        beginDrag({ kind: "openingWidth", id: opening.id, edge: "start" });
         return;
       }
       if (Math.abs(along - end) < tol) {
-        setDrag({ kind: "openingWidth", id: opening.id, edge: "end" });
+        beginDrag({ kind: "openingWidth", id: opening.id, edge: "end" });
         return;
       }
-      setDrag({ kind: "opening", id: opening.id, startOff: opening.offsetFromWallStartM, pointer0: along });
+      beginDrag({ kind: "opening", id: opening.id, startOff: opening.offsetFromWallStartM, pointer0: along });
       return;
     }
     const rack = hitRack(p.x, p.y);
@@ -280,16 +281,16 @@ export function Cad2D() {
           : [rack.id];
       store.select(ids);
       const sel = project.racks.filter((r) => ids.includes(r.id));
-      setDrag({ kind: "rack", ids, dx: p.x, dy: p.y, ox: sel.map((r) => r.x), oy: sel.map((r) => r.y) });
+      beginDrag({ kind: "rack", ids, dx: p.x, dy: p.y, ox: sel.map((r) => r.x), oy: sel.map((r) => r.y) });
       return;
     }
-    const wall = hitWall(p.x, p.y);
+    const wall = wallIdFromEventTarget(e.target) ?? hitWall(p.x, p.y);
     if (wall) {
       store.select([`wall-${wall}`]);
       const src = store.project;
       const ctx = createWallDragContext(wall, src.room.widthM, src.room.depthM, p.x, p.y);
       const startLen = wall === "east" || wall === "west" ? src.room.widthM : src.room.depthM;
-      setDrag({ kind: "wall", wall, ctx, startCam: cam, lastLengthM: startLen });
+      beginDrag({ kind: "wall", wall, ctx, startCam: cam, lastLengthM: startLen });
       return;
     }
     if (!e.shiftKey && !store.multiSelect) store.select([]);
@@ -321,6 +322,7 @@ export function Cad2D() {
       setMarquee({ ...marquee, x2: p.x, y2: p.y });
       return;
     }
+    const drag = dragRef.current;
     if (!drag) {
       if (store.tool === "rack") {
         const x = applySnap(p.x);
@@ -356,12 +358,16 @@ export function Cad2D() {
       const res = store.resizeWall(drag.wall, len, true);
       if (!res.ok) {
         setCam(drag.startCam);
-        setDrag({ ...drag, lastLengthM: drag.ctx.wall === "east" || drag.ctx.wall === "west" ? drag.ctx.startWidthM : drag.ctx.startDepthM });
+        beginDrag({
+          ...drag,
+          lastLengthM:
+            drag.ctx.wall === "east" || drag.ctx.wall === "west" ? drag.ctx.startWidthM : drag.ctx.startDepthM,
+        });
         return;
       }
       const shift = originShiftForResize(drag.wall, drag.ctx.startWidthM, drag.ctx.startDepthM, drag.wall === "east" || drag.wall === "west" ? len : drag.ctx.startWidthM, drag.wall === "north" || drag.wall === "south" ? len : drag.ctx.startDepthM);
       setCam({ x: drag.startCam.x + shift.dx, y: drag.startCam.y + shift.dy, ppm: drag.startCam.ppm });
-      setDrag({ ...drag, lastLengthM: len });
+      beginDrag({ ...drag, lastLengthM: len });
       const live = useProjectStore.getState().preview ?? useProjectStore.getState().project;
       const dim = drag.wall === "east" || drag.wall === "west" ? live.room.widthM : live.room.depthM;
       const area = live.room.widthM * live.room.depthM;
@@ -471,6 +477,7 @@ export function Cad2D() {
       if (ids.length) store.select(ids);
       setMarquee(null);
     }
+    const drag = dragRef.current;
     if (drag?.kind === "wall") {
       const startLen = drag.wall === "east" || drag.wall === "west" ? drag.ctx.startWidthM : drag.ctx.startDepthM;
       if (Math.abs(drag.lastLengthM - startLen) > 1e-9) {
@@ -493,7 +500,7 @@ export function Cad2D() {
       }
     }
     collisionRef.current = false;
-    setDrag(null);
+    beginDrag(null);
     setBadge(null);
     setGuides([]);
   };
@@ -584,6 +591,9 @@ export function Cad2D() {
       data-mf-cam-y={cam.y}
       data-mf-cam-ppm={cam.ppm}
       data-mf-cursor={cursor}
+      data-mf-drag={drag?.kind ?? ""}
+      data-mf-drag-wall={drag?.kind === "wall" ? drag.wall : ""}
+      data-mf-drag-len={drag?.kind === "wall" ? String(drag.lastLengthM) : ""}
     >
       <svg
         width={w}

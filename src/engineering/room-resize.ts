@@ -147,3 +147,38 @@ export function originShiftForResize(
 export function wallCursor(wall: WallId): "ew-resize" | "ns-resize" {
   return wall === "east" || wall === "west" ? "ew-resize" : "ns-resize";
 }
+
+/**
+ * Nearest wall within a world-space hit tolerance.
+ * First-match (south→north→west→east) is forbidden: a pointer on the west
+ * wall near the north end must still be West, not North.
+ */
+export function pickWallHit(
+  wx: number,
+  wy: number,
+  widthM: number,
+  depthM: number,
+  tolM: number,
+): WallId | null {
+  if (!(tolM > 0) || !Number.isFinite(wx) || !Number.isFinite(wy)) return null;
+  const candidates: Array<{ id: WallId; d: number; along: boolean }> = [
+    { id: "west", d: Math.abs(wx), along: wy >= -tolM && wy <= depthM + tolM },
+    { id: "east", d: Math.abs(wx - widthM), along: wy >= -tolM && wy <= depthM + tolM },
+    { id: "south", d: Math.abs(wy), along: wx >= -tolM && wx <= widthM + tolM },
+    { id: "north", d: Math.abs(wy - depthM), along: wx >= -tolM && wx <= widthM + tolM },
+  ];
+  let best: { id: WallId; d: number } | null = null;
+  for (const c of candidates) {
+    if (!c.along || c.d > tolM) continue;
+    if (!best || c.d < best.d) best = { id: c.id, d: c.d };
+  }
+  return best?.id ?? null;
+}
+
+export function wallIdFromEventTarget(target: EventTarget | null): WallId | null {
+  const el = target instanceof Element ? target.closest("[data-mf-wall]") : null;
+  const id = el?.getAttribute("data-mf-wall");
+  if (id === "east" || id === "west" || id === "south" || id === "north") return id;
+  return null;
+}
+

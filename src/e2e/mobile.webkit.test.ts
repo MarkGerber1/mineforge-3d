@@ -1197,22 +1197,18 @@ describe("QX-02A WebKit West/South wall drag", () => {
       await seedQx02aRoom(page);
       const beforeCam = await readCadCam(page);
       const eastBefore = worldToClient(beforeCam.box, beforeCam.cam, 8, 2.5);
-      const hit = await mf(page, "wall-hit-west").boundingBox();
-      assert.ok(hit);
-      const x0 = hit.x + hit.width / 2;
-      const y0 = hit.y + hit.height * 0.28;
-      const x1 = x0 + beforeCam.cam.ppm;
-      await page.mouse.move(x0, y0);
+      const start = worldToClient(beforeCam.box, beforeCam.cam, 0, 1.2);
+      const end = { x: start.x + beforeCam.cam.ppm, y: start.y };
+      await page.mouse.move(start.x, start.y);
       await page.mouse.down();
-      await page.mouse.move(x0 + beforeCam.cam.ppm / 2, y0, { steps: 4 });
-      await page.mouse.move(x1, y0, { steps: 8 });
-      await page.mouse.up();
       await page.waitForFunction(
-        () =>
-          Math.abs((window as unknown as { __MF_STORE__: MfStore }).__MF_STORE__.getState().project.room.widthM - 7) < 0.02,
+        () => document.querySelector("[data-mf-id='cad']")?.getAttribute("data-mf-drag-wall") === "west",
         null,
-        { timeout: 8000 },
+        { timeout: 2500 },
       );
+      await page.mouse.move((start.x + end.x) / 2, start.y, { steps: 4 });
+      await page.mouse.move(end.x, end.y, { steps: 8 });
+      await page.mouse.up();
       const geo = await storeEval(page, () => {
         const s = (window as unknown as { __MF_STORE__: MfStore }).__MF_STORE__.getState();
         return {
@@ -1224,7 +1220,7 @@ describe("QX-02A WebKit West/South wall drag", () => {
           preview: s.preview,
         };
       });
-      assert.ok(Math.abs(geo.w - 7) < 0.02, `width ${geo.w}`);
+      assert.ok(Math.abs(geo.w - 7) < 0.02, `width ${geo.w} preview=${String(geo.preview)}`);
       assert.equal(geo.d, 5);
       assert.ok(Math.abs((geo.rx ?? 0) - 3) < 0.02, `rack x ${geo.rx}`);
       assert.ok(Math.abs((geo.fx ?? 0) - 2) < 0.02, `fan x ${geo.fx}`);
@@ -1244,22 +1240,18 @@ describe("QX-02A WebKit West/South wall drag", () => {
       await seedQx02aRoom(page);
       const beforeCam = await readCadCam(page);
       const northBefore = worldToClient(beforeCam.box, beforeCam.cam, 4, 5);
-      const hit = await mf(page, "wall-hit-south").boundingBox();
-      assert.ok(hit);
-      const x0 = hit.x + hit.width * 0.22;
-      const y0 = hit.y + hit.height / 2;
-      const y1 = y0 - beforeCam.cam.ppm;
-      await page.mouse.move(x0, y0);
+      const start = worldToClient(beforeCam.box, beforeCam.cam, 1.5, 0);
+      const end = { x: start.x, y: start.y - beforeCam.cam.ppm };
+      await page.mouse.move(start.x, start.y);
       await page.mouse.down();
-      await page.mouse.move(x0, y0 - beforeCam.cam.ppm / 2, { steps: 4 });
-      await page.mouse.move(x0, y1, { steps: 8 });
-      await page.mouse.up();
       await page.waitForFunction(
-        () =>
-          Math.abs((window as unknown as { __MF_STORE__: MfStore }).__MF_STORE__.getState().project.room.depthM - 4) < 0.02,
+        () => document.querySelector("[data-mf-id='cad']")?.getAttribute("data-mf-drag-wall") === "south",
         null,
-        { timeout: 8000 },
+        { timeout: 2500 },
       );
+      await page.mouse.move(start.x, (start.y + end.y) / 2, { steps: 4 });
+      await page.mouse.move(end.x, end.y, { steps: 8 });
+      await page.mouse.up();
       const geo = await storeEval(page, () => {
         const s = (window as unknown as { __MF_STORE__: MfStore }).__MF_STORE__.getState();
         return {
@@ -1291,14 +1283,17 @@ describe("QX-02A WebKit West/South wall drag", () => {
         const s = (window as unknown as { __MF_STORE__: MfStore }).__MF_STORE__.getState();
         return { w: s.project.room.widthM, rx: s.project.racks[0]?.x };
       });
-      const { cam } = await readCadCam(page);
-      const hit = await mf(page, "wall-hit-west").boundingBox();
-      assert.ok(hit);
-      const x0 = hit.x + hit.width / 2;
-      const y0 = hit.y + hit.height * 0.28;
-      await page.mouse.move(x0, y0);
+      const { box, cam } = await readCadCam(page);
+      const start = worldToClient(box, cam, 0, 1.2);
+      const mid = worldToClient(box, cam, 0.6, 1.2);
+      await page.mouse.move(start.x, start.y);
       await page.mouse.down();
-      await page.mouse.move(x0 + cam.ppm * 0.6, y0, { steps: 4 });
+      await page.waitForFunction(
+        () => document.querySelector("[data-mf-id='cad']")?.getAttribute("data-mf-drag-wall") === "west",
+        null,
+        { timeout: 2500 },
+      );
+      await page.mouse.move(mid.x, mid.y, { steps: 4 });
       await page.evaluate(() => {
         window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
       });
@@ -1319,14 +1314,17 @@ describe("QX-02A WebKit West/South wall drag", () => {
     const { ctx, page } = await openPhone("390x844");
     try {
       await seedQx02aRoom(page);
-      await mf(page, "wall-hit-west").hover();
+      const { box, cam } = await readCadCam(page);
+      const west = worldToClient(box, cam, 0, 1.2);
+      await page.mouse.move(west.x, west.y);
       await page.waitForTimeout(80);
       const westCursor = await mf(page, "cad").getAttribute("data-mf-cursor");
-      assert.equal(westCursor, "ew-resize");
-      await mf(page, "wall-hit-north").hover();
+      assert.equal(westCursor, "ew-resize", `west cursor at ${JSON.stringify(west)}`);
+      const north = worldToClient(box, cam, 1.2, 5);
+      await page.mouse.move(north.x, north.y);
       await page.waitForTimeout(80);
       const northCursor = await mf(page, "cad").getAttribute("data-mf-cursor");
-      assert.equal(northCursor, "ns-resize");
+      assert.equal(northCursor, "ns-resize", `north cursor at ${JSON.stringify(north)}`);
     } finally {
       await ctx.close();
     }
