@@ -140,6 +140,49 @@ check(
   /^[0-9a-f]{40}$/.test(handoff?.acceptedFunctionalBaselineSha || ""),
 );
 
+const misleadingLiveKeys = ["currentCandidateSha", "currentMainSha", "latestSha", "currentSha"];
+for (const k of misleadingLiveKeys) {
+  check(`handoff has no static live HEAD field ${k}`, !handoff || !(k in handoff));
+}
+check("handoff.authoritativeBranch", handoff?.authoritativeBranch === "main");
+check(
+  "handoff.currentStateResolution.source is git",
+  handoff?.currentStateResolution?.source === "git",
+);
+check(
+  "handoff.currentStateResolution.commands include fetch + rev-parse origin/main",
+  Array.isArray(handoff?.currentStateResolution?.commands) &&
+    handoff.currentStateResolution.commands.includes("git fetch origin") &&
+    handoff.currentStateResolution.commands.includes("git rev-parse origin/main"),
+);
+
+function gitOk(args) {
+  return spawnSync("git", args, { cwd: root, encoding: "utf8" });
+}
+
+const gitDir = gitOk(["rev-parse", "--git-dir"]);
+if (gitDir.status !== 0) {
+  fail.push("git metadata unavailable: cannot verify repository identity (HEAD vs accepted baseline)");
+} else {
+  const baseline = handoff?.acceptedFunctionalBaselineSha || "";
+  let exists = gitOk(["cat-file", "-e", `${baseline}^{commit}`]);
+  if (exists.status !== 0) {
+    gitOk(["fetch", "--depth", "1", "origin", baseline]);
+    exists = gitOk(["cat-file", "-e", `${baseline}^{commit}`]);
+  }
+  if (exists.status !== 0) {
+    gitOk(["fetch", "--deepen", "200", "origin"]);
+    exists = gitOk(["cat-file", "-e", `${baseline}^{commit}`]);
+  }
+  check("accepted baseline commit exists in local git", exists.status === 0, baseline);
+  const anc = gitOk(["merge-base", "--is-ancestor", baseline, "HEAD"]);
+  check(
+    "HEAD is the accepted baseline or a descendant of it",
+    anc.status === 0,
+    anc.status === 0 ? "" : (anc.stderr || "git merge-base --is-ancestor failed").trim(),
+  );
+}
+
 function run(label, cmd, args) {
   const r = spawnSync(cmd, args, { cwd: root, encoding: "utf8", env: process.env, maxBuffer: 20 * 1024 * 1024 });
   const out = `${r.stdout || ""}${r.stderr || ""}`;

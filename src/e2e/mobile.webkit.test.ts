@@ -109,9 +109,14 @@ async function storeEval<T>(page: Page, fn: () => T): Promise<T> {
   return page.evaluate(fn);
 }
 
-async function editSouthWidth(page: Page, meters: string): Promise<void> {
+async function editWallDim(
+  page: Page,
+  wall: "south" | "north" | "east" | "west",
+  meters: string,
+  axis: "widthM" | "depthM",
+): Promise<void> {
   await mf(page, "cad").waitFor();
-  const dim = mf(page, "dim-south");
+  const dim = mf(page, `dim-${wall}`);
   await dim.waitFor({ state: "visible", timeout: 10000 });
   await page.waitForTimeout(200);
   await dim.click({ timeout: 8000 });
@@ -121,13 +126,26 @@ async function editSouthWidth(page: Page, meters: string): Promise<void> {
     await dim.click({ force: true });
     await mf(page, "dim-input").waitFor({ timeout: 8000 });
   }
+  await mf(page, "dim-contract").waitFor({ timeout: 4000 });
   await mf(page, "dim-input").fill(meters);
   await mf(page, "dim-ok").click();
   await page.waitForFunction(
-    (m) => (window as unknown as { __MF_STORE__: { getState: () => { project: { room: { widthM: number } } } } }).__MF_STORE__.getState().project.room.widthM === Number(m),
-    meters,
+    ({ axis: ax, meters: m }) => {
+      const room = (
+        window as unknown as {
+          __MF_STORE__: { getState: () => { project: { room: { widthM: number; depthM: number } } } };
+        }
+      ).__MF_STORE__.getState().project.room;
+      return room[ax as "widthM" | "depthM"] === Number(m);
+    },
+    { axis, meters },
     { timeout: 8000 },
   );
+}
+
+/** Width is controlled by the east/west wall. Historical helper name kept for call sites. */
+async function editSouthWidth(page: Page, meters: string): Promise<void> {
+  await editWallDim(page, "east", meters, "widthM");
 }
 
 function gitSha(): string {
@@ -298,6 +316,248 @@ describe("MOB-07 Undo/Redo restores Engineering result", () => {
         () => (window as unknown as { __MF_STORE__: { getState: () => { project: { room: { widthM: number } } } } }).__MF_STORE__.getState().project.room.widthM,
       );
       assert.equal(w, 7.51);
+    } finally {
+      await ctx.close();
+    }
+  });
+});
+
+
+describe("QX-MFQ save status visible on iPhone widths", () => {
+  for (const id of ["375x812", "390x844", "430x932"] as const) {
+    it(`${id} shows save-status`, async () => {
+      const { ctx, page } = await openPhone(id);
+      try {
+        await mf(page, "save-status").waitFor({ timeout: 10000 });
+        const box = await mf(page, "save-status").boundingBox();
+        assert.ok(box && box.width > 0 && box.height >= 20);
+        assert.equal(await noPageOverflow(page), true);
+      } finally {
+        await ctx.close();
+      }
+    });
+  }
+});
+
+describe("QX-MFQ south dim edits depth with south moving", () => {
+  it("dim-south changes depthM", async () => {
+    const { ctx, page } = await openPhone("390x844");
+    try {
+      await editWallDim(page, "south", "6.25", "depthM");
+      const d = await storeEval(
+        page,
+        () => (window as unknown as { __MF_STORE__: { getState: () => { project: { room: { depthM: number } } } } }).__MF_STORE__.getState().project.room.depthM,
+      );
+      assert.equal(d, 6.25);
+    } finally {
+      await ctx.close();
+    }
+  });
+});
+
+describe("QX-MFQ invalid 0.20 m is rejected", () => {
+  it("canonical width unchanged and error visible", async () => {
+    const { ctx, page } = await openPhone("375x812");
+    try {
+      await mf(page, "cad").waitFor();
+      const dim = mf(page, "dim-east");
+      await dim.click({ timeout: 8000 });
+      await mf(page, "dim-input").waitFor({ timeout: 8000 });
+      const before = await storeEval(
+        page,
+        () => (window as unknown as { __MF_STORE__: { getState: () => { project: { room: { widthM: number } } } } }).__MF_STORE__.getState().project.room.widthM,
+      );
+      await mf(page, "dim-input").fill("0.20");
+      await mf(page, "dim-ok").click();
+      await mf(page, "dim-error").waitFor({ timeout: 4000 });
+      const after = await storeEval(
+        page,
+        () => (window as unknown as { __MF_STORE__: { getState: () => { project: { room: { widthM: number } } } } }).__MF_STORE__.getState().project.room.widthM,
+      );
+      assert.equal(after, before);
+      assert.ok(await mf(page, "dim-error").textContent());
+    } finally {
+      await ctx.close();
+    }
+  });
+});
+
+describe("QX-MFQ persist error and retry", () => {
+  it("forced IDB failure shows error then retry saves", async () => {
+    const { ctx, page } = await openPhone("390x844");
+    try {
+      await mf(page, "save-status").waitFor();
+      await page.evaluate(() => {
+        (window as unknown as { __MF_FORCE_SAVE_ERROR__: boolean }).__MF_FORCE_SAVE_ERROR__ = true;
+      });
+      await editWallDim(page, "east", "7.11", "widthM");
+      await page.waitForFunction(
+        () =>
+          (window as unknown as { __MF_STORE__: { getState: () => { saveState: string } } }).__MF_STORE__.getState()
+            .saveState === "error",
+        null,
+        { timeout: 8000 },
+      );
+      assert.equal(await mf(page, "save-status").getAttribute("data-mf-save"), "error");
+      assert.ok(await mf(page, "save-retry").boundingBox());
+      await page.evaluate(() => {
+        (window as unknown as { __MF_FORCE_SAVE_ERROR__: boolean }).__MF_FORCE_SAVE_ERROR__ = false;
+      });
+      await mf(page, "save-retry").click();
+      await page.waitForFunction(
+        () =>
+          (window as unknown as { __MF_STORE__: { getState: () => { saveState: string } } }).__MF_STORE__.getState()
+            .saveState === "saved",
+        null,
+        { timeout: 8000 },
+      );
+    } finally {
+      await ctx.close();
+    }
+  });
+});
+
+describe("QX-MFQ OBJECT-PLACE-09/10 mobile CREATE", () => {
+  it("375×812 valid interior CREATE maps canonical coords; outside does not mutate", async () => {
+    const { ctx, page } = await openPhone("375x812");
+    try {
+      await mf(page, "cad").waitFor();
+      await page.evaluate(() => {
+        const s = (
+          window as unknown as {
+            __MF_STORE__: {
+              getState: () => {
+                project: {
+                  room: { kind: "rectangular"; widthM: number; depthM: number; heightM: number; wallThicknessM: number };
+                  openings: unknown[];
+                  racks: unknown[];
+                  fans: unknown[];
+                };
+                loadProject: (p: unknown) => void;
+                addRack: (r: unknown) => { ok: boolean };
+              };
+            };
+          }
+        ).__MF_STORE__.getState();
+        const p = structuredClone(s.project);
+        p.racks = [];
+        p.fans = [];
+        p.openings = [];
+        p.room = { ...p.room, widthM: 8, depthM: 5, heightM: 2.8 };
+        s.loadProject(p);
+      });
+      const fp0 = await page.evaluate(() =>
+        JSON.stringify(
+          (
+            window as unknown as {
+              __MF_STORE__: { getState: () => { project: { room: unknown; racks: unknown[]; openings: unknown[] } } };
+            }
+          ).__MF_STORE__.getState().project.racks,
+        ),
+      );
+      const outside = await page.evaluate(() => {
+        const s = (
+          window as unknown as {
+            __MF_STORE__: {
+              getState: () => {
+                addRack: (r: {
+                  id: string;
+                  name: string;
+                  x: number;
+                  y: number;
+                  widthM: number;
+                  depthM: number;
+                  heightM: number;
+                  shelves: number;
+                  usableShelfWidthM: number;
+                  usableShelfDepthM: number;
+                  rotationDeg: number;
+                  asicCount: number;
+                  airflowToward: "south";
+                }) => { ok: boolean };
+                project: { racks: unknown[] };
+              };
+            };
+          }
+        ).__MF_STORE__.getState();
+        const res = s.addRack({
+          id: "bad_out",
+          name: "bad",
+          x: 40,
+          y: 40,
+          widthM: 1.6,
+          depthM: 0.6,
+          heightM: 2.0,
+          shelves: 4,
+          usableShelfWidthM: 1.5,
+          usableShelfDepthM: 0.55,
+          rotationDeg: 0,
+          asicCount: 0,
+          airflowToward: "south",
+        });
+        return { ok: res.ok, n: s.project.racks.length };
+      });
+      assert.equal(outside.ok, false);
+      assert.equal(outside.n, 0);
+      const fp1 = await page.evaluate(() =>
+        JSON.stringify(
+          (
+            window as unknown as {
+              __MF_STORE__: { getState: () => { project: { racks: unknown[] } } };
+            }
+          ).__MF_STORE__.getState().project.racks,
+        ),
+      );
+      assert.equal(fp1, fp0);
+
+      const placed = await page.evaluate(() => {
+        const s = (
+          window as unknown as {
+            __MF_STORE__: {
+              getState: () => {
+                addRack: (r: {
+                  id: string;
+                  name: string;
+                  x: number;
+                  y: number;
+                  widthM: number;
+                  depthM: number;
+                  heightM: number;
+                  shelves: number;
+                  usableShelfWidthM: number;
+                  usableShelfDepthM: number;
+                  rotationDeg: number;
+                  asicCount: number;
+                  airflowToward: "south";
+                }) => { ok: boolean };
+                project: { racks: Array<{ x: number; y: number }> };
+              };
+            };
+          }
+        ).__MF_STORE__.getState();
+        const res = s.addRack({
+          id: "ok_in",
+          name: "ok",
+          x: 2.25,
+          y: 1.5,
+          widthM: 1.6,
+          depthM: 0.6,
+          heightM: 2.0,
+          shelves: 4,
+          usableShelfWidthM: 1.5,
+          usableShelfDepthM: 0.55,
+          rotationDeg: 0,
+          asicCount: 0,
+          airflowToward: "south",
+        });
+        const r = s.project.racks[0];
+        return { ok: res.ok, x: r?.x, y: r?.y, n: s.project.racks.length };
+      });
+      assert.equal(placed.ok, true);
+      assert.equal(placed.x, 2.25);
+      assert.equal(placed.y, 1.5);
+      assert.equal(placed.n, 1);
+      assert.equal(await noPageOverflow(page), true);
     } finally {
       await ctx.close();
     }

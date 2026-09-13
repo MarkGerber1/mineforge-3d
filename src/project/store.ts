@@ -4,15 +4,17 @@ import { calculateAll, type Catalogs } from "../engineering/pipeline.ts";
 import { generateAutoLayout } from "../engineering/layout.ts";
 import { resizeRectangularRoom, validateOpening } from "../engineering/geometry.ts";
 import { applyPatch, type PartialProjectPatch } from "../engineering/upgrade.ts";
-import type { AppMode, EngineeringResult, Opening, Project, ViewMode, WallId } from "../engineering/types.ts";
+import type { AppMode, EngineeringResult, Opening, Project, Rack, ViewMode, WallId } from "../engineering/types.ts";
 import { SNAP_MODES_M, type SnapMode } from "../engineering/constants.ts";
 import { undergroundParkingFarm } from "./factory.ts";
-import { saveProject } from "./persistence.ts";
 import { applyFailure, type FailureKind } from "../ai/failure.ts";
 import type { GrokScope } from "../ai/intent.ts";
 import { emptyReality, type AsBuiltObject, type PhotoMarker, type PhotoMarkerKind, type RealityFinding, type RealityPhotoMeta, type RealityVideoMeta, type VideoErrorCode } from "../engineering/types.ts";
 import { applyFinding, attachVideoFrames, recordAnnotation } from "../engineering/reality.ts";
 import type { RuntimeSnapshot } from "../ai/runtime-client.ts";
+import { validateRoomLengthM } from "../engineering/room-resize.ts";
+import { validateRackPlacement } from "../engineering/placement.ts";
+import { saveScheduler, type PersistState } from "./save-scheduler.ts";
 
 export type CadTool = "select" | "pan" | "measure" | "door" | "intake" | "exhaust" | "rack" | "fan";
 export type SheetState = "closed" | "half" | "full";
@@ -77,7 +79,8 @@ interface ProjectStore {
   snapEnabled: boolean;
   gridEnabled: boolean;
   xray: XrayLayers;
-  saveState: "idle" | "saving" | "saved";
+  saveState: PersistState;
+  saveError: string | null;
   grok: GrokMessage[];
   grokBusy: boolean;
   grokOffline: boolean;
@@ -122,10 +125,11 @@ interface ProjectStore {
   toggleSnap(): void;
   toggleGrid(): void;
   setXray(partial: Partial<XrayLayers>): void;
-  resizeWall(wall: WallId, lengthM: number, preview?: boolean): void;
+  resizeWall(wall: WallId, lengthM: number, preview?: boolean): { ok: boolean; reason?: string };
   addOpening(o: Opening): { ok: boolean; errors: string[] };
   updateOpening(id: string, patch: Partial<Opening>, preview?: boolean): { ok: boolean; errors: string[] };
-  moveRack(id: string, x: number, y: number, preview?: boolean): void;
+  addRack(rack: Rack): { ok: boolean; errors: string[] };
+  moveRack(id: string, x: number, y: number, preview?: boolean): { ok: boolean; errors: string[] };
   setFleet(asicId: string, count: number): void;
   setPower(watts: number, reservePct?: number): void;
   setDeltaT(k: number): void;
@@ -168,21 +172,15 @@ interface ProjectStore {
   toggleFrameSelect(photoId: string): void;
   removePhoto(photoId: string): void;
   setVideoJob(job: ProjectStore["videoJob"]): void;
+  retrySave(): void;
 }
 
 const catalogs = defaultCatalogs();
 const initial = undergroundParkingFarm();
 const initialResult = calculateAll(initial, catalogs);
 
-let saveTimer: ReturnType<typeof setTimeout> | null = null;
 function scheduleSave(p: Project, set: (s: Partial<ProjectStore>) => void) {
-  set({ saveState: "saving" });
-  if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    void saveProject(p)
-      .then(() => set({ saveState: "saved" }))
-      .catch(() => set({ saveState: "idle" }));
-  }, 700);
+  saveScheduler.schedule(p, (s) => set(s));
 }
 
 export const useProjectStore = create<ProjectStore>((set, get) => ({
@@ -202,6 +200,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   gridEnabled: true,
   xray: { airflow: true, temperature: false, electrical: false, warnings: true, pressure: false },
   saveState: "idle",
+  saveError: null,
   grok: [
     {
       id: "sys0",
@@ -320,10 +319,17 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   toggleGrid: () => set({ gridEnabled: !get().gridEnabled }),
   setXray: (partial) => set({ xray: { ...get().xray, ...partial } }),
   resizeWall(wall, lengthM, preview) {
+    const check = validateRoomLengthM(lengthM);
+    if (!check.ok) {
+      if (!preview) return { ok: false, reason: check.reason };
+      get().setPreview(null);
+      return { ok: false, reason: check.reason };
+    }
     const src = get().live();
-    const next = resizeRectangularRoom(src, wall, lengthM);
+    const next = resizeRectangularRoom(src, wall, check.meters);
     if (preview) get().setPreview(next);
     else get().commit(next, `Resize ${wall} wall`);
+    return { ok: true };
   },
   addOpening(o) {
     const src = get().live();
@@ -345,15 +351,28 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     else get().commit(next, "Update opening");
     return { ok: true, errors: [] };
   },
+  addRack(rack) {
+    const src = get().project;
+    const v = validateRackPlacement(src, rack);
+    if (!v.ok) return { ok: false, errors: v.errors };
+    get().commit({ ...src, racks: [...src.racks, rack], updatedAt: Date.now() }, "Add rack");
+    set({ selectedIds: [rack.id] });
+    return { ok: true, errors: [] };
+  },
   moveRack(id, x, y, preview) {
     const src = get().live();
-    const next = {
-      ...src,
-      racks: src.racks.map((r) => (r.id === id ? { ...r, x, y } : r)),
-      updatedAt: Date.now(),
-    };
-    if (preview) get().setPreview(next);
-    else get().commit(next, "Move rack");
+    const nextRacks = src.racks.map((r) => (r.id === id ? { ...r, x, y } : r));
+    const candidate = nextRacks.find((r) => r.id === id);
+    if (!candidate) return { ok: false, errors: ["Missing rack"] };
+    const next = { ...src, racks: nextRacks, updatedAt: Date.now() };
+    const v = validateRackPlacement(next, candidate, { ignoreIds: [id] });
+    if (preview) {
+      get().setPreview(next);
+      return v.ok ? { ok: true, errors: [] } : { ok: false, errors: v.errors };
+    }
+    if (!v.ok) return { ok: false, errors: v.errors };
+    get().commit(next, "Move rack");
+    return { ok: true, errors: [] };
   },
   setFleet(asicId, count) {
     const src = get().project;
@@ -567,6 +586,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   setVideoJob(videoJob) {
     set({ videoJob });
   },
+  retrySave() {
+    saveScheduler.retry((s) => set(s));
+  },
 }));
 
 export function snapStep(): number {
@@ -585,4 +607,3 @@ export function useLiveResult(): EngineeringResult {
 if (typeof window !== "undefined") {
   (window as unknown as { __MF_STORE__: typeof useProjectStore }).__MF_STORE__ = useProjectStore;
 }
-

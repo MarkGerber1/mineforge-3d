@@ -2,6 +2,7 @@ import { Box, Redo2, Spline, Undo2, Layers } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useProjectStore } from "@/project/store";
 import { cn } from "@/lib/utils";
+import { SaveStatus } from "./SaveStatus";
 
 const modes = [
   { id: "project" as const, label: "Проект", short: "Проект" },
@@ -120,9 +121,7 @@ export function TopBar() {
             AI OFFLINE
           </span>
         )}
-        <div className="hidden px-2 font-mono text-[11px] text-muted sm:block" data-mf-save={store.saveState}>
-          {store.saveState === "saving" ? "Saving…" : store.saveState === "saved" ? "Saved" : "Local"}
-        </div>
+        <SaveStatus />
       </div>
     </header>
   );

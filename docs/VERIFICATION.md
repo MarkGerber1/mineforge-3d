@@ -32,8 +32,8 @@ Date: 2026-09-13
 
 Oracle suite: `src/engineering/oracle/*.test.ts`
 
-TOTAL: 87
-PASSED: 87
+TOTAL: 126
+PASSED: 126
 FAILED: 0
 
 | Test ID | Subsystem | Status |
@@ -52,6 +52,11 @@ FAILED: 0
 | REAL-01 … REAL-12 | Provenance, calibration, Sync → openings/as-built/wall, undo, persistence | PASS |
 | REAL-13 … REAL-24 | 3D collision consequence, vent opening, AI Reality fail-closed, undo/redo | PASS |
 | VIDEO-01 … VIDEO-13 | Real video policy, provenance, bounded frames, no silent mutate, persistRaw=false, VP8 demux | PASS |
+| PERSIST-01 … PERSIST-08 | Save state idle/saving/saved/error, retry, stale-save race | PASS (oracle; PERSIST-03/04 via mobile CI) |
+| TWIN-OPENING-01 … TWIN-OPENING-09 | Deterministic wall apertures, undo/redo, Reality ADD | PASS |
+| WALL-RESIZE-01 … WALL-RESIZE-10 | Direct-wall numeric resize anchors, cancel/undo/redo | PASS |
+| DIM-VALIDATION-01 … DIM-VALIDATION-08 | Reject not clamp; MIN 0.50 m; canonical unchanged | PASS |
+| OBJECT-PLACE-01 … OBJECT-PLACE-11 | Shared CREATE/MOVE validator, fully outside invalid | PASS |
 
 ## E2E / UX
 
@@ -84,6 +89,10 @@ SAFE computed by the engine. Floor loading UNKNOWN → confidence PRELIMINARY.
 
 Continuity / recovery package: GitHub is the durable source of truth for non-secret source.
 Start at `AI_HANDOFF.md`. Operational recovery: `RECOVERY.md`. Machine metadata: `project-handoff.json`.
+
+QX-01 owner-experience repair (MFQ-001…006) is an implementation candidate on
+`repair/qx-01-owner-experience`. Developer does **not** self-accept. Status after
+merge: READY FOR INDEPENDENT QUALITY RETEST.
 
 Repair Batch 1 PASSED (SHA `8f5c9c0dd4909db51a28a2e14cff12b29c00b218`).
 Repair Batch 2 — Reality geometry pipeline (SHA `7c9f25ae31fab0fe501f542856210adfb7dcfb4c`).
