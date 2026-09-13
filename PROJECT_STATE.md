@@ -58,7 +58,7 @@ Demo seed: underground parking 8.000 × 5.000 × 2.8 m, 30 × BITMAIN S21 Pro, e
 - Video is **not** photogrammetry.
 - Real iOS Safari keyboard and physical device chrome are not proven (Playwright WebKit only).
 - Floor loading UNKNOWN unless the Owner enters it → SAFE confidence PRELIMINARY.
-- Application Edit is a **developer/owner** capability on a git worktree process, not a public multi-tenant editor. Serverless (`GROK_PROJECT_ID`) forces it **off**.
+- Application Edit is a **developer/owner** capability on a git worktree process, not a public multi-tenant editor. Serverless (`GROK_PROJECT_ID` **or** `VERCEL=1`/`true`) forces it **off**.
 - Static GitHub Pages cannot run `/api/*`, Grok, or App Edit.
 - No public server-capable hostname is recorded until Owner publishes.
 

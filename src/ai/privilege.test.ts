@@ -68,6 +68,19 @@ describe("AC flag deny-by-default", () => {
     );
     assert.equal(isAppEditEnabled({ APP_EDIT_ENABLED: "1", GROK_PROJECT_ID: "x" }), false);
   });
+  it("VERCEL=1 alone forces App Edit off even if APP_EDIT_ENABLED=true", () => {
+    assert.equal(isAppEditEnabled({ APP_EDIT_ENABLED: "true", VERCEL: "1" }), false);
+    assert.equal(isAppEditEnabled({ APP_EDIT_ENABLED: "true", VERCEL: "true" }), false);
+    const e = env({ APP_EDIT_ENABLED: "true", VERCEL: "1" });
+    const secret = sessionSecret(e)!;
+    const cookie = signSession({ sub: "owner", role: "owner" }, secret);
+    const g = authorizeMutation("write_source", { cookie, env: e });
+    assert.equal(g.ok, false);
+    if (!g.ok) {
+      assert.equal(g.status, 403);
+      assert.equal(g.code, "APP_EDIT_DISABLED");
+    }
+  });
 });
 
 describe("AC-1..AC-8 authorizeMutation", { concurrency: 1 }, () => {
@@ -270,13 +283,21 @@ describe("FINAL-01 serverless production policy", () => {
     assert.equal(snap.instanceModel, "single-instance");
   });
 
-  it("GROK_PROJECT_ID snapshot: App Edit off, multi-instance", () => {
+  it("GROK_PROJECT_ID snapshot: App Edit off, multi-instance, AI fail-closed even with key", () => {
     const snap = runtimeSnapshot({
-      env: env({ GROK_PROJECT_ID: "01a08ee5-published", APP_EDIT_ENABLED: "true", VERCEL: "1" }),
+      env: env({
+        GROK_PROJECT_ID: "01a08ee5-published",
+        APP_EDIT_ENABLED: "true",
+        VERCEL: "1",
+        XAI_API_KEY: "test-not-a-real-key",
+      }),
     });
     assert.equal(snap.appEditEnabled, false);
     assert.equal(snap.instanceModel, "multi-instance");
     assert.equal(snap.mode, "server");
+    assert.equal(snap.ai, false);
+    assert.equal(snap.available, false);
+    assert.equal(snap.rateLimitProtection, "none");
   });
 
   it("explicit PRODUCTION_INSTANCE_MODEL wins over VERCEL", () => {

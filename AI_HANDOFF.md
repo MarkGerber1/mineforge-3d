@@ -53,7 +53,9 @@ Owner operates the CAD product. GitHub/CI/runtime internals stay off the product
 - `PHYSICAL_IPHONE_SMOKE: WAITING_FOR_OWNER` — Owner Safari against the public URL. Playwright WebKit is not this field.
 - `PUBLIC_PRODUCTION_DEPLOYMENT: BLOCKED_OWNER_PUBLISH` — need a provider-owned HTTPS host with `/api/runtime` JSON. GitHub Pages is static demo only. Tunnels forbidden.
 
-Owner action required to mint the public URL: **Publish** in Grok Build (`*.grok.me`) or authorize Vercel at the exact accepted `main` SHA. Then send the URL.
+Serverless production policy (`isServerlessProduction` = `GROK_PROJECT_ID` **or** `VERCEL=1`/`true`): App Edit forced off; public Grok AI fail-closed without a shared limiter (OPTION B). Process-local Map is single-instance only.
+
+Owner action required to mint the public URL: **Publish** in Grok Build (`*.grok.me`) or authorize Vercel at the exact accepted `main` SHA. Then send the URL. Independent Quality Department retests production policy first.
 
 Do not reopen MFQ-001…MFQ-006 unless a real regression appears.
 

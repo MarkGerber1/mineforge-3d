@@ -27,23 +27,47 @@ Tunnels are not PUBLIC LIVE.
 
 ## Starting freeze
 
-- Required starting `origin/main`: `fb471f5a09d3a0143c58d3362e8e0b982796ba49`
-- Post-merge CI on that SHA: https://github.com/MarkGerber1/mineforge-3d/actions/runs/34736024732 (`success`)
+- Required FINAL-01 starting `origin/main`: `fb471f5a09d3a0143c58d3362e8e0b982796ba49`
+- FINAL-01R starting `origin/main`: `37eef679e4b027abda37c0a494613130d23eabe1`
 - Accepted functional baseline (immutable): `635fd9e965ed8d9705c310b72b82dde2b81f837f`
 
-This package does **not** reopen MFQ-001…MFQ-006.
+This package does **not** reopen MFQ-001…MFQ-006. Public deploy is **not**
+performed. Physical iPhone is **not** started.
 
-## Production policy in this package
+## Production policy
 
-Serverless / Grok Build (`GROK_PROJECT_ID` set):
+Shared predicate `isServerlessProduction(env)` is true when `GROK_PROJECT_ID`
+is non-empty **or** `VERCEL` is `1`/`true`.
 
-- Application Edit **forced off** (even if `APP_EDIT_ENABLED=true`)
-- `instanceModel=multi-instance` unless explicitly overridden
-- `RATE_LIMIT_TRUST=auto` + `VERCEL=1` → vercel identity (`x-real-ip` /
-  `x-vercel-forwarded-for`). Spoofable CF / first XFF are not keys.
+### FINAL-SEC-001 Application Edit
 
-Workspace preview (no `GROK_PROJECT_ID`): App Edit remains the existing
-owner-session git-worktree contract.
+On serverless production App Edit is **forced off** even if
+`APP_EDIT_ENABLED=true` (including `VERCEL=1` with empty `GROK_PROJECT_ID`).
+Login and mutations return `403 APP_EDIT_DISABLED`. Grok system contract:
+`APP EDIT DISABLED`. No git-worktree job may start.
+
+Workspace preview (no serverless marker) keeps the existing owner-session
+git-worktree contract.
+
+### FINAL-SEC-002 Public AI — OPTION B fail-closed
+
+Process-local `Map` rate limiting is **single-instance only**. It is **not**
+global protection across serverless instances. No shared durable limiter is
+implemented.
+
+Capability formula: runtime type + `XAI_API_KEY` + limiter kind.
+
+| Runtime | Key | Limiter | Public AI |
+|---|---|---|---|
+| single-instance workspace | present | `local-process` | available |
+| serverless / multi-instance | present | `none` (no shared store) | **unavailable** |
+| any | absent | any | unavailable |
+
+`GET /api/runtime` reports actual usable capability (`ai`/`available` false
+when AI is not safe to expose). `rateLimitProtection` is `local-process` or
+`none` — never advertised as `shared`.
+
+CAD and Engineering Core remain fully operational when AI is OFFLINE.
 
 ## Public production
 
@@ -56,8 +80,6 @@ Not acceptable: GitHub Pages, Quick Tunnels, `workers.dev`, workspace preview.
 ## Physical iPhone
 
 `WAITING_FOR_OWNER`. Playwright WebKit is not this field.
-
-Exact Owner checklist is returned only after a verified public HTTPS URL exists.
 
 ## Security (source-side)
 
