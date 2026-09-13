@@ -138,6 +138,21 @@ export function rotateRack90(racks: Rack[], id: string): Rack[] {
   });
 }
 
+/**
+ * Collision-free rack id. Never Date.now()-only: same millisecond in one
+ * logical operation must still yield distinct ids.
+ */
+export function uniqueRackId(existingIds: Iterable<string>, base: string): string {
+  const taken = new Set(existingIds);
+  const stem = `${base || "rack"}_copy`;
+  if (!taken.has(stem)) return stem;
+  for (let n = 2; n < 10000; n++) {
+    const id = `${stem}${n}`;
+    if (!taken.has(id)) return id;
+  }
+  return `${stem}_${taken.size}`;
+}
+
 export function duplicateRackOffset(racks: Rack[], id: string, dx?: number, dy = 0.2): Rack | null {
   const src = racks.find((r) => r.id === id);
   if (!src) return null;
@@ -145,9 +160,13 @@ export function duplicateRackOffset(racks: Rack[], id: string, dx?: number, dy =
   const shiftX = dx ?? bb.x2 - bb.x1 + 0.2;
   return {
     ...src,
-    id: `${src.id}_copy`,
+    id: uniqueRackId(
+      racks.map((r) => r.id),
+      src.id,
+    ),
     name: `${src.name}′`,
     x: src.x + shiftX,
     y: src.y + dy,
   };
 }
+

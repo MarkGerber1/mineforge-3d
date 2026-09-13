@@ -7,7 +7,7 @@ import { useLiveProject, useLiveResult, useProjectStore } from "@/project/store"
 import { nid } from "@/project/factory";
 import { TEST_RACK_A } from "@/project/factory";
 import { validateRacksConfiguration, validateRackPlacement } from "@/engineering/placement";
-import { validateRoomLengthInput, wallResizeContract, createWallDragContext, wallDragLengthM, originShiftForResize, wallCursor, pickWallHit, wallIdFromEventTarget, type WallDragContext } from "@/engineering/room-resize";
+import { validateRoomLengthInput, wallResizeContract, createWallDragContext, wallDragLengthM, originShiftForResize, wallCursor, pickWallHit, wallIdFromEventTarget, resolveWallDragTarget, type WallDragContext } from "@/engineering/room-resize";
 
 type Cam = { x: number; y: number; ppm: number };
 type Drag =
@@ -284,7 +284,14 @@ export function Cad2D() {
       beginDrag({ kind: "rack", ids, dx: p.x, dy: p.y, ox: sel.map((r) => r.x), oy: sel.map((r) => r.y) });
       return;
     }
-    const wall = wallIdFromEventTarget(e.target) ?? hitWall(p.x, p.y);
+    const wall = resolveWallDragTarget(
+      p.x,
+      p.y,
+      project.room.widthM,
+      project.room.depthM,
+      22 / cam.ppm,
+      wallIdFromEventTarget(e.target),
+    );
     if (wall) {
       store.select([`wall-${wall}`]);
       const src = store.project;
