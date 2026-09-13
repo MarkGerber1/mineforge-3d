@@ -285,7 +285,34 @@ Starting SHA `492e50e86dac310a0b308fbd41a0677226bb2b38`. Branch
 
 Does not start QX-02C. Does not publish. Does not declare FINAL PASSED.
 
+## QX-02B-R8/R11 — FREQUENCY + TRUST + PHASE TOPOLOGY + INVENTORY
 
+Starting SHA `c4f23f0508f283aece07e12e56fe688897a5b1b4`. Branch
+`repair/qx-02b-r8-r11-electrical-inventory`.
 
+- R8: AsicSpec `frequencyMinHz`/`frequencyMaxHz` only when the catalog
+  source proves them. Known supply frequency outside that range is
+  CRITICAL `asic-frequency-mismatch`, `maxByElectrical = 0`, Project
+  remains canonical. Unknown ASIC frequency → PRELIMINARY, not a fake
+  CRITICAL. S21 is 47–63 Hz (source), not invented 50–60. M60S Hz UNKNOWN.
+- R9: FINAL-SAFE eligible trust is only `OFFICIAL_VERIFIED` and
+  `VERIFIED_SECONDARY`. `TEST_FIXTURE` is not a production bypass.
+  Same numeric spec, different trust → same diagnostics, different
+  confidence. Grok-imported specs claiming official/secondary are
+  downgraded to `AI_FOUND_UNVERIFIED`.
+- R10: `inputPhases?: 1 | 3`. 1-phase uses `distributePhases()`.
+  3-phase loads L1/L2/L3 equally (T21). Unknown topology does not
+  fabricate phase currents and is not VERIFIED. Nameplate `currentA`
+  preferred for Owner-facing current; P/U and 3-phase screening stay
+  labelled. `voltageV` is the voltage at the ASIC terminals.
+- R11: `placedAsicCount = Σ racks[].asicCount` (all canonical racks,
+  including blocked) ≤ `requestedCount`. `engineeringDemandCount =
+  max(requested, placed)` for electrical/thermal. setFleet below placed
+  REJECT; setRackAsicCount that would exceed requested REJECT; duplicate
+  copies asicCount only if it still fits, else empty (`asicCount=0`).
+  verifiedAcceptanceProject rebuilds layout so placed === requested.
 
+Floor OPTION A remains the Owner-approved PHASE 1 contract introduced
+during QX-02B-R6/R7 (PR #20). Calculation not reopened.
 
+Does not start QX-02C. Does not publish. Does not declare FINAL PASSED.

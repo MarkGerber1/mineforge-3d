@@ -14,7 +14,7 @@ import {
   SUPPLY_FREQUENCY_HZ,
   SUPPLY_VOLTAGE_V,
 } from "../engineering/constants.ts";
-import type { Project, VentComponent } from "../engineering/types.ts";
+import type { AsicSpec, Project, VentComponent } from "../engineering/types.ts";
 import { emptyReality } from "../engineering/types.ts";
 import { ASIC_S21_PRO, TEST_ASIC_A } from "../equipment/asic-catalog.ts";
 import { FAN_STRONG } from "../equipment/fan-catalog.ts";
@@ -282,6 +282,34 @@ export function testAsicAProject(): Project {
 export function withKnownFloor(p: Project, limitPa = STANDARD_NET_FLOOR_PAYLOAD_PA): Project {
   p.constraints.floorLoadingUnknown = false;
   p.constraints.maxFloorLoadPa = limitPa;
+  return p;
+}
+
+/**
+ * TEST_ASIC_A numbers with OFFICIAL_VERIFIED provenance for VERIFIED fixtures.
+ * Catalog TEST_ASIC_A remains TEST_FIXTURE and is not final-safe eligible.
+ */
+export function officialTestAsicA(extra: Partial<AsicSpec> = {}): AsicSpec {
+  return {
+    ...TEST_ASIC_A,
+    frequencyMinHz: 50,
+    frequencyMaxHz: 60,
+    inputPhases: 1,
+    ...extra,
+    source: extra.source ?? {
+      label: "TEST_ASIC_A official-trust fixture (not production catalog)",
+      trust: "OFFICIAL_VERIFIED",
+    },
+  };
+}
+
+/** Acceptance fixture: official TEST_ASIC_A, known floor, placed === requested. */
+export function verifiedAcceptanceProject(requestedCount = 24): Project {
+  const p = undergroundParkingFarm();
+  withKnownFloor(p);
+  const asic = officialTestAsicA();
+  p.fleet = { asicId: asic.id, requestedCount, imported: asic };
+  p.racks = generateAutoLayout(p, asic);
   return p;
 }
 

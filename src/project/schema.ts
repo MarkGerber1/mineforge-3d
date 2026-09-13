@@ -45,6 +45,9 @@ const asicSchema = z.object({
   voltageMin: z.number().finite().positive(),
   voltageMax: z.number().finite().positive(),
   currentA: z.number().finite().nonnegative().optional(),
+  frequencyMinHz: z.number().finite().positive().optional(),
+  frequencyMaxHz: z.number().finite().positive().optional(),
+  inputPhases: z.union([z.literal(1), z.literal(3)]).optional(),
   widthM: z.number().finite().positive(),
   heightM: z.number().finite().positive(),
   lengthM: z.number().finite().positive(),
@@ -59,6 +62,23 @@ const asicSchema = z.object({
 }).refine((a) => a.voltageMin <= a.voltageMax, {
   message: "voltageMin must be ≤ voltageMax",
   path: ["voltageMin"],
+}).superRefine((a, ctx) => {
+  const hasMin = a.frequencyMinHz != null;
+  const hasMax = a.frequencyMaxHz != null;
+  if (hasMin !== hasMax) {
+    ctx.addIssue({
+      code: "custom",
+      message: "frequencyMinHz and frequencyMaxHz must both be present",
+      path: ["frequencyMinHz"],
+    });
+  }
+  if (hasMin && hasMax && a.frequencyMinHz! > a.frequencyMaxHz!) {
+    ctx.addIssue({
+      code: "custom",
+      message: "frequencyMinHz must be ≤ frequencyMaxHz",
+      path: ["frequencyMinHz"],
+    });
+  }
 });
 
 export const projectSchema = z.object({
@@ -203,6 +223,15 @@ export const projectSchema = z.object({
       videos: z.array(z.any()).optional(),
     })
     .optional(),
+}).superRefine((p, ctx) => {
+  const placed = p.racks.reduce((s, r) => s + r.asicCount, 0);
+  if (placed > p.fleet.requestedCount) {
+    ctx.addIssue({
+      code: "custom",
+      message: `placedAsicCount ${placed} > requestedCount ${p.fleet.requestedCount}`,
+      path: ["fleet", "requestedCount"],
+    });
+  }
 });
 
 export function parseProject(data: unknown, catalogs: Catalogs = defaultCatalogs()): Project {

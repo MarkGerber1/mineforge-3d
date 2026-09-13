@@ -119,6 +119,9 @@ export function Inspector({ hideGrok }: { hideGrok?: boolean }) {
                 if (!res.ok) return res.reason;
               }}
             />
+            <div className="text-[12px] text-muted" data-mf-id="inspector-placed">
+              Размещено в стойках: {result.inventory.placedAsicCount}
+            </div>
             <Field
               label="Мощность, kW"
               value={`${project.electrical.availablePowerW / 1000}`}

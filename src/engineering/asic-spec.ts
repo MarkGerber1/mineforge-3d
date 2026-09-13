@@ -42,6 +42,29 @@ export function validateAsicSpecRelations(asic: AsicSpec, tag = asic.model || as
   if (asic.currentA != null && !finiteNonNegative(asic.currentA)) {
     errors.push(`${label}: currentA должно быть конечным ≥ 0.`);
   }
+  const hasFmin = asic.frequencyMinHz != null;
+  const hasFmax = asic.frequencyMaxHz != null;
+  if (hasFmin !== hasFmax) {
+    errors.push(`${label}: frequencyMinHz и frequencyMaxHz задаются вместе.`);
+  }
+  if (hasFmin && !finitePositive(asic.frequencyMinHz as number)) {
+    errors.push(`${label}: frequencyMinHz должно быть конечным > 0.`);
+  }
+  if (hasFmax && !finitePositive(asic.frequencyMaxHz as number)) {
+    errors.push(`${label}: frequencyMaxHz должно быть конечным > 0.`);
+  }
+  if (
+    hasFmin &&
+    hasFmax &&
+    Number.isFinite(asic.frequencyMinHz as number) &&
+    Number.isFinite(asic.frequencyMaxHz as number) &&
+    (asic.frequencyMinHz as number) > (asic.frequencyMaxHz as number)
+  ) {
+    errors.push(`${label}: frequencyMinHz больше frequencyMaxHz.`);
+  }
+  if (asic.inputPhases != null && asic.inputPhases !== 1 && asic.inputPhases !== 3) {
+    errors.push(`${label}: inputPhases должно быть 1 или 3.`);
+  }
   if (!finitePositive(asic.widthM)) errors.push(`${label}: ширина должна быть конечной > 0.`);
   if (!finitePositive(asic.heightM)) errors.push(`${label}: высота должна быть конечной > 0.`);
   if (!finitePositive(asic.lengthM)) errors.push(`${label}: длина должна быть конечной > 0.`);
@@ -55,4 +78,26 @@ export function validateAsicSpecRelations(asic: AsicSpec, tag = asic.model || as
 
 export function supplyVoltageCompatible(asic: AsicSpec, voltageV: number): boolean {
   return asic.voltageMin - 1e-12 <= voltageV && voltageV <= asic.voltageMax + 1e-12;
+}
+
+export function asicFrequencyRangeKnown(asic: AsicSpec): boolean {
+  return (
+    asic.frequencyMinHz != null &&
+    asic.frequencyMaxHz != null &&
+    Number.isFinite(asic.frequencyMinHz) &&
+    Number.isFinite(asic.frequencyMaxHz) &&
+    asic.frequencyMinHz > 0 &&
+    asic.frequencyMaxHz > 0 &&
+    asic.frequencyMinHz <= asic.frequencyMaxHz
+  );
+}
+
+/** null = frequency capability UNKNOWN. */
+export function supplyFrequencyCompatible(asic: AsicSpec, frequencyHz: number): boolean | null {
+  if (!asicFrequencyRangeKnown(asic)) return null;
+  return asic.frequencyMinHz! - 1e-12 <= frequencyHz && frequencyHz <= asic.frequencyMaxHz! + 1e-12;
+}
+
+export function asicTopologyKnown(asic: AsicSpec): boolean {
+  return asic.inputPhases === 1 || asic.inputPhases === 3;
 }

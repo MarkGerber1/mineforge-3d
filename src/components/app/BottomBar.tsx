@@ -27,6 +27,12 @@ export function BottomBar() {
           {p.fleet.requestedCount} / {r.capacity.safe ?? "—"}
         </span>
       </button>
+      <div className="hud-chip hidden shrink-0 sm:flex">
+        <span className="k">Размещено</span>
+        <span className="v" data-mf-id="hud-placed">
+          {r.inventory.placedAsicCount}
+        </span>
+      </div>
       <button type="button" className="hud-chip shrink-0 text-left" onClick={openWhy}>
         <span className="k">Узкое место</span>
         <span className={cn("v", safetyTone)}>{HUD_SAFETY_LABEL_RU[safety]} · {r.capacity.bottlenecks.join(" · ") || "—"}</span>

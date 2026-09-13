@@ -1,10 +1,12 @@
 import { AIR_CP_J_KG_K, AIR_DENSITY_KG_M3 } from "./constants.ts";
-import { validateAsicSpecRelations } from "./asic-spec.ts";
+import { asicFrequencyRangeKnown, asicTopologyKnown, validateAsicSpecRelations } from "./asic-spec.ts";
+import { asicTrustDecision } from "./asic-trust.ts";
 import { calculateCapacity } from "./capacity.ts";
 import { calculateElectrical } from "./electrical.ts";
 import { evaluateProjectFans } from "./fans.ts";
 import { calculateFloorLoading } from "./floor.ts";
 import { analyzeGeometry, analyzeOpenings, validExhaustAvailable, validIntakeAvailable } from "./geometry.ts";
+import { engineeringDemandCount, placedAsicCount } from "./inventory.ts";
 import { feasibleSpacePacking } from "./space-pack.ts";
 import { calculatePressure, resolvedVentComponents } from "./pressure.ts";
 import { analyzeRacks } from "./racks.ts";
@@ -45,6 +47,12 @@ export function calculateAll(project: Project, catalogs: Catalogs): EngineeringR
   const openings = analyzeOpenings(project);
   const asic = resolveAsic(project, catalogs);
   const asicRel = asic ? validateAsicSpecRelations(asic) : { ok: true as const };
+  const asicTrust = asicTrustDecision(asic);
+  const inventory = {
+    requestedCount: project.fleet.requestedCount,
+    placedAsicCount: placedAsicCount(project),
+    engineeringDemandCount: engineeringDemandCount(project),
+  };
   const electrical = calculateElectrical(project, asic);
   const thermal = calculateThermal(project, asic, electrical.typicalTotalW);
   const components = resolvedVentComponents(project);
@@ -156,6 +164,38 @@ export function calculateAll(project: Project, catalogs: Catalogs): EngineeringR
       severity: "CRITICAL",
       title: "Напряжение питания несовместимо с ASIC",
       detail: `Supply ${project.electrical.voltageV} V is outside ASIC ${asic?.voltageMin}–${asic?.voltageMax} V.`,
+    });
+  }
+  if (electrical.supplyFrequencyCompatible === false) {
+    warnings.push({
+      id: "asic-frequency-mismatch",
+      severity: "CRITICAL",
+      title: "Частота питания несовместима с ASIC",
+      detail: `Supply ${project.electrical.frequencyHz} Hz is outside ASIC ${asic?.frequencyMinHz}–${asic?.frequencyMaxHz} Hz.`,
+    });
+  }
+  if (asic && !asicFrequencyRangeKnown(asic)) {
+    warnings.push({
+      id: "asic-frequency-unknown",
+      severity: "INFO",
+      title: "ASIC input-frequency range is not verified",
+      detail: "Manufacturer frequency capability is unknown. SAFE cannot be VERIFIED.",
+    });
+  }
+  if (asic && !asicTopologyKnown(asic)) {
+    warnings.push({
+      id: "asic-topology-unknown",
+      severity: "INFO",
+      title: "ASIC input phase topology is not verified",
+      detail: "Phase-current distribution is not fabricated. SAFE cannot be VERIFIED.",
+    });
+  }
+  if (asic && !asicTrust.finalSafeEligible) {
+    warnings.push({
+      id: "asic-trust-unverified",
+      severity: "INFO",
+      title: "ASIC provenance is not final-safe",
+      detail: asicTrust.reason,
     });
   }
   for (const c of racks.collisions) {
@@ -337,6 +377,9 @@ export function calculateAll(project: Project, catalogs: Catalogs): EngineeringR
     floorUnknown: project.constraints.floorLoadingUnknown || !floorKnown,
     hasBlocker,
     hasCriticalConflict,
+    asicFinalSafeEligible: asicTrust.finalSafeEligible,
+    frequencyCapabilityKnown: asic ? asicFrequencyRangeKnown(asic) : true,
+    topologyKnown: asic ? asicTopologyKnown(asic) : true,
   });
 
   const missing = [
@@ -359,6 +402,8 @@ export function calculateAll(project: Project, catalogs: Catalogs): EngineeringR
     geometry,
     openings,
     electrical,
+    asicTrust,
+    inventory,
     thermal,
     pressure,
     fan,
