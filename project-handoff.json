@@ -83,8 +83,8 @@
     "node": ">=22"
   },
   "deferred": {
-    "PHYSICAL_IPHONE_SMOKE": "DEFERRED_TO_FINAL_RELEASE",
-    "PUBLIC_PRODUCTION_DEPLOYMENT": "DEFERRED_TO_FINAL_RELEASE"
+    "PHYSICAL_IPHONE_SMOKE": "WAITING_FOR_OWNER",
+    "PUBLIC_PRODUCTION_DEPLOYMENT": "BLOCKED_OWNER_PUBLISH"
   },
   "knownLimitations": [
     "rectangular rooms only",
@@ -94,9 +94,10 @@
     "fan curves besides fixtures are ESTIMATED",
     "thermal X-Ray is not CFD",
     "GitHub Pages is static demo, not server-capable production",
-    "floor loading UNKNOWN unless entered"
+    "floor loading UNKNOWN unless entered",
+    "public server-capable URL requires Owner Publish (grok.me or Vercel)"
   ],
-  "nextRecommendedPhase": "FINAL PRODUCT ACCEPTANCE + PHYSICAL IPHONE SMOKE + SIMPLE SERVER-CAPABLE PUBLIC RELEASE",
-  "doNotStartNextPhaseInThisPackage": true,
+  "nextRecommendedPhase": "OWNER PUBLISH SERVER-CAPABLE HTTPS THEN PHYSICAL IPHONE SMOKE",
+  "doNotStartNextPhaseInThisPackage": false,
   "negativePrsKeepOpen": [1, 2, 3, 4, 5]
 }

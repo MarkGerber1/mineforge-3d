@@ -19,6 +19,10 @@ const PUBLIC_401 = "Unauthorized";
 const PUBLIC_403 = "Forbidden";
 
 export function isAppEditEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  // grok.me / Vercel / any Grok Build publish sets GROK_PROJECT_ID. Isolated
+  // git worktrees, child processes and App Edit preview are not available on
+  // that architecture — never advertise a fake working editor.
+  if ((env.GROK_PROJECT_ID ?? "").trim()) return false;
   const v = (env.APP_EDIT_ENABLED ?? "").trim().toLowerCase();
   return v === "true" || v === "1" || v === "on";
 }
@@ -165,6 +169,18 @@ function gitHead(): string {
   }
 }
 
+export function advertisedInstanceModel(
+  env: NodeJS.ProcessEnv = process.env,
+): "single-instance" | "multi-instance" {
+  const explicit = (env.PRODUCTION_INSTANCE_MODEL ?? "").trim().toLowerCase();
+  if (explicit === "multi-instance") return "multi-instance";
+  if (explicit === "single-instance") return "single-instance";
+  const vercel = (env.VERCEL ?? "").trim().toLowerCase();
+  if (vercel === "1" || vercel === "true") return "multi-instance";
+  if ((env.GROK_PROJECT_ID ?? "").trim()) return "multi-instance";
+  return "single-instance";
+}
+
 export function runtimeSnapshot(
   input: { cookieHeader?: string; env?: NodeJS.ProcessEnv } = {},
 ): {
@@ -182,7 +198,6 @@ export function runtimeSnapshot(
   const session = verifySession(parseCookieHeader(input.cookieHeader, PRIV_COOKIE), sessionSecret(env));
   const ai = Boolean(env.XAI_API_KEY);
   const id = deployedIdentity(env);
-  const instance = (env.PRODUCTION_INSTANCE_MODEL ?? "single-instance").trim().toLowerCase();
   return {
     mode: "server",
     ai,
@@ -191,7 +206,7 @@ export function runtimeSnapshot(
     role: session?.role ?? "anonymous",
     sha: id.sha,
     buildId: id.buildId,
-    instanceModel: instance === "multi-instance" ? "multi-instance" : "single-instance",
+    instanceModel: advertisedInstanceModel(env),
   };
 }
 

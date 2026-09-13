@@ -29,6 +29,9 @@ const requiredFiles = [
   "docs/DEVLOG.md",
   "docs/VERIFICATION.md",
   "docs/BATCH4.md",
+  "docs/FINAL-01.md",
+  "docs/final-01.json",
+  "docs/CANONICAL-RUNTIME.md",
   "scripts/ci-gate.sh",
   "scripts/recovery-verify.mjs",
   ".github/workflows/batch1-gate.yml",
@@ -134,6 +137,7 @@ const devlog = readFileSync(join(root, "docs/DEVLOG.md"), "utf8");
 check("DEVLOG batch 1 history", /REPAIR BATCH 1/.test(devlog));
 check("DEVLOG batch 4 history", /REPAIR BATCH 4/.test(devlog));
 check("DEVLOG continuity section", /CONTINUITY \/ RECOVERY PACKAGE/.test(devlog));
+check("DEVLOG FINAL-01 section", /FINAL-01/.test(devlog));
 
 check(
   "handoff.acceptedFunctionalBaselineSha format",

@@ -151,6 +151,67 @@ describe("trusted client identity (Cloudflare)", () => {
   });
 });
 
+describe("trusted client identity (Vercel)", () => {
+  const VERCEL_A = "198.51.100.20";
+  const VERCEL_B = "198.51.100.21";
+
+  it("vercel uses x-real-ip and ignores first XFF", () => {
+    const ip = clientIpFromHeaders(
+      new Headers({
+        "x-real-ip": VERCEL_A,
+        "x-forwarded-for": "1.1.1.1, 10.0.0.1",
+        "cf-connecting-ip": CF_A,
+      }),
+      "vercel",
+    );
+    assert.equal(ip, VERCEL_A);
+  });
+
+  it("vercel falls back to x-vercel-forwarded-for", () => {
+    const ip = clientIpFromHeaders(
+      new Headers({
+        "x-vercel-forwarded-for": VERCEL_B,
+        "x-forwarded-for": "8.8.8.8",
+      }),
+      "vercel",
+    );
+    assert.equal(ip, VERCEL_B);
+  });
+
+  it("vercel missing identity is unknown, not XFF", () => {
+    const ip = clientIpFromHeaders(
+      new Headers({ "x-forwarded-for": "1.2.3.4", "cf-connecting-ip": CF_A }),
+      "vercel",
+    );
+    assert.equal(ip, UNKNOWN_IP);
+  });
+
+  it("auto + VERCEL=1 uses vercel identity (not CF, not XFF)", () => {
+    const env = { ...process.env, VERCEL: "1", RATE_LIMIT_TRUST: "auto" };
+    const ip = clientIpFromHeaders(
+      new Headers({
+        "x-real-ip": VERCEL_A,
+        "x-forwarded-for": "9.9.9.9",
+        "cf-connecting-ip": CF_A,
+      }),
+      "auto",
+      env,
+    );
+    assert.equal(ip, VERCEL_A);
+  });
+
+  it("auto without VERCEL still ignores proxy headers", () => {
+    const env = { ...process.env };
+    delete env.VERCEL;
+    const ip = clientIpFromHeaders(
+      new Headers({ "x-real-ip": VERCEL_A, "cf-connecting-ip": CF_A }),
+      "auto",
+      env,
+    );
+    assert.equal(ip, LOCAL_IP);
+  });
+});
+
 describe("HTTP rate limits", () => {
   const prevTrust = process.env.RATE_LIMIT_TRUST;
 

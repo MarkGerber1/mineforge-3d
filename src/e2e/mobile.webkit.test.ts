@@ -361,8 +361,15 @@ describe("QX-MFQ invalid 0.20 m is rejected", () => {
     try {
       await mf(page, "cad").waitFor();
       const dim = mf(page, "dim-east");
+      await dim.waitFor({ state: "visible", timeout: 10000 });
+      await page.waitForTimeout(200);
       await dim.click({ timeout: 8000 });
-      await mf(page, "dim-input").waitFor({ timeout: 8000 });
+      try {
+        await mf(page, "dim-input").waitFor({ timeout: 4000 });
+      } catch {
+        await dim.click({ force: true });
+        await mf(page, "dim-input").waitFor({ timeout: 8000 });
+      }
       const before = await storeEval(
         page,
         () => (window as unknown as { __MF_STORE__: { getState: () => { project: { room: { widthM: number } } } } }).__MF_STORE__.getState().project.room.widthM,

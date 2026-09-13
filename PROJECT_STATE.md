@@ -58,17 +58,23 @@ Demo seed: underground parking 8.000 × 5.000 × 2.8 m, 30 × BITMAIN S21 Pro, e
 - Video is **not** photogrammetry.
 - Real iOS Safari keyboard and physical device chrome are not proven (Playwright WebKit only).
 - Floor loading UNKNOWN unless the Owner enters it → SAFE confidence PRELIMINARY.
-- Application Edit is a **developer/owner** capability on a git worktree process, not a public multi-tenant editor.
+- Application Edit is a **developer/owner** capability on a git worktree process, not a public multi-tenant editor. Serverless (`GROK_PROJECT_ID`) forces it **off**.
 - Static GitHub Pages cannot run `/api/*`, Grok, or App Edit.
+- No public server-capable hostname is recorded until Owner publishes.
 
 ## Deferred final-release tasks
 
 ```
-PHYSICAL_IPHONE_SMOKE: DEFERRED_TO_FINAL_RELEASE
-PUBLIC_PRODUCTION_DEPLOYMENT: DEFERRED_TO_FINAL_RELEASE
+PHYSICAL_IPHONE_SMOKE: WAITING_FOR_OWNER
+PUBLIC_PRODUCTION_DEPLOYMENT: BLOCKED_OWNER_PUBLISH
 ```
 
-These are **not** functional Batch 1–4 blockers.
+FINAL-01 source freeze started at `fb471f5a09d3a0143c58d3362e8e0b982796ba49`.
+Live HEAD is `git rev-parse origin/main`. Public server-capable URL is empty
+until Owner publishes Grok Build (`*.grok.me`) or Vercel. GitHub Pages is a
+static demo only. Playwright WebKit is not physical iPhone.
+
+Evidence: `docs/FINAL-01.md`, `docs/final-01.json`, `docs/CANONICAL-RUNTIME.md`.
 
 ## Important historical SHAs
 

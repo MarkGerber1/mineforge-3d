@@ -93,22 +93,23 @@ Developer/owner capability on a **git worktree process**.
 3. Isolated branch/worktree → typecheck / tests / build → real SSR preview or **fail-closed**.
 4. PROMOTE copies an exact SHA; mismatch refuses. Rollback to stable SHA.
 
-Standard-user passphrase cannot mutate source. Forged roles ignored. Rate limits process-local (single-instance).
+Standard-user passphrase cannot mutate source. Forged roles ignored.
 
-On serverless / grok.me (`GROK_PROJECT_ID` set): keep App Edit **off** and say so in the UI.
+On serverless / grok.me / Vercel (`GROK_PROJECT_ID` set): App Edit is **forced off** even if the flag is true. UI must show APP EDIT DISABLED. Rate-limit identity is Vercel (`x-real-ip` / `x-vercel-forwarded-for`); Cloudflare headers are not trusted unless `RATE_LIMIT_TRUST=cloudflare`.
 
 ## Deployment boundary
 
-Two surfaces, one architecture:
+Three identities, do not conflate:
 
-| Surface | What it can do |
+| Identity | What it can do |
 |---|---|
-| **SERVER-CAPABLE PRODUCTION** | `/api/runtime`, Grok (`XAI_API_KEY`), App Edit, SSR. Not yet publicly deployed. |
-| **STATIC DEMO/PREVIEW** | GitHub Pages CAD snapshot. `GET /api/runtime` is not JSON → client **STATIC MODE**, AI OFFLINE, App Edit unavailable. |
+| **SOURCE** | GitHub protected `main` + required `gate` |
+| **PUBLIC LIVE** | Provider-owned HTTPS (`*.grok.me` / Vercel): `/api/runtime` JSON, Grok if `XAI_API_KEY`, App Edit honestly off. Empty until Owner publishes. |
+| **STATIC DEMO** | GitHub Pages CAD snapshot. `GET /api/runtime` is not JSON → client **STATIC MODE**. |
 
-Do **not** treat GitHub Pages as the final production environment.
+Workspace preview is not PUBLIC LIVE. Tunnels are not PUBLIC LIVE.
 
-Public hostname / Cloudflare Named Tunnel: **deferred**. `docs/CANONICAL-RUNTIME.md` describes the future topology; do not implement tunnels in this phase.
+See `docs/CANONICAL-RUNTIME.md` and `docs/FINAL-01.md`.
 
 ## Persistence
 
