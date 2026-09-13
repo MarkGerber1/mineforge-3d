@@ -375,3 +375,5 @@ test("SKILL.md tells the pass to self-check with the flag this CLI accepts", () 
     assert.equal(parseBrandCheckArgs(argv.filter(Boolean)).error, undefined, line);
   }
 });
+
+test("NEG-2 intentional failure", () => { assert.equal(1, 0); });
