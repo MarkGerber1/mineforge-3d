@@ -23,6 +23,7 @@
     "test:mobile": "node --experimental-strip-types --test --test-timeout=180000 --test-concurrency=1 src/e2e/*.test.ts",
     "scan:secrets": "node scripts/scan-client-secrets.mjs",
     "test:gate": "bash scripts/ci-gate.sh",
+    "recovery:verify": "node scripts/recovery-verify.mjs",
     "lint": "eslint .",
     "format": "prettier --write ."
   },
@@ -103,5 +104,8 @@
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.56.1",
     "vite": "^8.2.0"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

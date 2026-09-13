@@ -1,0 +1,91 @@
+{
+  "project": "MINEFORGE 3D",
+  "repository": "https://github.com/MarkGerber1/mineforge-3d",
+  "generatedAt": "2026-09-13T00:29:58Z",
+  "acceptedFunctionalBaselineSha": "635fd9e965ed8d9705c310b72b82dde2b81f837f",
+  "currentCandidateSha": "5f08b97b38000290bebfd44fad5d60ce67b9cd8f",
+  "requiredCiWorkflow": "batch1-gate",
+  "requiredStatusCheck": "gate",
+  "protectedBranch": "main",
+  "enforceAdmins": true,
+  "productUiLanguage": "ru",
+  "authEnabled": false,
+  "databaseEnabled": false,
+  "recoveryDocuments": [
+    "AI_HANDOFF.md",
+    "PROJECT_STATE.md",
+    "ARCHITECTURE.md",
+    "RECOVERY.md",
+    "README.md",
+    ".env.example",
+    "project-handoff.json"
+  ],
+  "envVarNames": [
+    "XAI_API_KEY",
+    "APP_EDIT_ENABLED",
+    "APP_EDIT_OWNER_SECRET",
+    "APP_EDIT_USER_SECRET",
+    "APP_EDIT_SESSION_SECRET",
+    "APP_EDIT_ROOT",
+    "MF_PREVIEW_HEALTH_MS",
+    "MF_DEPLOY_SHA",
+    "MF_BUILD_ID",
+    "RATE_LIMIT_TRUST",
+    "PRODUCTION_INSTANCE_MODEL",
+    "GROK_PROJECT_ID",
+    "GROK_GATE_ORIGIN",
+    "VITE_AUTH_ENABLED",
+    "VITE_PUBLIC_HOSTNAME",
+    "DATABASE_URL",
+    "PLAYWRIGHT_BASE_URL",
+    "MF_LIVE_URL",
+    "WEBKIT_GST_DMABUF_SINK_DISABLED",
+    "WEBKIT_GST_DMABUF_SINK_FORCED_FALLBACK_CAPS_FORMAT",
+    "LIBGL_ALWAYS_SOFTWARE",
+    "GST_GL_DISABLED",
+    "BROWSER_ALLOW_EXTERNAL_HOST",
+    "PREVIEW_READY_TIMEOUT_MS",
+    "CLOUDFLARE_TUNNEL_TOKEN",
+    "CANONICAL_FULLSTACK_URL"
+  ],
+  "testCommands": {
+    "recoveryVerify": "npm run recovery:verify",
+    "typecheck": "npm run typecheck",
+    "allDeterministic": "npm test",
+    "oracle": "npm run test:oracle",
+    "security": "npm run test:security",
+    "isolation": "npm run test:isolation",
+    "mobileWebkit": "npm run test:mobile",
+    "secrets": "npm run scan:secrets",
+    "fullGate": "npm run test:gate"
+  },
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
+  "installCommand": "npm ci --legacy-peer-deps",
+  "engines": {
+    "node": ">=22"
+  },
+  "deferred": {
+    "PHYSICAL_IPHONE_SMOKE": "DEFERRED_TO_FINAL_RELEASE",
+    "PUBLIC_PRODUCTION_DEPLOYMENT": "DEFERRED_TO_FINAL_RELEASE"
+  },
+  "knownLimitations": [
+    "rectangular rooms only",
+    "video is not photogrammetry and not centimetre-accurate",
+    "Playwright WebKit is not physical iPhone Safari",
+    "real iOS keyboard not proven",
+    "fan curves besides fixtures are ESTIMATED",
+    "thermal X-Ray is not CFD",
+    "GitHub Pages is static demo, not server-capable production",
+    "floor loading UNKNOWN unless entered"
+  ],
+  "nextRecommendedPhase": "FINAL PRODUCT ACCEPTANCE + PHYSICAL IPHONE SMOKE + SIMPLE SERVER-CAPABLE PUBLIC RELEASE",
+  "doNotStartNextPhaseInThisPackage": true,
+  "negativePrsKeepOpen": [
+    1,
+    2,
+    3,
+    4,
+    5
+  ]
+}

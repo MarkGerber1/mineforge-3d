@@ -92,4 +92,12 @@ Extraction now play-through-samples a visible element, then falls back to
 WebCodecs VP8 on the same genuine bitstream. DMABuf is disabled in the gate
 so decoded samples stay CPU-readable. Still no synthetic frames.
 
+Oracle **87** tests pass (`# tests 87` / 85 suites), including VIDEO-13 VP8 demux.
 
+## CONTINUITY / RECOVERY PACKAGE
+
+GitHub is the durable source of truth for non-secret source. Read
+`AI_HANDOFF.md` first. Recovery: `RECOVERY.md`. Machine metadata:
+`project-handoff.json`. Functional Batches 1–4 remain accepted at
+`635fd9e965ed8d9705c310b72b82dde2b81f837f`. This package does not add product
+features and does not start public deployment or physical iPhone smoke.
