@@ -124,3 +124,22 @@ protected main). Branch `repair/qx-01-owner-experience`.
 Does not change Engineering Core formulas, Reality ADD confirmation, App Edit
 security, or video pipeline. Does not start Final Product Acceptance, physical
 iPhone, public deploy, tunnels, or domains.
+
+## FINAL-01 — production policy + public-release freeze
+
+Starting SHA `fb471f5a09d3a0143c58d3362e8e0b982796ba49` (QX-01 on protected
+main). Branch `release/final-01-production-policy`.
+
+- Freeze verified: `origin/main` was `fb471f5`; baseline `635fd9e` is an ancestor.
+- Post-merge CI on freeze SHA: run `34736024732` success.
+- Serverless (`GROK_PROJECT_ID`): Application Edit forced off; snapshot
+  `instanceModel=multi-instance`; `RATE_LIMIT_TRUST=auto` + `VERCEL=1` uses
+  Vercel identity, never spoofable CF / first XFF.
+- Workspace preview (no `GROK_PROJECT_ID`) keeps the existing owner-session
+  git-worktree App Edit contract.
+- GitHub Pages remains static CAD demo. Tunnels are not production.
+- Public server-capable URL is empty until Owner publishes Grok Build
+  (`*.grok.me`) or Vercel. Physical iPhone is WAITING_FOR_OWNER.
+- Evidence: `docs/FINAL-01.md`, `docs/final-01.json`. Does not declare FINAL
+  PASSED. Does not reopen MFQ-001…006.
+

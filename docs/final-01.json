@@ -1,0 +1,36 @@
+{
+  "phase": "FINAL-01",
+  "repository": "https://github.com/MarkGerber1/mineforge-3d",
+  "startingMainSha": "fb471f5a09d3a0143c58d3362e8e0b982796ba49",
+  "acceptedFunctionalBaselineSha": "635fd9e965ed8d9705c310b72b82dde2b81f837f",
+  "currentStateResolution": {
+    "source": "git",
+    "commands": ["git fetch origin", "git rev-parse origin/main"]
+  },
+  "requiredCiWorkflow": "batch1-gate",
+  "requiredStatusCheck": "gate",
+  "startingShaPostMergeCi": {
+    "runId": 34736024732,
+    "url": "https://github.com/MarkGerber1/mineforge-3d/actions/runs/34736024732",
+    "headSha": "fb471f5a09d3a0143c58d3362e8e0b982796ba49",
+    "conclusion": "success"
+  },
+  "publicProduction": {
+    "url": "",
+    "kind": "none",
+    "reason": "owner-publish-required",
+    "acceptableProviders": ["grok.me", "vercel"],
+    "notSufficient": ["github-pages", "tunnels", "workers.dev", "workspace-preview"],
+    "githubPagesDemo": "https://markgerber1.github.io/mineforge-3d/"
+  },
+  "serverCapabilities": {
+    "runtimePath": "/api/runtime",
+    "appEditOnServerless": "forced-off",
+    "rateLimitTrustAutoOnVercel": "vercel",
+    "rateLimitTrustAutoOtherwise": "local",
+    "cloudflareHeadersTrustedOnlyWhen": "RATE_LIMIT_TRUST=cloudflare"
+  },
+  "physicalIPhone": "WAITING_FOR_OWNER",
+  "playwrightWebkitSubstitutesPhysicalIPhone": false,
+  "implementationAiDeclaresFinalPassed": false
+}

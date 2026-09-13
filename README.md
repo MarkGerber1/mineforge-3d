@@ -31,14 +31,18 @@ npm run dev
 
 CAD, Twin, Reality and SAFE work without an API key. Grok needs `XAI_API_KEY` (server-only).
 
-## Deferred
+## Public surfaces
+
+- Source: https://github.com/MarkGerber1/mineforge-3d
+- Static CAD demo (not full production): https://markgerber1.github.io/mineforge-3d/
+- Server-capable production (`/api/runtime`, Grok): **not published yet** — Owner Publish in Grok Build or Vercel.
 
 ```
-PHYSICAL_IPHONE_SMOKE: DEFERRED_TO_FINAL_RELEASE
-PUBLIC_PRODUCTION_DEPLOYMENT: DEFERRED_TO_FINAL_RELEASE
+PHYSICAL_IPHONE_SMOKE: WAITING_FOR_OWNER
+PUBLIC_PRODUCTION_DEPLOYMENT: BLOCKED_OWNER_PUBLISH
 ```
 
-Do not configure domains, Cloudflare, or tunnels unless the Owner changes that policy.
+Do not configure tunnels or custom domains unless the Owner changes that policy.
 
 ## Batch evidence
 

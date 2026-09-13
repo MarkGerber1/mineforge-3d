@@ -93,11 +93,17 @@ export function validClientIp(raw: string | undefined | null): string | undefine
   return isIP(s) ? s : undefined;
 }
 
-function resolveTrust(mode: TrustMode): TrustMode {
+function isVercelRuntime(env: NodeJS.ProcessEnv): boolean {
+  const v = (env.VERCEL ?? "").trim().toLowerCase();
+  return v === "1" || v === "true";
+}
+
+function resolveTrust(mode: TrustMode, env: NodeJS.ProcessEnv = process.env): TrustMode {
   if (mode === "auto") {
     // Presence of CF-RAY / CF-Connecting-IP is spoofable when the process is
-    // not actually behind Cloudflare. Auto therefore does not trust proxy
-    // headers. Production sets RATE_LIMIT_TRUST=cloudflare|vercel.
+    // not actually behind Cloudflare. Auto therefore does not trust CF headers.
+    // Vercel sets VERCEL=1 on the real platform — that is not a client header.
+    if (isVercelRuntime(env)) return "vercel";
     return "local";
   }
   return mode;
@@ -109,14 +115,16 @@ function resolveTrust(mode: TrustMode): TrustMode {
  * cloudflare: CF-Connecting-IP only (validated). X-Forwarded-For / X-Real-IP ignored.
  * vercel: x-real-ip or x-vercel-forwarded-for. First XFF hop ignored.
  * test: x-mf-test-ip only (isolation tests).
- * local / auto: ignore all client-supplied proxy headers → "local".
+ * local: ignore all client-supplied proxy headers → "local".
+ * auto: VERCEL=1 → vercel identity; otherwise local. Never trusts spoofable CF headers.
  * Missing/invalid identity → bounded "unknown" bucket (fail-safe, not attacker-defined).
  */
 export function clientIpFromHeaders(
   headers: Headers | Record<string, string | undefined> | undefined,
   mode?: TrustMode,
+  env: NodeJS.ProcessEnv = process.env,
 ): string {
-  const trust = resolveTrust(mode ?? rateLimitTrustMode());
+  const trust = resolveTrust(mode ?? rateLimitTrustMode(env), env);
   if (!headers) {
     return trust === "local" ? LOCAL_IP : UNKNOWN_IP;
   }

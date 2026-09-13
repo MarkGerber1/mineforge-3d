@@ -12,6 +12,8 @@ import {
   signSession,
   sessionSecret,
   PRIV_COOKIE,
+  runtimeSnapshot,
+  advertisedInstanceModel,
 } from "./privilege.server.ts";
 import { handleAppEditHttp } from "./http.server.ts";
 
@@ -59,6 +61,13 @@ describe("AC flag deny-by-default", () => {
   it("true enables", () => {
     assert.equal(isAppEditEnabled({ APP_EDIT_ENABLED: "true" }), true);
   });
+  it("GROK_PROJECT_ID forces off even if APP_EDIT_ENABLED=true", () => {
+    assert.equal(
+      isAppEditEnabled({ APP_EDIT_ENABLED: "true", GROK_PROJECT_ID: "01a08ee5-test" }),
+      false,
+    );
+    assert.equal(isAppEditEnabled({ APP_EDIT_ENABLED: "1", GROK_PROJECT_ID: "x" }), false);
+  });
 });
 
 describe("AC-1..AC-8 authorizeMutation", { concurrency: 1 }, () => {
@@ -96,6 +105,17 @@ describe("AC-1..AC-8 authorizeMutation", { concurrency: 1 }, () => {
     const g = authorizeMutation("rollback_stable", { cookie, env: e });
     assert.equal(g.ok, false);
     if (!g.ok) assert.equal(g.status, 403);
+  });
+  it("GROK_PROJECT_ID blocks owner mutation (APP_EDIT_DISABLED)", () => {
+    const e = env({ APP_EDIT_ENABLED: "true", GROK_PROJECT_ID: "published-app" });
+    const secret = sessionSecret(e)!;
+    const cookie = signSession({ sub: "owner", role: "owner" }, secret);
+    const g = authorizeMutation("write_source", { cookie, env: e });
+    assert.equal(g.ok, false);
+    if (!g.ok) {
+      assert.equal(g.status, 403);
+      assert.equal(g.code, "APP_EDIT_DISABLED");
+    }
   });
 });
 
@@ -239,5 +259,42 @@ describe("HTTP privileged endpoints", { concurrency: 1 }, () => {
     assert.match(await branches(dir), /ai-edit\/ac6http/);
     const stableFile = await readFile(join(dir, "src/components/Panel.tsx"), "utf8");
     assert.equal(stableFile.includes("owner-ok"), false);
+  });
+});
+
+describe("FINAL-01 serverless production policy", () => {
+  it("workspace snapshot stays single-instance when App Edit is on", () => {
+    const snap = runtimeSnapshot({ env: env() });
+    assert.equal(snap.mode, "server");
+    assert.equal(snap.appEditEnabled, true);
+    assert.equal(snap.instanceModel, "single-instance");
+  });
+
+  it("GROK_PROJECT_ID snapshot: App Edit off, multi-instance", () => {
+    const snap = runtimeSnapshot({
+      env: env({ GROK_PROJECT_ID: "01a08ee5-published", APP_EDIT_ENABLED: "true", VERCEL: "1" }),
+    });
+    assert.equal(snap.appEditEnabled, false);
+    assert.equal(snap.instanceModel, "multi-instance");
+    assert.equal(snap.mode, "server");
+  });
+
+  it("explicit PRODUCTION_INSTANCE_MODEL wins over VERCEL", () => {
+    assert.equal(
+      advertisedInstanceModel({ VERCEL: "1", PRODUCTION_INSTANCE_MODEL: "single-instance" }),
+      "single-instance",
+    );
+    assert.equal(advertisedInstanceModel({ VERCEL: "1" }), "multi-instance");
+    assert.equal(advertisedInstanceModel({ GROK_PROJECT_ID: "x" }), "multi-instance");
+    assert.equal(advertisedInstanceModel({}), "single-instance");
+  });
+
+  it("login is 403 APP_EDIT_DISABLED when GROK_PROJECT_ID is set", () => {
+    const gate = loginWithPassphrase("owner-secret-test", env({ GROK_PROJECT_ID: "published" }));
+    assert.equal(gate.ok, false);
+    if (!gate.ok) {
+      assert.equal(gate.status, 403);
+      assert.equal(gate.code, "APP_EDIT_DISABLED");
+    }
   });
 });

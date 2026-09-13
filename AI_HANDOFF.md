@@ -48,14 +48,16 @@ Machine-readable copy: [project-handoff.json](project-handoff.json).
 
 Owner operates the CAD product. GitHub/CI/runtime internals stay off the product HUD.
 
-## What remains (final-release only)
+## What remains (FINAL-01)
 
-- `PHYSICAL_IPHONE_SMOKE: DEFERRED_TO_FINAL_RELEASE`
-- `PUBLIC_PRODUCTION_DEPLOYMENT: DEFERRED_TO_FINAL_RELEASE`
+- `PHYSICAL_IPHONE_SMOKE: WAITING_FOR_OWNER` — Owner Safari against the public URL. Playwright WebKit is not this field.
+- `PUBLIC_PRODUCTION_DEPLOYMENT: BLOCKED_OWNER_PUBLISH` — need a provider-owned HTTPS host with `/api/runtime` JSON. GitHub Pages is static demo only. Tunnels forbidden.
 
-Next legitimate phase (do not start unless Owner asks):
+Owner action required to mint the public URL: **Publish** in Grok Build (`*.grok.me`) or authorize Vercel at the exact accepted `main` SHA. Then send the URL.
 
-**FINAL PRODUCT ACCEPTANCE + PHYSICAL IPHONE SMOKE + SIMPLE SERVER-CAPABLE PUBLIC RELEASE**
+Do not reopen MFQ-001…MFQ-006 unless a real regression appears.
+
+Evidence: [docs/FINAL-01.md](docs/FINAL-01.md).
 
 ## How to start work
 
