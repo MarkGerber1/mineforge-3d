@@ -72,8 +72,13 @@ service-aisle racks are not usable capacity. Intake is a required ventilation
 input. Invalid openings cannot satisfy exhaust/intake. HUD is VERIFIED /
 PRELIMINARY / INCOMPLETE / CRITICAL / OVER_CAPACITY — green only when
 verified. Power, height, and rack asicCount mutations fail closed. Dirty-filter
-Pa is applied once. Do not start QX-02C. Do not reopen QX-01 / QX-02A /
-FINAL-SEC.
+Pa is applied once.
+
+QX-02B-R: one canonical numeric domain validator on every ingress (APPLY,
+commit, load, import). VERIFIED Physical Space is demonstrably feasible
+packing, not a body-only cell. Facing aisle requires intake faces to look at
+each other in space. Every safety-relevant CRITICAL warning blocks VERIFIED.
+Do not start QX-02C. Do not reopen QX-01 / QX-02A / FINAL-SEC.
 
 Evidence: [docs/FINAL-01.md](docs/FINAL-01.md).
 

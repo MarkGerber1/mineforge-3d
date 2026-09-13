@@ -26,9 +26,11 @@ export function Workspace() {
   const safetyTone = verifiedGreen ? "text-ok" : safety === "OVER_CAPACITY" || safety === "PRELIMINARY" ? "text-warn" : "text-crit";
 
   useEffect(() => {
-    void loadLastProject().then((p) => {
-      if (p) store.loadProject(p, false);
-    });
+    void loadLastProject()
+      .then((p) => {
+        if (p) store.loadProject(p, false);
+      })
+      .catch(() => undefined);
     const onKey = (e: KeyboardEvent) => {
       const meta = e.metaKey || e.ctrlKey;
       if (meta && e.key.toLowerCase() === "z") {

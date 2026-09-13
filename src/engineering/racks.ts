@@ -118,9 +118,10 @@ export function serviceAabb(r: Rack, front: number, rear: number) {
 }
 
 /**
- * Clear gap between intake faces of two opposing racks that look at each other
- * (projections overlap on the perpendicular axis). Null if they do not face.
- * Exact minAisleM is accepted (>=). Negative gap means faces have crossed.
+ * Clear gap between intake faces of two opposing racks that look at each other.
+ * Returns null unless airflow is opposing, perpendicular projections overlap,
+ * AND spatial order means the intake faces actually face each other.
+ * Exact minAisleM is accepted (>=). Looking-away pairs are not a facing aisle.
  */
 export function facingAisleGapM(a: Rack, b: Rack): number | null {
   if (oppositeToward(a.airflowToward) !== b.airflowToward) return null;
@@ -130,19 +131,23 @@ export function facingAisleGapM(a: Rack, b: Rack): number | null {
   if (axis === "y") {
     const ox = Math.min(aa.x2, bb.x2) - Math.max(aa.x1, bb.x1);
     if (ox <= 1e-9) return null;
-    const aFront = a.airflowToward === "north" ? aa.y2 : aa.y1;
-    const bFront = b.airflowToward === "north" ? bb.y2 : bb.y1;
-    const southFront = a.airflowToward === "north" ? aFront : bFront;
-    const northFront = a.airflowToward === "north" ? bFront : aFront;
-    return northFront - southFront;
+    const northFacing = a.airflowToward === "north" ? a : b;
+    const southFacing = a.airflowToward === "south" ? a : b;
+    const nf = northFacing === a ? aa : bb;
+    const sf = southFacing === a ? aa : bb;
+    // Intake faces look at each other only if the north-facing rack is physically south.
+    if (nf.y2 > sf.y1 + 1e-9) return null;
+    return sf.y1 - nf.y2;
   }
   const oy = Math.min(aa.y2, bb.y2) - Math.max(aa.y1, bb.y1);
   if (oy <= 1e-9) return null;
-  const aFront = a.airflowToward === "east" ? aa.x2 : aa.x1;
-  const bFront = b.airflowToward === "east" ? bb.x2 : bb.x1;
-  const westFront = a.airflowToward === "east" ? aFront : bFront;
-  const eastFront = a.airflowToward === "east" ? bFront : aFront;
-  return eastFront - westFront;
+  const eastFacing = a.airflowToward === "east" ? a : b;
+  const westFacing = a.airflowToward === "west" ? a : b;
+  const ef = eastFacing === a ? aa : bb;
+  const wf = westFacing === a ? aa : bb;
+  // East-facing rack must sit physically west of the west-facing rack.
+  if (ef.x2 > wf.x1 + 1e-9) return null;
+  return wf.x1 - ef.x2;
 }
 
 export function analyzeRacks(project: Project, asic: AsicSpec | null) {

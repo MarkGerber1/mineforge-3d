@@ -1461,8 +1461,18 @@ describe("QX-02B HUD + numeric fail-closed", () => {
         } } }).__MF_STORE__.getState();
         s.setFleet(s.project.fleet.asicId, 10000);
       });
-      await waitHudSafety(page, "mobile", "OVER_CAPACITY");
+      await page.waitForFunction(
+        () => {
+          const s = document
+            .querySelector('[data-mf-id="hud-safe"][data-mf-hud="mobile"]')
+            ?.getAttribute("data-mf-safety");
+          return s === "OVER_CAPACITY" || s === "CRITICAL";
+        },
+        null,
+        { timeout: 8000 },
+      );
       assert.equal(await hudMobile(page).getAttribute("data-mf-verified"), "0");
+      assert.notEqual(await hudMobile(page).getAttribute("data-mf-safety"), "VERIFIED");
     } finally {
       await ctx.close();
     }
