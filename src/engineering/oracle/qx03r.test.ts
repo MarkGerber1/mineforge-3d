@@ -13,6 +13,7 @@ import {
   photoIntentToCanonical,
   reconcileLinkedReality,
 } from "../photo-reconcile.ts";
+import { defaultWallRegistration } from "../photo-registration.ts";
 import { clientToPhotoNorm, photoContentBox } from "../photo-frame.ts";
 import { geometryFingerprint } from "../reality.ts";
 
@@ -30,15 +31,16 @@ function calibratedPhoto(id = "ph1"): RealityPhotoMeta {
     createdAt: 1,
     notes: "",
     wallHint: "south",
-    widthPx: 1000,
-    heightPx: 800,
+    widthPx: 800,
+    heightPx: 280,
     calibration: {
       scaleMPerPx: 0.01,
-      lengthM: 10,
+      lengthM: 8,
       aId: "a",
       bId: "b",
       provenance: "FIELD_MEASUREMENT",
     },
+    wallRegistration: defaultWallRegistration("south"),
     markers: [
       { id: "a", nx: 0.1, ny: 0.5, kind: "point", label: "A", pairId: "b" },
       { id: "b", nx: 0.9, ny: 0.5, kind: "point", label: "B", pairId: "a", lengthM: 8 },

@@ -12,7 +12,7 @@ import { SNAP_MODES_M, type SnapMode } from "../engineering/constants.ts";
 import { nid, undergroundParkingFarm } from "./factory.ts";
 import { applyFailure, type FailureKind } from "../ai/failure.ts";
 import type { GrokScope } from "../ai/intent.ts";
-import { emptyReality, type AsBuiltObject, type PhotoMarker, type PhotoMarkerKind, type PhotoOverlayKind, type PhotoOverlayObject, type RealityFinding, type RealityPhotoMeta, type RealityVideoMeta, type VideoErrorCode } from "../engineering/types.ts";
+import { emptyReality, type AsBuiltObject, type PhotoMarker, type PhotoMarkerKind, type PhotoOverlayKind, type PhotoOverlayObject, type PhotoWallRegistration, type RealityFinding, type RealityPhotoMeta, type RealityVideoMeta, type VideoErrorCode } from "../engineering/types.ts";
 import { applyFinding, attachVideoFrames, recordAnnotation } from "../engineering/reality.ts";
 import { applyPhotoOverlays, createPhotoOverlay } from "../engineering/photo-overlay.ts";
 import {
@@ -21,6 +21,7 @@ import {
   photoIntentToCanonical,
   reconcileLinkedReality,
 } from "../engineering/photo-reconcile.ts";
+import { lockedDeletionTargets, OBJECT_LOCKED_RU } from "../engineering/object-lock.ts";
 import { reassignOpeningWall } from "../engineering/wall-reassign.ts";
 import type { RuntimeSnapshot } from "../ai/runtime-client.ts";
 import { validateRoomHeightM, validateRoomLengthM } from "../engineering/room-resize.ts";
@@ -31,7 +32,7 @@ import { validateRackPlacement, validateRacksConfiguration } from "../engineerin
 import { saveScheduler, type PersistState } from "./save-scheduler.ts";
 
 export type CadTool = "select" | "pan" | "measure" | "door" | "intake" | "exhaust" | "rack" | "fan";
-export type PhotoTool = "calibrate" | "select" | PhotoOverlayKind;
+export type PhotoTool = "calibrate" | "select" | "register" | PhotoOverlayKind;
 export type SheetState = "closed" | "half" | "full";
 export type SheetTab = "props" | "why" | "grok" | "reality" | "app";
 
@@ -203,6 +204,10 @@ interface ProjectStore {
   addPhotoMeta(meta: NonNullable<Project["reality"]>["photos"][number]): void;
   addPhotoMarker(photoId: string, marker: NonNullable<Project["reality"]>["photos"][number]["markers"][number]): void;
   setPhotoWallHint(photoId: string, wall: WallId | undefined): void;
+  setPhotoWallRegistration(
+    photoId: string,
+    registration: PhotoWallRegistration | undefined,
+  ): { ok: boolean; reason?: string };
   annotatePhoto(photoId: string, a: PhotoMarker, b: PhotoMarker, opts: { knownLengthM?: number; kind: PhotoMarkerKind }): void;
   addPhotoOverlay(photoId: string, kind: PhotoOverlayKind, nx: number, ny: number): { ok: boolean; overlay?: PhotoOverlayObject; reason?: string };
   updatePhotoOverlay(photoId: string, overlayId: string, patch: Partial<PhotoOverlayObject>): { ok: boolean; reason?: string };
@@ -480,9 +485,14 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     const src = get().project;
     const ids = new Set(get().selectedIds);
     if (!ids.size) return { ok: false, errors: ["Ничего не выбрано."] };
+    const blocked = lockedDeletionTargets(src, ids);
+    if (blocked.length) {
+      set({ lastMutationError: OBJECT_LOCKED_RU });
+      return { ok: false, errors: [OBJECT_LOCKED_RU] };
+    }
     const next = {
       ...src,
-      openings: src.openings.filter((o) => !ids.has(o.id) || o.locked),
+      openings: src.openings.filter((o) => !ids.has(o.id)),
       racks: src.racks.filter((r) => !ids.has(r.id)),
       fans: src.fans.filter((f) => !ids.has(f.id)),
       reality: src.reality
@@ -891,11 +901,59 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         ...src,
         reality: {
           ...reality,
-          photos: reality.photos.map((p) => (p.id === photoId ? { ...p, wallHint: wall } : p)),
+          photos: reality.photos.map((p) =>
+            p.id === photoId
+              ? {
+                  ...p,
+                  wallHint: wall,
+                  wallRegistration:
+                    p.wallRegistration && wall && p.wallRegistration.wallId !== wall ? undefined : p.wallRegistration,
+                }
+              : p,
+          ),
         },
       },
       wall ? `Стена фото: ${wall}` : "Стена фото сброшена",
     );
+  },
+  setPhotoWallRegistration(photoId, registration) {
+    const src = get().project;
+    const reality = src.reality ?? emptyReality();
+    const photo = reality.photos.find((p) => p.id === photoId);
+    if (!photo) return { ok: false, reason: "Фото не найдено." };
+    if (registration) {
+      if (registration.hDirection !== 1 && registration.hDirection !== -1) {
+        return { ok: false, reason: "Направление привязки не задано." };
+      }
+      if (registration.vDirection !== 1 && registration.vDirection !== -1) {
+        return { ok: false, reason: "Вертикальное направление привязки не задано." };
+      }
+      if (!Number.isFinite(registration.anchorNx) || !Number.isFinite(registration.anchorNy)) {
+        return { ok: false, reason: "Точка привязки не задана." };
+      }
+      if (!Number.isFinite(registration.wallOffsetM) || !Number.isFinite(registration.elevationM)) {
+        return { ok: false, reason: "Введите расстояние от начала стены и высоту точки." };
+      }
+    }
+    get().commit(
+      {
+        ...src,
+        reality: {
+          ...reality,
+          photos: reality.photos.map((p) =>
+            p.id === photoId
+              ? {
+                  ...p,
+                  wallHint: registration?.wallId ?? p.wallHint,
+                  wallRegistration: registration,
+                }
+              : p,
+          ),
+        },
+      },
+      registration ? "Привязка фото к стене" : "Привязка фото сброшена",
+    );
+    return { ok: true };
   },
   annotatePhoto(photoId, a, b, opts) {
     const src = get().project;
@@ -980,8 +1038,12 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       set({ selectedIds: get().selectedIds.filter((id) => id !== overlayId) });
       return { ok: true };
     }
-    const next = deleteCanonicalByOverlay(src, overlay);
-    const ok = get().commit(next, "Фото: удалить из модели");
+    const r = deleteCanonicalByOverlay(src, overlay);
+    if (!r.ok) {
+      set({ lastMutationError: r.errors[0] ?? OBJECT_LOCKED_RU });
+      return { ok: false, reason: r.errors[0] ?? OBJECT_LOCKED_RU, errors: r.errors };
+    }
+    const ok = get().commit(r.project, "Фото: удалить из модели");
     if (!ok) return { ok: false, reason: get().lastMutationError ?? "Удаление отклонено.", errors: [get().lastMutationError ?? ""] };
     set({ selectedIds: [] });
     return { ok: true };

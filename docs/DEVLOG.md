@@ -369,3 +369,27 @@ deploy NOT performed. FINAL PASSED is NOT declared.
 
 Does not start QX-02C. Does not publish. Does not declare FINAL PASSED.
 
+## QX-03R2 — PHOTO WALL REGISTRATION + FAIL-CLOSED PLACEMENT + LOCKED DELETE + CANVAS 3D E2E
+
+Starting SHA `be963d1af5f7af2886478ae1476ad63f45fce345`. Branch
+`repair/qx-03r2-photo-registration`.
+
+- R7: A–B remains SCALE only. Explicit `PhotoWallRegistration` maps
+  photo nx/ny → wall offset / elevation. Cropped and reversed photos
+  are first-class. Scale-only photos may measure size; they MUST NOT
+  invent absolute wall offset. Owner UX: МАСШТАБ / ПРИВЯЗКА К СТЕНЕ.
+- R8: first APPLY of an Opening uses the raw registered offset.
+  Out-of-wall → REJECT, no Math.min/max silent clamp.
+- R9: one lock policy (`isCanonicalLocked` / `lockedObjectIds` /
+  `opening.locked` / `rack.locked`). «Удалить из модели» on a locked
+  object returns ok=false, overlay and link unchanged, no history row.
+  Same rule for 2D / 3D / AI patch.
+- R10: WebKit E2E drives the rendered 3D canvas with real pointer
+  events. Read-only `__MF_TWIN_SCREEN__` projection hook. Store
+  mutators are not called in the action phase.
+
+Photogrammetry is NOT implemented. Physical iPhone NOT performed. Public
+deploy NOT performed. FINAL PASSED is NOT declared.
+
+Does not start QX-02C. Does not publish. Does not declare FINAL PASSED.
+

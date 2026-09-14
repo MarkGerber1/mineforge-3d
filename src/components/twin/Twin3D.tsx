@@ -1,12 +1,55 @@
-import { Canvas } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Grid, OrbitControls, PerspectiveCamera } from "@react-three/drei";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ThreeEvent } from "@react-three/fiber";
-import { DoubleSide, type Ray } from "three";
+import { DoubleSide, Vector3, type Ray } from "three";
 import { useLiveProject, useLiveResult, useProjectStore } from "@/project/store";
 import { openingWorldRect, rackAabb } from "@/engineering/geometry";
 import { panelWorldBox, segmentAllWalls } from "@/engineering/apertures";
 import type { Project, WallId } from "@/engineering/types";
+
+function orbitLocked(): boolean {
+  if (typeof window === "undefined") return false;
+  return Boolean((window as unknown as { __MF_TWIN_LOCK_ORBIT__?: boolean }).__MF_TWIN_LOCK_ORBIT__);
+}
+
+type TwinScreenMap = {
+  ready: boolean;
+  objects: Record<string, { x: number; y: number; visible: boolean }>;
+};
+
+/** READ-ONLY projection hook for E2E. Does not mutate Project. */
+function TwinScreenProbe({ project }: { project: Project }) {
+  const { camera, gl } = useThree();
+  const v = useMemo(() => new Vector3(), []);
+  useFrame(() => {
+    if (typeof window === "undefined") return;
+    const rect = gl.domElement.getBoundingClientRect();
+    const objects: TwinScreenMap["objects"] = {};
+    const put = (id: string, x: number, y: number, z: number) => {
+      v.set(x, y, z).project(camera);
+      const sx = rect.left + (v.x * 0.5 + 0.5) * rect.width;
+      const sy = rect.top + (-v.y * 0.5 + 0.5) * rect.height;
+      objects[id] = { x: sx, y: sy, visible: v.z >= -1 && v.z <= 1 };
+    };
+    for (const r of project.racks) {
+      const bb = rackAabb(r);
+      put(r.id, (bb.x1 + bb.x2) / 2, r.heightM / 2, (bb.y1 + bb.y2) / 2);
+    }
+    for (const f of project.fans) {
+      put(f.id, f.x + 0.4, 0.4, f.y + 0.4);
+    }
+    for (const o of project.openings) {
+      const wr = openingWorldRect(project, o);
+      put(o.id, (wr.x1 + wr.x2) / 2, (wr.z1 + wr.z2) / 2, (wr.y1 + wr.y2) / 2);
+    }
+    (window as unknown as { __MF_TWIN_SCREEN__: TwinScreenMap }).__MF_TWIN_SCREEN__ = {
+      ready: Object.keys(objects).length > 0,
+      objects,
+    };
+  });
+  return null;
+}
 
 function floorFromRay(ray: Ray): { x: number; z: number } | null {
   if (Math.abs(ray.direction.y) < 1e-8) return null;
@@ -126,7 +169,7 @@ function Openings({
             }}
             onPointerDown={(e: ThreeEvent<PointerEvent>) => {
               e.stopPropagation();
-              selectObject(o.id);
+              useProjectStore.getState().select([o.id]);
               const hit = floorFromRay(e.ray);
               const along = hit ? alongOf(hit, o.wallId) : o.offsetFromWallStartM;
               onDragStart({ kind: "opening", id: o.id, grabAlong: along, startOff: o.offsetFromWallStartM, wall: o.wallId }, e);
@@ -195,7 +238,7 @@ function Racks({
               }}
               onPointerDown={(e: ThreeEvent<PointerEvent>) => {
                 e.stopPropagation();
-                selectObject(r.id);
+                useProjectStore.getState().select([r.id]);
                 const hit = floorFromRay(e.ray);
                 onDragStart(
                   {
@@ -296,7 +339,7 @@ function Fans({
             }}
             onPointerDown={(e: ThreeEvent<PointerEvent>) => {
               e.stopPropagation();
-              selectObject(f.id);
+              useProjectStore.getState().select([f.id]);
               const hit = floorFromRay(e.ray);
               onDragStart(
                 {
@@ -504,14 +547,22 @@ export function Twin3D() {
 
   return (
     <div className="relative h-full w-full bg-bg" data-mf-id="twin" style={{ touchAction: "none" }}>
-      <Canvas shadows dpr={[1, 1.5]} gl={{ antialias: true, powerPreference: "high-performance" }} onPointerMissed={() => store.select([])}>
+      <Canvas
+        shadows
+        dpr={[1, 1.5]}
+        gl={{ antialias: true, powerPreference: "high-performance" }}
+        onPointerMissed={() => store.select([])}
+        onCreated={({ gl }) => {
+          gl.domElement.setAttribute("data-mf-id", "twin-canvas");
+        }}
+      >
         <color attach="background" args={["#0b0d10"]} />
         <ambientLight intensity={0.7} />
         <directionalLight position={[10, 14, 8]} intensity={1.35} castShadow />
         <PerspectiveCamera makeDefault position={camPos} fov={42} />
         <OrbitControls
           makeDefault
-          enabled={!dragging}
+          enabled={!dragging && !orbitLocked()}
           target={[project.room.widthM / 2, project.room.heightM * 0.45, project.room.depthM / 2]}
           enableDamping
         />
@@ -527,6 +578,7 @@ export function Twin3D() {
           fadeDistance={40}
         />
         <DragScene project={project} dragRef={dragRef} dragging={dragging} setDragging={setDragging} />
+        <TwinScreenProbe project={project} />
         {(project.reality?.asBuilt ?? []).map((obj) => {
           const mode = project.reality?.compareMode ?? "as-designed";
           if (mode === "as-designed") return null;
