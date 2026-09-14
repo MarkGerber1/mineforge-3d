@@ -4,9 +4,10 @@
  */
 import { TEST_RACK_A } from "../project/factory.ts";
 import { FAN_STRONG } from "../equipment/fan-catalog.ts";
-import { validateOpening, wallLength } from "./geometry.ts";
+import { aabbInside, fanIsSpatiallyValid, roomAabb, validateOpening } from "./geometry.ts";
 import { validateRackPlacement } from "./placement.ts";
-import { alongWallM, photoCalibration, photoSize } from "./reality.ts";
+import { photoCalibration, photoSize } from "./reality.ts";
+import { resolveOverlayElevation, resolveOverlayWallOffset } from "./photo-registration.ts";
 import type {
   AsBuiltObject,
   FanInstance,
@@ -146,10 +147,36 @@ export function placeOnWall(
   }
 }
 
-function overlayOffsetM(photo: RealityPhotoMeta, o: PhotoOverlayObject, wall: WallId, project: Project): number {
-  const along = alongWallM(photo, o.nx);
-  if (along != null && Number.isFinite(along)) return Math.max(0, along);
-  return o.nx * wallLength(project, wall);
+function overlayPlacement(
+  photo: RealityPhotoMeta,
+  o: PhotoOverlayObject,
+  wall: WallId,
+  project: Project,
+): { ok: true; offsetM: number; elevationM: number } | { ok: false; errors: string[] } {
+  const offset = resolveOverlayWallOffset(photo, o.nx, wall, project, o.ownerOffsetM);
+  if (!offset.ok) return offset;
+  const elev = resolveOverlayElevation(
+    photo,
+    o.ny + o.nh,
+    o.metricSource === "OWNER_ENTERED" || o.ownerOffsetM != null ? o.bottomElevationM : o.bottomElevationM,
+  );
+  if (!elev.ok) {
+    if (offset.source === "UNCALIBRATED_PROPORTIONAL" || offset.source === "OWNER_ENTERED") {
+      return { ok: true, offsetM: offset.offsetM, elevationM: o.bottomElevationM ?? 0 };
+    }
+    return elev;
+  }
+  return { ok: true, offsetM: offset.offsetM, elevationM: elev.elevationM };
+}
+
+function asBuiltInsideRoom(
+  project: Project,
+  box: { x: number; y: number; widthM: number; depthM: number },
+): boolean {
+  return aabbInside(
+    { x1: box.x, y1: box.y, x2: box.x + box.widthM, y2: box.y + box.depthM },
+    roomAabb(project),
+  );
 }
 
 function upsertOverlay(photo: RealityPhotoMeta, overlay: PhotoOverlayObject): RealityPhotoMeta {
@@ -183,17 +210,17 @@ export function applyOneOverlay(
 
   if (type) {
     if (!wall) return { ok: false, errors: [`${PHOTO_OVERLAY_LABEL_RU[overlay.kind]}: укажите стену фото.`] };
-    const L = wallLength(project, wall);
+    const placed = overlayPlacement(photo, overlay, wall, project);
+    if (!placed.ok) return placed;
     const widthM = overlay.widthM;
-    const offset = Math.min(Math.max(0, overlayOffsetM(photo, overlay, wall, project)), Math.max(0, L - widthM));
     const opening: Opening = {
       id: overlay.linkedObjectId ?? `op_${overlay.id}`,
       type,
       wallId: wall,
       widthM,
       heightM: overlay.heightM,
-      bottomElevationM: overlay.bottomElevationM ?? 0,
-      offsetFromWallStartM: offset,
+      bottomElevationM: placed.elevationM,
+      offsetFromWallStartM: placed.offsetM,
       name: PHOTO_OVERLAY_LABEL_RU[overlay.kind],
       provenance: "PHOTO_ESTIMATE",
       sourcePhotoId: photo.id,
@@ -215,10 +242,12 @@ export function applyOneOverlay(
 
   if (overlay.kind === "rack") {
     if (!wall) return { ok: false, errors: ["Стойка: укажите стену фото."] };
+    const placed = overlayPlacement(photo, overlay, wall, project);
+    if (!placed.ok) return placed;
     const box = placeOnWall(
       project,
       wall,
-      overlayOffsetM(photo, overlay, wall, project),
+      placed.offsetM,
       overlay.widthM,
       overlay.depthM ?? TEST_RACK_A.depthM,
     );
@@ -251,7 +280,9 @@ export function applyOneOverlay(
 
   if (overlay.kind === "fan") {
     if (!wall) return { ok: false, errors: ["Вентилятор: укажите стену фото."] };
-    const box = placeOnWall(project, wall, overlayOffsetM(photo, overlay, wall, project), overlay.widthM, overlay.depthM ?? 0.8);
+    const placed = overlayPlacement(photo, overlay, wall, project);
+    if (!placed.ok) return placed;
+    const box = placeOnWall(project, wall, placed.offsetM, overlay.widthM, overlay.depthM ?? 0.8);
     const fan: FanInstance = {
       id: overlay.linkedObjectId ?? `fan_${overlay.id}`,
       specId: project.fans[0]?.specId ?? FAN_STRONG.id,
@@ -262,6 +293,9 @@ export function applyOneOverlay(
       count: 1,
       dirtyFilter: false,
     };
+    if (!fanIsSpatiallyValid({ ...project, fans: [...project.fans.filter((f) => f.id !== fan.id), fan] }, fan)) {
+      return { ok: false, errors: ["Вентилятор должен быть внутри помещения."] };
+    }
     const fans = project.fans.some((f) => f.id === fan.id)
       ? project.fans.map((f) => (f.id === fan.id ? fan : f))
       : [...project.fans, fan];
@@ -277,12 +311,17 @@ export function applyOneOverlay(
 
   if (overlay.kind === "duct" || overlay.kind === "column" || overlay.kind === "beam") {
     if (!wall) return { ok: false, errors: [`${PHOTO_OVERLAY_LABEL_RU[overlay.kind]}: укажите стену фото.`] };
+    const placed = overlayPlacement(photo, overlay, wall, project);
+    if (!placed.ok) return placed;
     const into = overlay.kind === "column" ? overlay.depthM ?? 0.4 : overlay.depthM ?? 0.4;
-    const box = placeOnWall(project, wall, overlayOffsetM(photo, overlay, wall, project), overlay.widthM, into);
+    const box = placeOnWall(project, wall, placed.offsetM, overlay.widthM, into);
+    if (!asBuiltInsideRoom(project, box)) {
+      return { ok: false, errors: [`${PHOTO_OVERLAY_LABEL_RU[overlay.kind]} выходит за пределы помещения.`] };
+    }
     const z =
       overlay.kind === "beam"
         ? Math.max(0, project.room.heightM - overlay.heightM)
-        : overlay.bottomElevationM ?? 0;
+        : placed.elevationM;
     const obj: AsBuiltObject = {
       id: overlay.linkedObjectId ?? `ab_${overlay.id}`,
       kind: overlay.kind,

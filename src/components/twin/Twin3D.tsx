@@ -1,18 +1,78 @@
-import { Canvas } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Grid, OrbitControls, PerspectiveCamera } from "@react-three/drei";
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { ThreeEvent } from "@react-three/fiber";
-import { DoubleSide, type Ray } from "three";
+import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
+import { DoubleSide, Plane, Raycaster, Vector2, Vector3, type Object3D } from "three";
 import { useLiveProject, useLiveResult, useProjectStore } from "@/project/store";
 import { openingWorldRect, rackAabb } from "@/engineering/geometry";
 import { panelWorldBox, segmentAllWalls } from "@/engineering/apertures";
 import type { Project, WallId } from "@/engineering/types";
 
-function floorFromRay(ray: Ray): { x: number; z: number } | null {
-  if (Math.abs(ray.direction.y) < 1e-8) return null;
-  const t = -ray.origin.y / ray.direction.y;
-  if (t < 0) return null;
-  return { x: ray.origin.x + ray.direction.x * t, z: ray.origin.z + ray.direction.z * t };
+function orbitLocked(): boolean {
+  if (typeof window === "undefined") return false;
+  const w = window as unknown as { __MF_TWIN_LOCK_ORBIT__?: boolean; __MF_TWIN_CAMERA__?: string };
+  return Boolean(w.__MF_TWIN_LOCK_ORBIT__) || w.__MF_TWIN_CAMERA__ === "top";
+}
+
+function topCamera(): boolean {
+  if (typeof window === "undefined") return false;
+  return (window as unknown as { __MF_TWIN_CAMERA__?: string }).__MF_TWIN_CAMERA__ === "top";
+}
+
+type TwinScreenMap = {
+  ready: boolean;
+  objects: Record<string, { x: number; y: number; visible: boolean }>;
+};
+
+/** READ-ONLY projection hook for E2E. Does not mutate Project. */
+function TwinScreenProbe({ project }: { project: Project }) {
+  const { camera, gl } = useThree();
+  const v = useMemo(() => new Vector3(), []);
+  useFrame(() => {
+    if (typeof window === "undefined") return;
+    const rect = gl.domElement.getBoundingClientRect();
+    const objects: TwinScreenMap["objects"] = {};
+    const put = (id: string, x: number, y: number, z: number) => {
+      v.set(x, y, z).project(camera);
+      const sx = rect.left + (v.x * 0.5 + 0.5) * rect.width;
+      const sy = rect.top + (-v.y * 0.5 + 0.5) * rect.height;
+      objects[id] = {
+        x: sx,
+        y: sy,
+        visible: v.z >= -1 && v.z <= 1 && v.x >= -0.95 && v.x <= 0.95 && v.y >= -0.95 && v.y <= 0.95,
+      };
+    };
+    for (const r of project.racks) {
+      const bb = rackAabb(r);
+      put(r.id, (bb.x1 + bb.x2) / 2, r.heightM / 2, (bb.y1 + bb.y2) / 2);
+    }
+    for (const f of project.fans) {
+      put(f.id, f.x + 0.4, 0.4, f.y + 0.4);
+    }
+    for (const o of project.openings) {
+      const wr = openingWorldRect(project, o);
+      put(o.id, (wr.x1 + wr.x2) / 2, (wr.z1 + wr.z2) / 2, (wr.y1 + wr.y2) / 2);
+    }
+    (window as unknown as { __MF_TWIN_SCREEN__: TwinScreenMap }).__MF_TWIN_SCREEN__ = {
+      ready: Object.keys(objects).length > 0,
+      objects,
+    };
+  });
+  return null;
+}
+
+function TwinCameraRig({ project }: { project: Project }) {
+  const { camera } = useThree();
+  useFrame(() => {
+    if (!topCamera()) return;
+    const w = project.room.widthM;
+    const d = project.room.depthM;
+    camera.position.set(w / 2, Math.max(16, project.room.heightM * 6), d / 2);
+    camera.up.set(0, 0, -1);
+    camera.lookAt(w / 2, 0, d / 2);
+    camera.updateMatrixWorld();
+    camera.updateProjectionMatrix();
+  });
+  return null;
 }
 
 type TwinDrag =
@@ -23,14 +83,6 @@ type TwinDrag =
 function alongOf(hit: { x: number; z: number }, wall: WallId): number {
   if (wall === "south" || wall === "north") return hit.x;
   return hit.z;
-}
-
-function selectObject(id: string) {
-  const store = useProjectStore.getState();
-  store.select([id]);
-  if (typeof window !== "undefined" && window.innerWidth < 768) {
-    store.openSheet("props", "half");
-  }
 }
 
 function RoomShell({ project }: { project: Project }) {
@@ -78,13 +130,7 @@ function Ceiling({ project, visible }: { project: Project; visible: boolean }) {
   );
 }
 
-function Openings({
-  project,
-  onDragStart,
-}: {
-  project: Project;
-  onDragStart: (d: TwinDrag, e: ThreeEvent<PointerEvent>) => void;
-}) {
+function Openings({ project }: { project: Project }) {
   const selectedIds = useProjectStore((s) => s.selectedIds);
   return (
     <group>
@@ -118,22 +164,16 @@ function Openings({
                 : []),
             ];
         return (
-          <group
-            key={o.id}
-            onClick={(e: ThreeEvent<MouseEvent>) => {
-              e.stopPropagation();
-              selectObject(o.id);
-            }}
-            onPointerDown={(e: ThreeEvent<PointerEvent>) => {
-              e.stopPropagation();
-              selectObject(o.id);
-              const hit = floorFromRay(e.ray);
-              const along = hit ? alongOf(hit, o.wallId) : o.offsetFromWallStartM;
-              onDragStart({ kind: "opening", id: o.id, grabAlong: along, startOff: o.offsetFromWallStartM, wall: o.wallId }, e);
-            }}
-          >
+          <group key={o.id}>
+            <mesh
+              userData={{ mfId: o.id, mfKind: "opening" }}
+              position={[cx, cy, cz]}
+            >
+              <boxGeometry args={isNS ? [Math.max(alongX, 0.35), Math.max(o.heightM, 0.4), 0.35] : [0.35, Math.max(o.heightM, 0.4), Math.max(alongZ, 0.35)]} />
+              <meshBasicMaterial transparent opacity={0.001} depthWrite={false} />
+            </mesh>
             {posts.map((p, i) => (
-              <mesh key={i} position={p.pos}>
+              <mesh key={i} position={p.pos} userData={{ mfId: o.id, mfKind: "opening" }}>
                 <boxGeometry args={p.size} />
                 <meshStandardMaterial color={color} emissive={color} emissiveIntensity={selected ? 0.4 : 0.15} />
               </mesh>
@@ -145,13 +185,7 @@ function Openings({
   );
 }
 
-function Racks({
-  project,
-  onDragStart,
-}: {
-  project: Project;
-  onDragStart: (d: TwinDrag, e: ThreeEvent<PointerEvent>) => void;
-}) {
+function Racks({ project }: { project: Project }) {
   const xray = useProjectStore((s) => s.xray);
   const selected = useProjectStore((s) => s.selectedIds);
   const result = useLiveResult();
@@ -186,30 +220,7 @@ function Racks({
                 : ([bb.x1 - 0.15, 0.15, cz] as const);
         return (
           <group key={r.id}>
-            <mesh
-              position={[cx, r.heightM / 2, cz]}
-              castShadow
-              onClick={(e: ThreeEvent<MouseEvent>) => {
-                e.stopPropagation();
-                selectObject(r.id);
-              }}
-              onPointerDown={(e: ThreeEvent<PointerEvent>) => {
-                e.stopPropagation();
-                selectObject(r.id);
-                const hit = floorFromRay(e.ray);
-                onDragStart(
-                  {
-                    kind: "rack",
-                    id: r.id,
-                    grabX: (hit?.x ?? cx) - r.x,
-                    grabZ: (hit?.z ?? cz) - r.y,
-                    startX: r.x,
-                    startY: r.y,
-                  },
-                  e,
-                );
-              }}
-            >
+            <mesh position={[cx, r.heightM / 2, cz]} castShadow userData={{ mfId: r.id, mfKind: "rack" }}>
               <boxGeometry args={[ww, r.heightM, dd]} />
               <meshStandardMaterial
                 color={warn && xray.warnings ? "#c45c5c" : isSel ? "#c5ced8" : "#5a6878"}
@@ -273,53 +284,33 @@ function Shaft({ project }: { project: Project }) {
   );
 }
 
-function Fans({
-  project,
-  onDragStart,
-}: {
-  project: Project;
-  onDragStart: (d: TwinDrag, e: ThreeEvent<PointerEvent>) => void;
-}) {
+function Fans({ project }: { project: Project }) {
   const selectedIds = useProjectStore((s) => s.selectedIds);
   return (
     <group>
       {project.fans.map((f) => {
         const sel = selectedIds.includes(f.id);
         return (
-          <mesh
-            key={f.id}
-            position={[f.x, 0.4, f.y]}
-            rotation={[Math.PI / 2, 0, 0]}
-            onClick={(e: ThreeEvent<MouseEvent>) => {
-              e.stopPropagation();
-              selectObject(f.id);
-            }}
-            onPointerDown={(e: ThreeEvent<PointerEvent>) => {
-              e.stopPropagation();
-              selectObject(f.id);
-              const hit = floorFromRay(e.ray);
-              onDragStart(
-                {
-                  kind: "fan",
-                  id: f.id,
-                  grabX: (hit?.x ?? f.x) - f.x,
-                  grabZ: (hit?.z ?? f.y) - f.y,
-                  startX: f.x,
-                  startY: f.y,
-                },
-                e,
-              );
-            }}
-          >
-            <cylinderGeometry args={[0.28, 0.28, 0.18, 16]} />
-            <meshStandardMaterial
-              color={sel ? "#c5ced8" : "#7b8ca3"}
-              metalness={0.4}
-              roughness={0.4}
-              emissive={sel ? "#5aa7c7" : "#000000"}
-              emissiveIntensity={sel ? 0.35 : 0}
-            />
-          </mesh>
+          <group key={f.id}>
+            <mesh position={[f.x + 0.4, 0.4, f.y + 0.4]} userData={{ mfId: f.id, mfKind: "fan" }}>
+              <boxGeometry args={[0.9, 0.9, 0.9]} />
+              <meshBasicMaterial transparent opacity={0.001} depthWrite={false} />
+            </mesh>
+            <mesh
+              position={[f.x, 0.4, f.y]}
+              rotation={[Math.PI / 2, 0, 0]}
+              userData={{ mfId: f.id, mfKind: "fan" }}
+            >
+              <cylinderGeometry args={[0.28, 0.28, 0.18, 16]} />
+              <meshStandardMaterial
+                color={sel ? "#c5ced8" : "#7b8ca3"}
+                metalness={0.4}
+                roughness={0.4}
+                emissive={sel ? "#5aa7c7" : "#000000"}
+                emissiveIntensity={sel ? 0.35 : 0}
+              />
+            </mesh>
+          </group>
         );
       })}
     </group>
@@ -363,118 +354,250 @@ function TempEstimate({ project }: { project: Project }) {
   );
 }
 
-function DragScene({
+function clientOf(e: Event): { x: number; y: number } | null {
+  if ("clientX" in e && typeof (e as PointerEvent).clientX === "number") {
+    const p = e as PointerEvent;
+    if (Number.isFinite(p.clientX) && Number.isFinite(p.clientY)) return { x: p.clientX, y: p.clientY };
+  }
+  const t = (e as TouchEvent).touches?.[0] ?? (e as TouchEvent).changedTouches?.[0];
+  if (t) return { x: t.clientX, y: t.clientY };
+  return null;
+}
+
+/**
+ * Native canvas pointer bridge. R3F's event manager does not receive
+ * Playwright / WebKit synthetic hits reliably; this path uses clientX/Y
+ * on the WebGL canvas and is the mutation source for 3D drag.
+ */
+function TwinPointerBridge({
   project,
   dragRef,
-  dragging,
   setDragging,
 }: {
   project: Project;
-  dragRef: React.MutableRefObject<TwinDrag | null>;
-  dragging: boolean;
+  dragRef: MutableRefObject<TwinDrag | null>;
   setDragging: (v: boolean) => void;
 }) {
-  const onMove = (e: ThreeEvent<PointerEvent>) => {
-    const d = dragRef.current;
-    if (!d) return;
-    const hit = floorFromRay(e.ray);
-    if (!hit) return;
-    const store = useProjectStore.getState();
-    const src = store.project;
-    if (d.kind === "rack") {
-      const x = hit.x - d.grabX;
-      const y = hit.z - d.grabZ;
-      store.moveRack(d.id, x, y, true);
-    } else if (d.kind === "fan") {
-      const x = hit.x - d.grabX;
-      const y = hit.z - d.grabZ;
-      store.moveFan(d.id, x, y, true);
-    } else {
-      const along = alongOf(hit, d.wall);
-      const nextOff = d.startOff + (along - d.grabAlong);
-      const opening = src.openings.find((o) => o.id === d.id);
-      if (!opening) return;
-      const nextOpenings = src.openings.map((o) => (o.id === d.id ? { ...o, offsetFromWallStartM: nextOff } : o));
-      store.setPreview({ ...src, openings: nextOpenings });
-    }
-  };
+  const { camera, gl, scene } = useThree();
+  const projectRef = useRef(project);
+  projectRef.current = project;
+  const raycaster = useMemo(() => new Raycaster(), []);
+  const ndc = useMemo(() => new Vector2(), []);
+  const floorPlane = useMemo(() => new Plane(new Vector3(0, 1, 0), 0), []);
+  const hitPoint = useMemo(() => new Vector3(), []);
 
-  const onUp = () => {
-    const d = dragRef.current;
-    dragRef.current = null;
-    setDragging(false);
-    const store = useProjectStore.getState();
-    if (!d) {
-      store.setPreview(null);
-      return;
-    }
-    if (d.kind === "rack") {
-      const live = store.preview ?? store.project;
-      const rack = live.racks.find((r) => r.id === d.id);
-      store.setPreview(null);
-      if (!rack) return;
-      const res = store.moveRack(d.id, rack.x, rack.y, false);
-      if (!res.ok) {
+  useEffect(() => {
+    const el = gl.domElement;
+    el.style.touchAction = "none";
+    el.setAttribute("data-mf-id", "twin-canvas");
+
+    const toNdc = (pt: { x: number; y: number }) => {
+      const rect = el.getBoundingClientRect();
+      if (!(rect.width > 1) || !(rect.height > 1)) return false;
+      ndc.set(((pt.x - rect.left) / rect.width) * 2 - 1, -((pt.y - rect.top) / rect.height) * 2 + 1);
+      camera.updateMatrixWorld();
+      return true;
+    };
+
+    const floorHit = (pt: { x: number; y: number }) => {
+      if (!toNdc(pt)) return null;
+      raycaster.setFromCamera(ndc, camera);
+      const ok = raycaster.ray.intersectPlane(floorPlane, hitPoint);
+      if (!ok) return null;
+      return { x: hitPoint.x, z: hitPoint.z };
+    };
+
+    const pick = (pt: { x: number; y: number }) => {
+      if (!toNdc(pt)) return null;
+      raycaster.setFromCamera(ndc, camera);
+      const targets: Object3D[] = [];
+      scene.traverse((obj) => {
+        if (obj.userData?.mfId && obj.userData?.mfKind) targets.push(obj);
+      });
+      const hits = raycaster.intersectObjects(targets, false);
+      const first = hits.find((h) => h.object.userData?.mfId);
+      if (!first) return null;
+      return { id: String(first.object.userData.mfId), kind: String(first.object.userData.mfKind) };
+    };
+
+    const onMoveDrag = (d: TwinDrag, floor: { x: number; z: number }) => {
+      const store = useProjectStore.getState();
+      const src = store.project;
+      if (d.kind === "rack") {
+        store.moveRack(d.id, floor.x - d.grabX, floor.z - d.grabZ, true);
+      } else if (d.kind === "fan") {
+        store.moveFan(d.id, floor.x - d.grabX, floor.z - d.grabZ, true);
+      } else {
+        const along = alongOf(floor, d.wall);
+        const nextOff = d.startOff + (along - d.grabAlong);
+        const nextOpenings = src.openings.map((o) => (o.id === d.id ? { ...o, offsetFromWallStartM: nextOff } : o));
+        store.setPreview({ ...src, openings: nextOpenings });
+      }
+    };
+
+    const commit = () => {
+      const d = dragRef.current;
+      dragRef.current = null;
+      setDragging(false);
+      const store = useProjectStore.getState();
+      if (!d) {
         store.setPreview(null);
-        useProjectStore.setState({ lastMutationError: res.errors[0] ?? "Перемещение стойки отклонено." });
+        return;
       }
-      return;
-    }
-    if (d.kind === "fan") {
-      const live = store.preview ?? store.project;
-      const fan = live.fans.find((f) => f.id === d.id);
-      store.setPreview(null);
-      if (!fan) return;
-      const res = store.moveFan(d.id, fan.x, fan.y, false);
-      if (!res.ok) {
-        useProjectStore.setState({ lastMutationError: res.errors[0] ?? "Перемещение вентилятора отклонено." });
-      }
-      return;
-    }
-    const live = store.preview ?? store.project;
-    const opening = live.openings.find((o) => o.id === d.id);
-    store.setPreview(null);
-    if (!opening) return;
-    const res = store.updateOpening(d.id, { offsetFromWallStartM: opening.offsetFromWallStartM }, false);
-    if (!res.ok) {
-      useProjectStore.setState({ lastMutationError: res.errors[0] ?? "Перемещение проёма отклонено." });
-    }
-  };
-
-  const start = (d: TwinDrag, e: ThreeEvent<PointerEvent>) => {
-    dragRef.current = d;
-    setDragging(true);
-    (e.target as HTMLElement | undefined)?.setPointerCapture?.(e.pointerId);
-    e.stopPropagation();
-  };
-
-  return (
-    <group
-      onPointerMove={(e) => {
-        if (dragRef.current) {
-          e.stopPropagation();
-          onMove(e);
+      if (d.kind === "rack") {
+        const live = store.preview ?? store.project;
+        const rack = live.racks.find((r) => r.id === d.id);
+        store.setPreview(null);
+        if (!rack) return;
+        const res = store.moveRack(d.id, rack.x, rack.y, false);
+        if (!res.ok) {
+          useProjectStore.setState({ lastMutationError: res.errors[0] ?? "Перемещение стойки отклонено." });
         }
-      }}
-      onPointerUp={() => {
-        if (dragRef.current) onUp();
-      }}
-    >
+        return;
+      }
+      if (d.kind === "fan") {
+        const live = store.preview ?? store.project;
+        const fan = live.fans.find((f) => f.id === d.id);
+        store.setPreview(null);
+        if (!fan) return;
+        const res = store.moveFan(d.id, fan.x, fan.y, false);
+        if (!res.ok) {
+          useProjectStore.setState({ lastMutationError: res.errors[0] ?? "Перемещение вентилятора отклонено." });
+        }
+        return;
+      }
+      const live = store.preview ?? store.project;
+      const opening = live.openings.find((o) => o.id === d.id);
+      store.setPreview(null);
+      if (!opening) return;
+      const res = store.updateOpening(d.id, { offsetFromWallStartM: opening.offsetFromWallStartM }, false);
+      if (!res.ok) {
+        useProjectStore.setState({ lastMutationError: res.errors[0] ?? "Перемещение проёма отклонено." });
+      }
+    };
+
+    const onDown = (e: Event) => {
+      const pt = clientOf(e);
+      if (!pt) return;
+      if ("button" in e && (e as PointerEvent).button != null && (e as PointerEvent).button !== 0) return;
+      const hit = pick(pt);
+      if (!hit) return;
+      const floor = floorHit(pt);
+      const src = projectRef.current;
+      useProjectStore.getState().select([hit.id]);
+      if (hit.kind === "rack") {
+        const rack = src.racks.find((r) => r.id === hit.id);
+        if (!rack) return;
+        const bb = rackAabb(rack);
+        const cx = (bb.x1 + bb.x2) / 2;
+        const cz = (bb.y1 + bb.y2) / 2;
+        dragRef.current = {
+          kind: "rack",
+          id: hit.id,
+          grabX: (floor?.x ?? cx) - rack.x,
+          grabZ: (floor?.z ?? cz) - rack.y,
+          startX: rack.x,
+          startY: rack.y,
+        };
+      } else if (hit.kind === "fan") {
+        const fan = src.fans.find((f) => f.id === hit.id);
+        if (!fan) return;
+        dragRef.current = {
+          kind: "fan",
+          id: hit.id,
+          grabX: (floor?.x ?? fan.x) - fan.x,
+          grabZ: (floor?.z ?? fan.y) - fan.y,
+          startX: fan.x,
+          startY: fan.y,
+        };
+      } else {
+        const opening = src.openings.find((o) => o.id === hit.id);
+        if (!opening) return;
+        const along = floor ? alongOf(floor, opening.wallId) : opening.offsetFromWallStartM;
+        dragRef.current = {
+          kind: "opening",
+          id: hit.id,
+          grabAlong: along,
+          startOff: opening.offsetFromWallStartM,
+          wall: opening.wallId,
+        };
+      }
+      setDragging(true);
+      try {
+        if ("pointerId" in e) el.setPointerCapture((e as PointerEvent).pointerId);
+      } catch {
+        /* WebKit may refuse capture on synthetic events */
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      if (typeof (e as Event & { stopImmediatePropagation?: () => void }).stopImmediatePropagation === "function") {
+        (e as Event).stopImmediatePropagation();
+      }
+    };
+
+    const onMove = (e: Event) => {
+      const d = dragRef.current;
+      if (!d) return;
+      const pt = clientOf(e);
+      if (!pt) return;
+      const floor = floorHit(pt);
+      if (!floor) return;
+      onMoveDrag(d, floor);
+      e.preventDefault();
+      e.stopPropagation();
+    };
+
+    const onUp = (e: Event) => {
+      if (!dragRef.current) return;
+      commit();
+      e.preventDefault();
+      e.stopPropagation();
+    };
+
+    const opts: AddEventListenerOptions = { capture: true, passive: false };
+    el.addEventListener("pointerdown", onDown, opts);
+    el.addEventListener("mousedown", onDown, opts);
+    el.addEventListener("touchstart", onDown, opts);
+    window.addEventListener("pointermove", onMove, opts);
+    window.addEventListener("mousemove", onMove, opts);
+    window.addEventListener("touchmove", onMove, opts);
+    window.addEventListener("pointerup", onUp, opts);
+    window.addEventListener("mouseup", onUp, opts);
+    window.addEventListener("touchend", onUp, opts);
+    window.addEventListener("pointercancel", onUp, opts);
+    return () => {
+      el.removeEventListener("pointerdown", onDown, opts);
+      el.removeEventListener("mousedown", onDown, opts);
+      el.removeEventListener("touchstart", onDown, opts);
+      window.removeEventListener("pointermove", onMove, opts);
+      window.removeEventListener("mousemove", onMove, opts);
+      window.removeEventListener("touchmove", onMove, opts);
+      window.removeEventListener("pointerup", onUp, opts);
+      window.removeEventListener("mouseup", onUp, opts);
+      window.removeEventListener("touchend", onUp, opts);
+      window.removeEventListener("pointercancel", onUp, opts);
+    };
+  }, [camera, gl, scene, dragRef, setDragging, raycaster, ndc, floorPlane, hitPoint]);
+
+  return null;
+}
+
+function DragScene({
+  project,
+  dragRef,
+  setDragging,
+}: {
+  project: Project;
+  dragRef: MutableRefObject<TwinDrag | null>;
+  setDragging: (v: boolean) => void;
+}) {
+  return (
+    <group>
+      <TwinPointerBridge project={project} dragRef={dragRef} setDragging={setDragging} />
       <RoomShell project={project} />
-      <Openings project={project} onDragStart={start} />
-      <Racks project={project} onDragStart={start} />
-      <Fans project={project} onDragStart={start} />
-      {dragging && (
-        <mesh
-          rotation={[-Math.PI / 2, 0, 0]}
-          position={[project.room.widthM / 2, 0.01, project.room.depthM / 2]}
-          onPointerMove={onMove}
-          onPointerUp={onUp}
-        >
-          <planeGeometry args={[Math.max(40, project.room.widthM * 4), Math.max(40, project.room.depthM * 4)]} />
-          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-        </mesh>
-      )}
+      <Openings project={project} />
+      <Racks project={project} />
+      <Fans project={project} />
     </group>
   );
 }
@@ -488,6 +611,13 @@ export function Twin3D() {
   const dragRef = useRef<TwinDrag | null>(null);
   useEffect(() => setMounted(true), []);
   const camPos = useMemo(() => {
+    if (topCamera()) {
+      return [project.room.widthM / 2, Math.max(16, project.room.heightM * 6), project.room.depthM / 2] as [
+        number,
+        number,
+        number,
+      ];
+    }
     const span = Math.max(project.room.widthM, project.room.depthM, 6);
     return [project.room.widthM * 0.55 + span * 0.7, Math.max(project.room.heightM * 2.6, 7), project.room.depthM * 0.45 + span * 0.85] as [
       number,
@@ -501,20 +631,32 @@ export function Twin3D() {
   }
 
   const selectedRack = project.racks.some((r) => store.selectedIds.includes(r.id));
+  const lockCam = orbitLocked();
 
   return (
     <div className="relative h-full w-full bg-bg" data-mf-id="twin" style={{ touchAction: "none" }}>
-      <Canvas shadows dpr={[1, 1.5]} gl={{ antialias: true, powerPreference: "high-performance" }} onPointerMissed={() => store.select([])}>
+      <Canvas
+        shadows
+        dpr={[1, 1.5]}
+        gl={{ antialias: true, powerPreference: "high-performance" }}
+        onCreated={({ gl }) => {
+          gl.domElement.setAttribute("data-mf-id", "twin-canvas");
+          gl.domElement.style.touchAction = "none";
+        }}
+      >
         <color attach="background" args={["#0b0d10"]} />
         <ambientLight intensity={0.7} />
         <directionalLight position={[10, 14, 8]} intensity={1.35} castShadow />
-        <PerspectiveCamera makeDefault position={camPos} fov={42} />
-        <OrbitControls
-          makeDefault
-          enabled={!dragging}
-          target={[project.room.widthM / 2, project.room.heightM * 0.45, project.room.depthM / 2]}
-          enableDamping
-        />
+        <PerspectiveCamera makeDefault position={camPos} fov={topCamera() ? 48 : 42} />
+        <TwinCameraRig project={project} />
+        {!lockCam && (
+          <OrbitControls
+            makeDefault
+            enabled={!dragging}
+            target={[project.room.widthM / 2, project.room.heightM * 0.45, project.room.depthM / 2]}
+            enableDamping
+          />
+        )}
         <Grid
           position={[project.room.widthM / 2, 0, project.room.depthM / 2]}
           args={[Math.max(20, project.room.widthM * 2), Math.max(20, project.room.depthM * 2)]}
@@ -526,30 +668,26 @@ export function Twin3D() {
           sectionColor="#2a3340"
           fadeDistance={40}
         />
-        <DragScene project={project} dragRef={dragRef} dragging={dragging} setDragging={setDragging} />
+        <DragScene project={project} dragRef={dragRef} setDragging={setDragging} />
+        <TwinScreenProbe project={project} />
         {(project.reality?.asBuilt ?? []).map((obj) => {
           const mode = project.reality?.compareMode ?? "as-designed";
           if (mode === "as-designed") return null;
-          const opacity = mode === "as-built" ? 0.65 : 0.45;
           const sel = store.selectedIds.includes(obj.id);
           return (
             <mesh
               key={obj.id}
               position={[obj.x + obj.widthM / 2, obj.z + obj.heightM / 2, obj.y + obj.depthM / 2]}
-              onClick={(e: ThreeEvent<MouseEvent>) => {
-                e.stopPropagation();
-                selectObject(obj.id);
-              }}
             >
               <boxGeometry args={[obj.widthM, obj.heightM, obj.depthM]} />
-              <meshStandardMaterial color={sel ? "#e0c070" : "#c4a35a"} transparent opacity={opacity} />
+              <meshStandardMaterial color={sel ? "#e0c070" : "#c4a35a"} transparent opacity={mode === "as-built" ? 0.65 : 0.45} />
             </mesh>
           );
         })}
         <Shaft project={project} />
         <Board project={project} />
         <TempEstimate project={project} />
-        <Ceiling project={project} visible={showCeiling} />
+        <Ceiling project={project} visible={showCeiling && !topCamera()} />
       </Canvas>
       <div className="pointer-events-none absolute left-3 top-3 rounded-[8px] border border-border bg-panel/90 px-2 py-1 font-mono text-[11px] text-muted">
         1:1 Digital Twin · {project.room.widthM.toFixed(3)} × {project.room.depthM.toFixed(3)} × {project.room.heightM.toFixed(3)} m

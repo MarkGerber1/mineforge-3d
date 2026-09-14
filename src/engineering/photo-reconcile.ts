@@ -9,10 +9,18 @@
  */
 import { fanIsSpatiallyValid, rackAabb, validateOpening, wallLength } from "./geometry.ts";
 import { validateRackPlacement } from "./placement.ts";
-import { alongWallM, photoCalibration, photoSize } from "./reality.ts";
+import { photoCalibration, photoSize } from "./reality.ts";
 import { placeOnWall, PHOTO_OVERLAY_LABEL_RU } from "./photo-overlay.ts";
 import { reassignOpeningWall } from "./wall-reassign.ts";
 import { clamp01, clampNormSize } from "./photo-frame.ts";
+import {
+  isPhotoRegistered,
+  nxFromRegisteredOffset,
+  nyFromRegisteredElevation,
+  registeredElevationFromNy,
+  resolveOverlayWallOffset,
+} from "./photo-registration.ts";
+import { isCanonicalLocked, OBJECT_LOCKED_RU } from "./object-lock.ts";
 import type {
   AsBuiltObject,
   FanInstance,
@@ -93,10 +101,11 @@ export function overlayOffsetFromNx(
   nx: number,
   wall: WallId,
   project: Project,
-): number {
-  const along = alongWallM(photo, nx);
-  if (along != null && Number.isFinite(along)) return Math.max(0, along);
-  return nx * wallLength(project, wall);
+  ownerOffsetM?: number,
+): number | null {
+  const r = resolveOverlayWallOffset(photo, nx, wall, project, ownerOffsetM);
+  if (!r.ok) return null;
+  return r.offsetM;
 }
 
 export function overlayElevationFromNy(
@@ -104,31 +113,40 @@ export function overlayElevationFromNy(
   ny: number,
   nh: number,
 ): number | null {
-  const cal = photoCalibration(photo);
-  if (!cal) return null;
-  const { heightPx } = photoSize(photo);
-  const elev = (1 - ny - nh) * heightPx * cal.scaleMPerPx;
-  if (!Number.isFinite(elev)) return null;
-  return Math.max(0, elev);
+  if (isPhotoRegistered(photo)) {
+    return registeredElevationFromNy(photo, ny + nh);
+  }
+  return null;
 }
 
 function nxFromOffset(photo: RealityPhotoMeta, offsetM: number, wall: WallId, project: Project): number {
+  if (isPhotoRegistered(photo) && photo.wallRegistration!.wallId === wall) {
+    const nx = nxFromRegisteredOffset(photo, offsetM);
+    if (nx != null) return nx;
+  }
   const cal = photoCalibration(photo);
-  if (cal) {
-    const span = photoSize(photo).widthPx * cal.scaleMPerPx;
-    if (span > 1e-12) return clamp01(offsetM / span);
+  if (cal && !isPhotoRegistered(photo)) {
+    return Number.NaN;
   }
   const L = wallLength(project, wall);
-  if (L > 1e-12) return clamp01(offsetM / L);
+  if (L > 1e-12) return offsetM / L;
   return 0;
 }
 
 function nyFromElevation(photo: RealityPhotoMeta, bottomElevationM: number, nh: number): number {
-  const cal = photoCalibration(photo);
-  if (!cal) return clamp01(1 - nh);
-  const span = photoSize(photo).heightPx * cal.scaleMPerPx;
-  if (!(span > 1e-12)) return clamp01(1 - nh);
-  return clamp01(1 - nh - bottomElevationM / span);
+  if (isPhotoRegistered(photo)) {
+    const bottomNy = nyFromRegisteredElevation(photo, bottomElevationM);
+    if (bottomNy != null) return bottomNy - nh;
+  }
+  return Number.NaN;
+}
+
+function inPhotoFrame(nx: number, ny: number, nw: number, nh: number): boolean {
+  const eps = 1e-6;
+  if (!Number.isFinite(nx) || !Number.isFinite(ny) || !Number.isFinite(nw) || !Number.isFinite(nh)) return false;
+  if (nx + nw < -eps || nx > 1 + eps) return false;
+  if (ny + nh < -eps || ny > 1 + eps) return false;
+  return true;
 }
 
 export type LinkedCanonical =
@@ -288,15 +306,18 @@ function reconcileOne(
               },
               photo.wallHint,
             );
-  const nx = nxFromOffset(photo, offsetM, photo.wallHint, project);
+  const rawNx = nxFromOffset(photo, offsetM, photo.wallHint, project);
   const norm = overlayNormalizedFromMeters(photo, alongWidthOf(linked, photo.wallHint), heightM);
   const nw = norm?.nw ?? overlay.nw;
   const nh = norm?.nh ?? overlay.nh;
-  const ny = photoCalibration(photo) ? nyFromElevation(photo, bottomElevationM, nh) : overlay.ny;
+  const rawNy = isPhotoRegistered(photo) ? nyFromElevation(photo, bottomElevationM, nh) : overlay.ny;
+  if (!inPhotoFrame(rawNx, Number.isFinite(rawNy) ? rawNy : overlay.ny, nw, nh)) {
+    return { ...base, planeStatus: "OUT_OF_PHOTO_PLANE" };
+  }
   return {
     ...base,
-    nx,
-    ny,
+    nx: clamp01(rawNx),
+    ny: Number.isFinite(rawNy) ? clamp01(rawNy) : overlay.ny,
     nw,
     nh,
     planeStatus: "ON_PLANE",
@@ -328,7 +349,7 @@ export function reconcileLinkedReality(project: Project): Project {
 export type PhotoOverlayIntent = Partial<
   Pick<
     PhotoOverlayObject,
-    "nx" | "ny" | "nw" | "nh" | "widthM" | "heightM" | "depthM" | "bottomElevationM" | "wallId" | "rotationDeg" | "metricSource"
+    "nx" | "ny" | "nw" | "nh" | "widthM" | "heightM" | "depthM" | "bottomElevationM" | "wallId" | "rotationDeg" | "metricSource" | "ownerOffsetM"
   >
 >;
 
@@ -399,9 +420,17 @@ function applyOpeningIntent(
     if (elev != null) nextOpening = { ...nextOpening, bottomElevationM: elev };
   }
   if (intent.nx != null) {
+    const mapped = resolveOverlayWallOffset(
+      photo,
+      visual.nx,
+      nextOpening.wallId,
+      project,
+      overlay.ownerOffsetM,
+    );
+    if (!mapped.ok) return mapped;
     nextOpening = {
       ...nextOpening,
-      offsetFromWallStartM: overlayOffsetFromNx(photo, visual.nx, nextOpening.wallId, project),
+      offsetFromWallStartM: mapped.offsetM,
     };
   }
   const candidate = {
@@ -437,10 +466,12 @@ function applyRackIntent(
   if (moved) {
     if (!wall) return { ok: false, errors: ["Стойка: укажите стену фото."] };
     const nx = intent.nx ?? overlay.nx;
+    const mapped = resolveOverlayWallOffset(photo, nx, wall, project, overlay.ownerOffsetM);
+    if (!mapped.ok) return mapped;
     const box = placeOnWall(
       project,
       wall,
-      overlayOffsetFromNx(photo, nx, wall, project),
+      mapped.offsetM,
       next.widthM,
       next.depthM,
     );
@@ -464,10 +495,12 @@ function applyFanIntent(
   if (intent.nx != null || intent.wallId != null) {
     if (!wall) return { ok: false, errors: ["Вентилятор: укажите стену фото."] };
     const nx = intent.nx ?? overlay.nx;
+    const mapped = resolveOverlayWallOffset(photo, nx, wall, project, overlay.ownerOffsetM);
+    if (!mapped.ok) return mapped;
     const box = placeOnWall(
       project,
       wall,
-      overlayOffsetFromNx(photo, nx, wall, project),
+      mapped.offsetM,
       overlay.widthM,
       overlay.depthM ?? 0.8,
     );
@@ -499,7 +532,9 @@ function applyAsBuiltIntent(
     }
   }
   const nx = intent.nx ?? overlay.nx;
-  const box = placeOnWall(project, wall, overlayOffsetFromNx(photo, nx, wall, project), widthM, obj.depthM);
+  const mapped = resolveOverlayWallOffset(photo, nx, wall, project, overlay.ownerOffsetM);
+  if (!mapped.ok) return mapped;
+  const box = placeOnWall(project, wall, mapped.offsetM, widthM, obj.depthM);
   const z = intent.bottomElevationM ?? obj.z;
   const next: AsBuiltObject = { ...obj, x: box.x, y: box.y, widthM: box.widthM, depthM: box.depthM, heightM, z };
   const reality = project.reality ?? emptyReality();
@@ -569,26 +604,32 @@ export function detachOverlayFromPhoto(project: Project, photoId: string, overla
 export function deleteCanonicalByOverlay(
   project: Project,
   overlay: PhotoOverlayObject,
-): Project {
+): { ok: true; project: Project } | { ok: false; errors: string[] } {
   const id = overlay.linkedObjectId;
-  if (!id) return project;
+  if (!id) return { ok: true, project };
+  if (isCanonicalLocked(project, id)) {
+    return { ok: false, errors: [OBJECT_LOCKED_RU] };
+  }
   const reality = project.reality ?? emptyReality();
   return {
-    ...project,
-    openings: project.openings.filter((o) => o.id !== id || o.locked),
-    racks: project.racks.filter((r) => r.id !== id),
-    fans: project.fans.filter((f) => f.id !== id),
-    reality: {
-      ...reality,
-      asBuilt: reality.asBuilt.filter((a) => a.id !== id),
-      photos: reality.photos.map((p) => ({
-        ...p,
-        overlays: (p.overlays ?? []).flatMap((o) => {
-          if (o.id === overlay.id) return [];
-          if (o.linkedObjectId === id) return [{ ...o, applied: false, linkedObjectId: undefined }];
-          return [o];
-        }),
-      })),
+    ok: true,
+    project: {
+      ...project,
+      openings: project.openings.filter((o) => o.id !== id),
+      racks: project.racks.filter((r) => r.id !== id),
+      fans: project.fans.filter((f) => f.id !== id),
+      reality: {
+        ...reality,
+        asBuilt: reality.asBuilt.filter((a) => a.id !== id),
+        photos: reality.photos.map((p) => ({
+          ...p,
+          overlays: (p.overlays ?? []).flatMap((o) => {
+            if (o.id === overlay.id) return [];
+            if (o.linkedObjectId === id) return [{ ...o, applied: false, linkedObjectId: undefined }];
+            return [o];
+          }),
+        })),
+      },
     },
   };
 }

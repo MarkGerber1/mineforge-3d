@@ -7,6 +7,7 @@ import { openingMaxWidthOnWallM, validateOpening, fanIsSpatiallyValid } from "./
 import { calculateAll, type Catalogs } from "./pipeline.ts";
 import { validateRacksConfiguration } from "./placement.ts";
 import { validateRoomHeightM, validateRoomLengthM } from "./room-resize.ts";
+import { isCanonicalLocked, OBJECT_LOCKED_RU } from "./object-lock.ts";
 import type { Project } from "./types.ts";
 
 export interface UpgradeOption {
@@ -125,6 +126,20 @@ export function applyPatchValidated(
 ): PatchApplyResult {
   const next = applyPatch(project, patch);
   const errors: string[] = [];
+  if (patch.openings) {
+    for (const o of project.openings) {
+      if (isCanonicalLocked(project, o.id) && !next.openings.some((x) => x.id === o.id)) {
+        errors.push(OBJECT_LOCKED_RU);
+      }
+    }
+  }
+  if (patch.racks) {
+    for (const r of project.racks) {
+      if (isCanonicalLocked(project, r.id) && !next.racks.some((x) => x.id === r.id)) {
+        errors.push(OBJECT_LOCKED_RU);
+      }
+    }
+  }
   if (patch.room) {
     if (patch.room.widthM != null) {
       const w = validateRoomLengthM(patch.room.widthM);

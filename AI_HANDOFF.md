@@ -59,6 +59,14 @@ Owner action required to mint the public URL: **Publish** in Grok Build (`*.grok
 
 Do not reopen MFQ-001…MFQ-006 unless a real regression appears.
 
+QX-03R2 (in progress, not independently accepted): A–B is scale only;
+PhotoWallRegistration is the wall-plane mapping (cropped / reversed /
+interior anchors). Scale-only photos cannot invent wall offset.
+Opening APPLY is fail-closed (no silent clamp). Locked delete is honest
+across Photo / 2D / 3D / AI. 3D canvas pointer E2E is separate from
+store-automated 3D tests. Photogrammetry is not implemented. Do not
+declare FINAL PASSED.
+
 QX-03R (in progress, not independently accepted): one photo coordinate frame;
 calibrated visual resize writes meters; linked overlays are views of canonical
 objects (`reconcileLinkedReality`); APPLY ALL is atomic; linked delete is

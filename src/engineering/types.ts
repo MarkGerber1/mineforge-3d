@@ -270,6 +270,31 @@ export type PhotoMarkerKind =
 export type OverlayPlaneStatus = "ON_PLANE" | "OUT_OF_PHOTO_PLANE";
 export type OverlayMetricSource = "CALIBRATED" | "OWNER_ENTERED" | "DEFAULT";
 
+/** Horizontal / vertical photo→wall mapping direction. Not photogrammetry. */
+export type PhotoRegDirection = 1 | -1;
+
+/**
+ * Explicit Photo → Wall registration. Separate from A–B scale.
+ * Scale is metres-per-pixel. Registration is where the photo sits on the wall.
+ * Do not derive this from A–B scale alone.
+ */
+export interface PhotoWallRegistration {
+  wallId: WallId;
+  /** Known point on the photo (normalized content-box frame). */
+  anchorNx: number;
+  /** Real distance of that point from canonical wall start (m). */
+  wallOffsetM: number;
+  /** +1: photo-left → photo-right increases wall offset. −1: decreases. */
+  hDirection: PhotoRegDirection;
+  /** Known vertical point on the photo (normalized). Image Y grows downward. */
+  anchorNy: number;
+  /** Real elevation of that point (m). Floor line is 0 when the Owner says so. */
+  elevationM: number;
+  /** +1: increasing photo Y increases elevation. −1: typical (photo down = toward floor). */
+  vDirection: PhotoRegDirection;
+  provenance: DimProvenance;
+}
+
 export type PhotoOverlayKind =
   | "rack"
   | "intake"
@@ -300,6 +325,8 @@ export interface PhotoOverlayObject {
   planeStatus?: OverlayPlaneStatus;
   /** Provenance of widthM/heightM. Visual resize without calibration must stay DEFAULT. */
   metricSource?: OverlayMetricSource;
+  /** Owner-typed absolute wall offset (m). Required for APPLY when the photo has scale but no wall registration. */
+  ownerOffsetM?: number;
 }
 
 export interface PhotoMarker {
@@ -333,6 +360,11 @@ export interface RealityPhotoMeta {
   widthPx?: number;
   heightPx?: number;
   calibration?: PhotoCalibration;
+  /**
+   * Explicit Photo → Wall registration. Independent of A–B scale.
+   * Absent = photo may measure size, must not invent wall offset / elevation.
+   */
+  wallRegistration?: PhotoWallRegistration;
   markers: PhotoMarker[];
   /** Draft / linked objects on the calibrated photo plane. Not photogrammetry. */
   overlays?: PhotoOverlayObject[];

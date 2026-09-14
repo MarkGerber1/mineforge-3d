@@ -10,9 +10,10 @@ import {
 } from "@/engineering/photo-overlay";
 import { OUT_OF_PLANE_RU, isLinkedOverlay } from "@/engineering/photo-reconcile";
 import { clientToPhotoNorm, photoContentBox } from "@/engineering/photo-frame";
+import { isPhotoRegistered } from "@/engineering/photo-registration";
 import { Button } from "@/components/ui/button";
 import { nid } from "@/project/factory";
-import type { PhotoOverlayKind, WallId } from "@/engineering/types";
+import type { PhotoOverlayKind, PhotoWallRegistration, WallId } from "@/engineering/types";
 import { cn } from "@/lib/utils";
 
 const OVERLAY_COLOR: Record<PhotoOverlayKind, string> = {
@@ -43,6 +44,11 @@ export function PhotoAnnotator({ photoId }: { photoId: string }) {
   const [src, setSrc] = useState<string | null>(null);
   const [pending, setPending] = useState<{ nx: number; ny: number } | null>(null);
   const [len, setLen] = useState("");
+  const [regOffset, setRegOffset] = useState("0");
+  const [regElev, setRegElev] = useState("0");
+  const [regHDir, setRegHDir] = useState<1 | -1>(1);
+  const [hAnchor, setHAnchor] = useState<{ nx: number; ny: number } | null>(null);
+  const [vAnchor, setVAnchor] = useState<{ nx: number; ny: number } | null>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
@@ -121,6 +127,15 @@ export function PhotoAnnotator({ photoId }: { photoId: string }) {
       return;
     }
 
+    if (mode === "register") {
+      if (!hAnchor) {
+        setHAnchor({ nx: n.nx, ny: n.ny });
+        return;
+      }
+      setVAnchor({ nx: n.nx, ny: n.ny });
+      return;
+    }
+
     if (mode !== "calibrate") {
       store.addPhotoOverlay(photoId, mode, n.nx, n.ny);
       store.setPhotoTool("select");
@@ -171,9 +186,58 @@ export function PhotoAnnotator({ photoId }: { photoId: string }) {
     return "метры: DEFAULT (не фотограмметрия)";
   };
 
+  const calReady = Boolean(cal);
+  const regReady = isPhotoRegistered(photo);
+
+  const commitRegistration = () => {
+    if (!hAnchor || !vAnchor) {
+      store.pushGrok({
+        id: `rv${Date.now()}`,
+        role: "assistant",
+        text: "Привязка: коснитесь точки на стене, затем линии пола / известной высоты.",
+      });
+      return;
+    }
+    const wall = photo.wallHint;
+    if (!wall) {
+      store.pushGrok({
+        id: `rv${Date.now()}`,
+        role: "assistant",
+        text: "Сначала выберите стену фото.",
+      });
+      return;
+    }
+    const off = parseLengthToMeters(regOffset);
+    const elev = parseLengthToMeters(regElev);
+    if (off == null || !Number.isFinite(off) || elev == null || !Number.isFinite(elev)) {
+      store.pushGrok({
+        id: `rv${Date.now()}`,
+        role: "assistant",
+        text: "Введите расстояние от начала стены и высоту точки (м).",
+      });
+      return;
+    }
+    const registration: PhotoWallRegistration = {
+      wallId: wall,
+      anchorNx: hAnchor.nx,
+      wallOffsetM: off,
+      hDirection: regHDir,
+      anchorNy: vAnchor.ny,
+      elevationM: elev,
+      vDirection: -1,
+      provenance: "USER_CONFIRMED",
+    };
+    const r = store.setPhotoWallRegistration(photoId, registration);
+    if (r.ok) {
+      setHAnchor(null);
+      setVAnchor(null);
+      store.setPhotoTool("select");
+    }
+  };
+
   return (
-    <div className="flex h-full min-h-0 flex-col" data-mf-id="photo-workspace">
-      <div className="flex flex-wrap gap-1 border-b border-border px-2 py-1">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden" data-mf-id="photo-workspace">
+      <div className="flex shrink-0 flex-nowrap gap-1 overflow-x-auto border-b border-border px-2 py-1">
         <button
           type="button"
           data-mf-id="kind-point"
@@ -189,6 +253,18 @@ export function PhotoAnnotator({ photoId }: { photoId: string }) {
           onClick={() => store.setPhotoTool("select")}
         >
           Выбор
+        </button>
+        <button
+          type="button"
+          data-mf-id="photo-register"
+          className={cn("h-11 min-w-[44px] rounded-[8px] px-2 text-[11px] uppercase", mode === "register" ? "bg-raised text-fg" : "text-muted")}
+          onClick={() => {
+            store.setPhotoTool("register");
+            setHAnchor(null);
+            setVAnchor(null);
+          }}
+        >
+          Привязка
         </button>
         {PHOTO_OVERLAY_KINDS.map((k) => (
           <button
@@ -278,7 +354,7 @@ export function PhotoAnnotator({ photoId }: { photoId: string }) {
           }
         }}
       >
-        <div className="flex h-full min-h-[140px] w-full items-center justify-center overflow-hidden">
+        <div className="flex h-full min-h-0 w-full items-center justify-center overflow-hidden">
           <div
             ref={hostRef}
             className="relative h-full w-full"
@@ -322,6 +398,32 @@ export function PhotoAnnotator({ photoId }: { photoId: string }) {
                     <span className="absolute left-3 top-0 font-mono text-[10px] text-fg">{m.label}</span>
                   </div>
                 ))}
+                {photo.wallRegistration && (
+                  <>
+                    <div
+                      className="pointer-events-none absolute size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-bg bg-warn"
+                      data-mf-id="reg-h-anchor"
+                      style={{ left: `${photo.wallRegistration.anchorNx * 100}%`, top: `${photo.wallRegistration.anchorNy * 100}%` }}
+                    />
+                    <div
+                      className="pointer-events-none absolute h-px w-full bg-warn/60"
+                      data-mf-id="reg-v-line"
+                      style={{ top: `${photo.wallRegistration.anchorNy * 100}%` }}
+                    />
+                  </>
+                )}
+                {hAnchor && (
+                  <div
+                    className="pointer-events-none absolute size-4 -translate-x-1/2 -translate-y-1/2 rounded-full bg-warn"
+                    style={{ left: `${hAnchor.nx * 100}%`, top: `${hAnchor.ny * 100}%` }}
+                  />
+                )}
+                {vAnchor && (
+                  <div
+                    className="pointer-events-none absolute size-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-warn bg-bg"
+                    style={{ left: `${vAnchor.nx * 100}%`, top: `${vAnchor.ny * 100}%` }}
+                  />
+                )}
                 {overlays.map((o) => {
                   if (o.planeStatus === "OUT_OF_PHOTO_PLANE") return null;
                   const vis = liveOv && liveOv.id === o.id ? { ...o, ...liveOv } : o;
@@ -377,6 +479,80 @@ export function PhotoAnnotator({ photoId }: { photoId: string }) {
       {store.lastMutationError && (
         <div className="border-t border-border bg-crit/10 px-2 py-1 font-mono text-[11px] text-crit" data-mf-id="photo-error">
           {store.lastMutationError}
+        </div>
+      )}
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-border px-2 py-1 font-mono text-[11px]">
+        <span data-mf-id="photo-scale-status" className={calReady ? "text-cold" : "text-muted"}>
+          МАСШТАБ: {calReady ? "ГОТОВ" : "НЕТ"}
+        </span>
+        <span data-mf-id="photo-reg-status" className={regReady ? "text-cold" : "text-warn"}>
+          ПРИВЯЗКА К СТЕНЕ: {regReady ? "ГОТОВА" : "НЕ ЗАДАНА"}
+        </span>
+      </div>
+      {mode === "register" && (
+        <div className="space-y-2 border-t border-border p-2" data-mf-id="photo-reg-panel">
+          <div className="flex flex-wrap gap-1">
+            <span className="mr-1 self-center text-[10px] uppercase text-muted">Стена фото</span>
+            {WALLS.map((w) => (
+              <button
+                key={w.id}
+                type="button"
+                data-mf-id={`photo-wall-${w.id}`}
+                className={cn("h-11 min-w-[44px] rounded-[8px] px-2 text-[11px] uppercase", photo.wallHint === w.id ? "bg-raised text-fg" : "text-muted")}
+                onClick={() => store.setPhotoWallHint(photoId, w.id)}
+              >
+                {w.label}
+              </button>
+            ))}
+          </div>
+          <div className="text-[11px] text-muted">
+            {!hAnchor
+              ? "1. Коснитесь известной точки на фото."
+              : !vAnchor
+                ? "2. Коснитесь линии пола или известной высоты."
+                : "3. Введите размеры и сохраните."}
+          </div>
+          <label className="block text-[11px] text-muted">
+            Расстояние этой точки от начала стены, m
+            <input
+              suppressHydrationWarning
+              className="mt-0.5 h-11 w-full rounded-[6px] border border-border bg-bg px-2 font-mono text-[12px]"
+              data-mf-id="photo-reg-offset"
+              value={regOffset}
+              onChange={(e) => setRegOffset(e.target.value)}
+            />
+          </label>
+          <div className="flex flex-wrap gap-1">
+            <button
+              type="button"
+              data-mf-id="photo-reg-dir-fwd"
+              className={cn("h-11 flex-1 rounded-[8px] px-2 text-[11px]", regHDir === 1 ? "bg-raised text-fg" : "text-muted")}
+              onClick={() => setRegHDir(1)}
+            >
+              Фото слева направо = от начала стены
+            </button>
+            <button
+              type="button"
+              data-mf-id="photo-reg-dir-rev"
+              className={cn("h-11 flex-1 rounded-[8px] px-2 text-[11px]", regHDir === -1 ? "bg-raised text-fg" : "text-muted")}
+              onClick={() => setRegHDir(-1)}
+            >
+              Фото слева направо = к началу стены
+            </button>
+          </div>
+          <label className="block text-[11px] text-muted">
+            Высота этой точки, m (пол = 0.00)
+            <input
+              suppressHydrationWarning
+              className="mt-0.5 h-11 w-full rounded-[6px] border border-border bg-bg px-2 font-mono text-[12px]"
+              data-mf-id="photo-reg-elev"
+              value={regElev}
+              onChange={(e) => setRegElev(e.target.value)}
+            />
+          </label>
+          <Button variant="default" className="h-11 w-full" data-mf-id="photo-reg-commit" onClick={commitRegistration}>
+            Сохранить привязку
+          </Button>
         </div>
       )}
       <div className="sticky bottom-0 z-10 flex flex-wrap gap-1 border-t border-border bg-surface p-2">
@@ -452,6 +628,21 @@ export function PhotoAnnotator({ photoId }: { photoId: string }) {
                 onBlur={(e) => {
                   const m = parseLengthToMeters(e.target.value);
                   if (m != null) store.updatePhotoOverlay(photoId, selected.id, { bottomElevationM: m, metricSource: "OWNER_ENTERED" });
+                }}
+              />
+            </label>
+            <label className="text-[11px] text-muted">
+              От начала стены, m
+              <input
+                suppressHydrationWarning
+                className="mt-0.5 h-11 w-full rounded-[6px] border border-border bg-bg px-2 font-mono text-[12px]"
+                data-mf-id="overlay-offset"
+                defaultValue={String(selected.ownerOffsetM ?? "")}
+                key={`off-${selected.id}-${selected.ownerOffsetM ?? ""}`}
+                placeholder="если нет привязки"
+                onBlur={(e) => {
+                  const m = parseLengthToMeters(e.target.value);
+                  if (m != null) store.updatePhotoOverlay(photoId, selected.id, { ownerOffsetM: m });
                 }}
               />
             </label>

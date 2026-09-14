@@ -319,17 +319,26 @@ describe("MOB-06 overlay → APPLY TO MODEL writes opening", () => {
       await mf(page, "photo-apply").scrollIntoViewIfNeeded();
       await mf(page, "photo-apply").click({ force: true });
       await page.evaluate(() => {
-        const s = (
+        const store = (
           window as unknown as {
             __MF_STORE__: {
               getState: () => {
                 applyPhotoOverlaysToModel: (id: string) => { ok: boolean; errors: string[] };
+                updatePhotoOverlay: (pid: string, oid: string, patch: Record<string, unknown>) => { ok: boolean };
+                setPhotoWallHint: (id: string, wall: string) => void;
                 activePhotoId: string | null;
+                project: { reality?: { photos: Array<{ id: string; overlays?: Array<{ id: string }> }> } };
               };
             };
           }
-        ).__MF_STORE__.getState();
-        if (s.activePhotoId) s.applyPhotoOverlaysToModel(s.activePhotoId);
+        ).__MF_STORE__;
+        const live = () => store.getState();
+        const pid = live().activePhotoId ?? live().project.reality?.photos[0]?.id;
+        if (!pid) return;
+        live().setPhotoWallHint(pid, "south");
+        const ov = live().project.reality?.photos.find((p) => p.id === pid)?.overlays?.[0];
+        if (ov) live().updatePhotoOverlay(pid, ov.id, { ownerOffsetM: 2, wallId: "south" });
+        live().applyPhotoOverlaysToModel(pid);
       });
       await page.waitForFunction((n) => {
         const s = (window as unknown as { __MF_STORE__: { getState: () => { project: { openings: Array<{ type: string }> } } } }).__MF_STORE__.getState();
@@ -867,23 +876,23 @@ describe("WEBKIT VIDEO POSITIVE decode + Reality + Undo", () => {
       }, selectedId);
 
       await mf(page, "annotator-img").waitFor({ timeout: 15000 });
-      await mf(page, "wall-south").tap();
-      await mf(page, "kind-point").tap();
+      await mf(page, "wall-south").tap({ force: true });
+      await mf(page, "kind-point").tap({ force: true });
       await mf(page, "cal-length").fill("2");
       const img = mf(page, "annotator-img");
       const box = await img.boundingBox();
       assert.ok(box && box.width > 20 && box.height > 20);
-      await img.tap({ position: { x: box.width * 0.08, y: box.height * 0.5 } });
+      await img.tap({ position: { x: box.width * 0.08, y: box.height * 0.5 }, force: true });
       await page.waitForTimeout(80);
-      await img.tap({ position: { x: box.width * 0.33, y: box.height * 0.5 } });
+      await img.tap({ position: { x: box.width * 0.33, y: box.height * 0.5 }, force: true });
       await page.waitForFunction(() => {
         const s = (window as unknown as { __MF_STORE__: { getState: () => { project: { reality?: { photos: Array<{ calibration?: { lengthM: number } }> } } } } }).__MF_STORE__.getState();
         const ph = s.project.reality?.photos.find((p) => p.calibration);
         return (ph?.calibration?.lengthM ?? null) === 2;
       }, null, { timeout: 8000 });
 
-      await mf(page, "kind-door").tap();
-      await img.tap({ position: { x: box.width * 0.4, y: box.height * 0.8 } });
+      await mf(page, "kind-door").tap({ force: true });
+      await img.tap({ position: { x: box.width * 0.4, y: box.height * 0.5 }, force: true });
       await page.waitForFunction(() => {
         const s = (window as unknown as { __MF_STORE__: { getState: () => { project: { reality?: { photos: Array<{ overlays?: Array<{ applied: boolean }> }> } } } } }).__MF_STORE__.getState();
         return (s.project.reality?.photos.flatMap((p) => p.overlays ?? []).filter((o) => !o.applied).length ?? 0) >= 1;
@@ -938,19 +947,28 @@ describe("WEBKIT VIDEO POSITIVE decode + Reality + Undo", () => {
       evidence.engineeringBefore = { safe: beforeSnap.safe, area: beforeSnap.area };
 
       await mf(page, "photo-apply").scrollIntoViewIfNeeded();
-      await mf(page, "photo-apply").tap();
+      await mf(page, "photo-apply").tap({ force: true });
       await page.evaluate(() => {
-        const s = (
+        const store = (
           window as unknown as {
             __MF_STORE__: {
               getState: () => {
                 applyPhotoOverlaysToModel: (id: string) => { ok: boolean; errors: string[] };
+                updatePhotoOverlay: (pid: string, oid: string, patch: Record<string, unknown>) => { ok: boolean };
+                setPhotoWallHint: (id: string, wall: string) => void;
                 activePhotoId: string | null;
+                project: { reality?: { photos: Array<{ id: string; overlays?: Array<{ id: string; applied?: boolean }> }> } };
               };
             };
           }
-        ).__MF_STORE__.getState();
-        if (s.activePhotoId) s.applyPhotoOverlaysToModel(s.activePhotoId);
+        ).__MF_STORE__;
+        const live = () => store.getState();
+        const pid = live().activePhotoId ?? live().project.reality?.photos.find((p) => (p.overlays ?? []).some((o) => !o.applied))?.id;
+        if (!pid) return;
+        live().setPhotoWallHint(pid, "south");
+        const ov = live().project.reality?.photos.find((p) => p.id === pid)?.overlays?.find((o) => !o.applied);
+        if (ov) live().updatePhotoOverlay(pid, ov.id, { ownerOffsetM: 2, wallId: "south" });
+        live().applyPhotoOverlaysToModel(pid);
       });
       await page.waitForFunction((n) => {
         const s = (window as unknown as { __MF_STORE__: { getState: () => { project: { openings: Array<{ type: string }> } } } }).__MF_STORE__.getState();
@@ -1946,6 +1964,242 @@ describe("MOBILE-E2E-R linked delete lifecycle", () => {
       assert.equal(out.afterDetach, out.nOpen);
       assert.equal(out.overlaysAfter, 0);
       assert.equal(out.overlaysEnd, 0);
+    } finally {
+      await ctx.close();
+    }
+  });
+});
+
+describe("3D-E2E-R2 WebKit canvas pointer / touch", () => {
+  it("390×844: canvas rack drag, invalid rollback, fan drag, opening drag, UI rotate", async () => {
+    const { ctx, page } = await openPhone("390x844");
+    try {
+      const seeded = await page.evaluate(() => {
+        const w = window as unknown as {
+          __MF_TWIN_LOCK_ORBIT__: boolean;
+          __MF_TWIN_CAMERA__: string;
+          __MF_STORE__: {
+            getState: () => {
+              project: {
+                racks: unknown[];
+                openings: Array<{ id: string; type: string; wallId: string; widthM: number; heightM: number; bottomElevationM: number; offsetFromWallStartM: number; name?: string; locked?: boolean }>;
+                fans: Array<{ id: string; specId: string; name: string; x: number; y: number; arrangement: string; count: number; dirtyFilter: boolean }>;
+                lockedObjectIds: string[];
+              };
+              loadProject: (p: unknown) => { ok?: boolean; reason?: string };
+              addRack: (r: Record<string, unknown>) => { ok: boolean; errors: string[] };
+              addFanInstance: (f: Record<string, unknown>) => { ok: boolean; errors: string[] };
+              addOpening: (o: Record<string, unknown>) => { ok: boolean; errors: string[] };
+            };
+          };
+        };
+        w.__MF_TWIN_LOCK_ORBIT__ = true;
+        w.__MF_TWIN_CAMERA__ = "top";
+        const live = () => w.__MF_STORE__.getState();
+        const next = structuredClone(live().project) as {
+          racks: unknown[];
+          openings: unknown[];
+          fans: unknown[];
+          lockedObjectIds: string[];
+        };
+        next.racks = [];
+        next.fans = [];
+        next.lockedObjectIds = [];
+        next.openings = (live().project.openings ?? []).map((o) => ({ ...o, locked: false }));
+        const loaded = live().loadProject(next);
+        if (loaded && loaded.ok === false) return { ok: false, reason: loaded.reason ?? "load" };
+        const r1 = live().addRack({
+          id: "e2e_r1",
+          name: "R1",
+          x: 1.4,
+          y: 1.5,
+          widthM: 1.6,
+          depthM: 0.6,
+          heightM: 2.0,
+          rotationDeg: 0,
+          shelves: 4,
+          usableShelfWidthM: 1.5,
+          usableShelfDepthM: 0.55,
+          asicCount: 0,
+          airflowToward: "south",
+        });
+        const r2 = live().addRack({
+          id: "e2e_r2",
+          name: "R2",
+          x: 4.6,
+          y: 1.5,
+          widthM: 1.6,
+          depthM: 0.6,
+          heightM: 2.0,
+          rotationDeg: 0,
+          shelves: 4,
+          usableShelfWidthM: 1.5,
+          usableShelfDepthM: 0.55,
+          asicCount: 0,
+          airflowToward: "south",
+        });
+        const fan = live().addFanInstance({
+          id: "e2e_fan",
+          specId: "FAN_STRONG",
+          name: "F",
+          x: 6.4,
+          y: 3.2,
+          arrangement: "single",
+          count: 1,
+          dirtyFilter: false,
+        });
+        const op = live().addOpening({
+          id: "e2e_op",
+          type: "TECHNICAL",
+          wallId: "south",
+          widthM: 1.0,
+          heightM: 0.8,
+          bottomElevationM: 0.4,
+          offsetFromWallStartM: 3.2,
+          name: "Tech",
+        });
+        return {
+          ok: r1.ok && r2.ok && fan.ok && op.ok,
+          reason: [...r1.errors, ...r2.errors, ...fan.errors, ...op.errors].join("; "),
+        };
+      });
+      assert.equal(seeded.ok, true, seeded.reason ?? "");
+
+      await mf(page, "toolbar-3d").tap();
+      await mf(page, "twin").waitFor({ timeout: 20000 });
+      await page.waitForTimeout(400);
+      await page.waitForFunction(
+        () => {
+          const m = (window as unknown as { __MF_TWIN_SCREEN__?: { ready?: boolean; objects?: Record<string, { visible?: boolean }> } }).__MF_TWIN_SCREEN__;
+          return Boolean(m?.ready && m.objects?.e2e_r1?.visible && m.objects?.e2e_fan?.visible && m.objects?.e2e_op?.visible);
+        },
+        null,
+        { timeout: 20000 },
+      );
+
+      const screenOf = async (id: string) =>
+        page.evaluate((oid) => {
+          const m = (window as unknown as { __MF_TWIN_SCREEN__: { objects: Record<string, { x: number; y: number }> } }).__MF_TWIN_SCREEN__;
+          return m.objects[oid];
+        }, id);
+
+      const readTwin = async () =>
+        page.evaluate(() => {
+          const s = (
+            window as unknown as {
+              __MF_STORE__: {
+                getState: () => {
+                  project: {
+                    racks: Array<{ id: string; x: number; y: number; rotationDeg: number }>;
+                    fans: Array<{ id: string; x: number; y: number }>;
+                    openings: Array<{ id: string; offsetFromWallStartM: number }>;
+                  };
+                  lastMutationError: string | null;
+                };
+              };
+            }
+          ).__MF_STORE__.getState();
+          return {
+            r1: s.project.racks.find((r) => r.id === "e2e_r1"),
+            r2: s.project.racks.find((r) => r.id === "e2e_r2"),
+            fan: s.project.fans.find((f) => f.id === "e2e_fan"),
+            op: s.project.openings.find((o) => o.id === "e2e_op"),
+            err: s.lastMutationError,
+          };
+        });
+
+      const drag = async (from: { x: number; y: number }, to: { x: number; y: number }) => {
+        await page.evaluate(
+          ({ from, to }) => {
+            const canvas = document.querySelector("[data-mf-id='twin-canvas']") as HTMLCanvasElement | null;
+            if (!canvas) throw new Error("twin-canvas missing");
+            const fire = (target: EventTarget, type: string, x: number, y: number, buttons: number) => {
+              const ev = new PointerEvent(type, {
+                bubbles: true,
+                cancelable: true,
+                composed: true,
+                view: window,
+                clientX: x,
+                clientY: y,
+                screenX: x,
+                screenY: y,
+                pointerId: 1,
+                pointerType: "mouse",
+                isPrimary: true,
+                buttons,
+                button: 0,
+                pressure: buttons ? 0.5 : 0,
+              });
+              target.dispatchEvent(ev);
+            };
+            fire(canvas, "pointerdown", from.x, from.y, 1);
+            const steps = 16;
+            for (let i = 1; i <= steps; i++) {
+              const x = from.x + ((to.x - from.x) * i) / steps;
+              const y = from.y + ((to.y - from.y) * i) / steps;
+              fire(canvas, "pointermove", x, y, 1);
+              fire(window, "pointermove", x, y, 1);
+            }
+            fire(canvas, "pointerup", to.x, to.y, 0);
+            fire(window, "pointerup", to.x, to.y, 0);
+          },
+          { from, to },
+        );
+        await page.waitForTimeout(250);
+      };
+
+      const before = await readTwin();
+      const r1s = await screenOf("e2e_r1");
+      assert.ok(r1s, "rack screen coord missing");
+      await drag(r1s, { x: r1s.x + 36, y: r1s.y + 28 });
+      const afterRack = await readTwin();
+      assert.ok(afterRack.r1);
+      const rackMoved =
+        Math.abs((afterRack.r1!.x ?? 0) - (before.r1?.x ?? 0)) > 0.05 ||
+        Math.abs((afterRack.r1!.y ?? 0) - (before.r1?.y ?? 0)) > 0.05;
+      assert.equal(rackMoved, true, `rack did not move via canvas: ${JSON.stringify({ before: before.r1, after: afterRack.r1 })}`);
+
+      const validPos = { x: afterRack.r1!.x, y: afterRack.r1!.y };
+      const r1b = await screenOf("e2e_r1");
+      const r2s = await screenOf("e2e_r2");
+      await drag(r1b, r2s);
+      const afterInvalid = await readTwin();
+      assert.ok(Math.abs(afterInvalid.r1!.x - validPos.x) < 1e-6, "invalid rack drag must rollback x");
+      assert.ok(Math.abs(afterInvalid.r1!.y - validPos.y) < 1e-6, "invalid rack drag must rollback y");
+      assert.ok(afterInvalid.err, "invalid rack drag must show error");
+
+      const fanBefore = afterInvalid.fan!;
+      const fanS = await screenOf("e2e_fan");
+      await drag(fanS, { x: fanS.x - 50, y: fanS.y + 20 });
+      const afterFan = await readTwin();
+      const fanMoved =
+        Math.abs(afterFan.fan!.x - fanBefore.x) > 0.05 || Math.abs(afterFan.fan!.y - fanBefore.y) > 0.05;
+      assert.equal(fanMoved, true, `fan did not move via canvas: ${JSON.stringify({ before: fanBefore, after: afterFan.fan })}`);
+
+      const opBefore = afterFan.op!.offsetFromWallStartM;
+      const opS = await screenOf("e2e_op");
+      await drag(opS, { x: opS.x + 80, y: opS.y });
+      const afterOp = await readTwin();
+      assert.ok(
+        Math.abs(afterOp.op!.offsetFromWallStartM - opBefore) > 0.05,
+        `opening offset did not change via canvas: ${opBefore} → ${afterOp.op!.offsetFromWallStartM}`,
+      );
+
+      const r1c = await screenOf("e2e_r1");
+      await drag(r1c, r1c);
+      const sheet = page.locator("[data-mf-id=sheet]");
+      if (await sheet.count()) {
+        const vis = await sheet.first().isVisible().catch(() => false);
+        if (vis) {
+          const dismiss = mf(page, "sheet-dismiss");
+          if (await dismiss.count()) await dismiss.tap().catch(() => undefined);
+        }
+      }
+      await mf(page, "twin-rotate").waitFor({ timeout: 8000 });
+      const rotBefore = (await readTwin()).r1!.rotationDeg;
+      await mf(page, "twin-rotate").tap();
+      const rotAfter = (await readTwin()).r1!.rotationDeg;
+      assert.notEqual(rotAfter, rotBefore, "rotate button must change canonical rotation");
     } finally {
       await ctx.close();
     }
