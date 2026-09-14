@@ -109,6 +109,8 @@ export function createPhotoOverlay(
     depthM: def.depthM,
     bottomElevationM: def.bottomElevationM,
     wallId: photo.wallHint,
+    metricSource: "DEFAULT",
+    planeStatus: "ON_PLANE",
     applied: false,
   };
 }
@@ -201,7 +203,13 @@ export function applyOneOverlay(
     const nextOpening = project.openings.some((o) => o.id === opening.id)
       ? project.openings.map((o) => (o.id === opening.id ? opening : o))
       : [...project.openings, opening];
-    const linked: PhotoOverlayObject = { ...overlay, applied: true, linkedObjectId: opening.id, wallId: wall };
+    const linked: PhotoOverlayObject = {
+      ...overlay,
+      applied: true,
+      linkedObjectId: opening.id,
+      wallId: wall,
+      planeStatus: "ON_PLANE",
+    };
     return { ok: true, project: withPhoto({ ...project, openings: nextOpening }, upsertOverlay(photo, linked)), overlay: linked };
   }
 
@@ -231,7 +239,13 @@ export function applyOneOverlay(
     const racks = project.racks.some((r) => r.id === rack.id)
       ? project.racks.map((r) => (r.id === rack.id ? rack : r))
       : [...project.racks, rack];
-    const linked: PhotoOverlayObject = { ...overlay, applied: true, linkedObjectId: rack.id, wallId: wall };
+    const linked: PhotoOverlayObject = {
+      ...overlay,
+      applied: true,
+      linkedObjectId: rack.id,
+      wallId: wall,
+      planeStatus: "ON_PLANE",
+    };
     return { ok: true, project: withPhoto({ ...project, racks }, upsertOverlay(photo, linked)), overlay: linked };
   }
 
@@ -251,7 +265,13 @@ export function applyOneOverlay(
     const fans = project.fans.some((f) => f.id === fan.id)
       ? project.fans.map((f) => (f.id === fan.id ? fan : f))
       : [...project.fans, fan];
-    const linked: PhotoOverlayObject = { ...overlay, applied: true, linkedObjectId: fan.id, wallId: wall };
+    const linked: PhotoOverlayObject = {
+      ...overlay,
+      applied: true,
+      linkedObjectId: fan.id,
+      wallId: wall,
+      planeStatus: "ON_PLANE",
+    };
     return { ok: true, project: withPhoto({ ...project, fans }, upsertOverlay(photo, linked)), overlay: linked };
   }
 
@@ -281,7 +301,13 @@ export function applyOneOverlay(
     const asBuilt = reality.asBuilt.some((a) => a.id === obj.id)
       ? reality.asBuilt.map((a) => (a.id === obj.id ? obj : a))
       : [...reality.asBuilt, obj];
-    const linked: PhotoOverlayObject = { ...overlay, applied: true, linkedObjectId: obj.id, wallId: wall };
+    const linked: PhotoOverlayObject = {
+      ...overlay,
+      applied: true,
+      linkedObjectId: obj.id,
+      wallId: wall,
+      planeStatus: "ON_PLANE",
+    };
     const photo2 = upsertOverlay(photo, linked);
     return {
       ok: true,
@@ -310,19 +336,21 @@ export function applyPhotoOverlays(
   if (!photo) return { project, ok: false, errors: ["Фото не найдено."], appliedIds: [] };
   const drafts = (photo.overlays ?? []).filter((o) => !o.applied);
   if (!drafts.length) return { project, ok: false, errors: ["Нет объектов для APPLY."], appliedIds: [] };
-  let next = project;
+  let candidate = project;
   const errors: string[] = [];
   const appliedIds: string[] = [];
   for (const overlay of drafts) {
-    const livePhoto = (next.reality ?? emptyReality()).photos.find((p) => p.id === photoId) ?? photo;
-    const r = applyOneOverlay(next, livePhoto, overlay);
+    const livePhoto = (candidate.reality ?? emptyReality()).photos.find((p) => p.id === photoId) ?? photo;
+    const r = applyOneOverlay(candidate, livePhoto, overlay);
     if (r.ok) {
-      next = r.project;
+      candidate = r.project;
       appliedIds.push(overlay.id);
     } else {
       errors.push(`${PHOTO_OVERLAY_LABEL_RU[overlay.kind]}: ${r.errors.join("; ")}`);
     }
   }
-  if (!appliedIds.length) return { project, ok: false, errors, appliedIds };
-  return { project: next, ok: true, errors, appliedIds };
+  if (errors.length) {
+    return { project, ok: false, errors, appliedIds: [] };
+  }
+  return { project: candidate, ok: true, errors: [], appliedIds };
 }

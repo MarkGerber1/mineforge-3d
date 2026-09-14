@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { defaultCatalogs } from "../engineering/catalogs.ts";
 import { calculateAll, type Catalogs } from "../engineering/pipeline.ts";
 import { alignRacks, distributeRacks, duplicateRackOffset, generateAutoLayout, rotateRack90, type AlignEdge } from "../engineering/layout.ts";
-import { originDeltaForWallResize, resizeRectangularRoom, validateOpening } from "../engineering/geometry.ts";
+import { originDeltaForWallResize, resizeRectangularRoom, validateOpening, fanIsSpatiallyValid } from "../engineering/geometry.ts";
 import { validateCanonicalProjectDomains, validateRequestedCount } from "../engineering/canonical.ts";
 import { applyPatchValidated, type PartialProjectPatch } from "../engineering/upgrade.ts";
 import { grokImportedAsic } from "../engineering/asic-trust.ts";
@@ -15,6 +15,12 @@ import type { GrokScope } from "../ai/intent.ts";
 import { emptyReality, type AsBuiltObject, type PhotoMarker, type PhotoMarkerKind, type PhotoOverlayKind, type PhotoOverlayObject, type RealityFinding, type RealityPhotoMeta, type RealityVideoMeta, type VideoErrorCode } from "../engineering/types.ts";
 import { applyFinding, attachVideoFrames, recordAnnotation } from "../engineering/reality.ts";
 import { applyPhotoOverlays, createPhotoOverlay } from "../engineering/photo-overlay.ts";
+import {
+  deleteCanonicalByOverlay,
+  detachOverlayFromPhoto,
+  photoIntentToCanonical,
+  reconcileLinkedReality,
+} from "../engineering/photo-reconcile.ts";
 import { reassignOpeningWall } from "../engineering/wall-reassign.ts";
 import type { RuntimeSnapshot } from "../ai/runtime-client.ts";
 import { validateRoomHeightM, validateRoomLengthM } from "../engineering/room-resize.ts";
@@ -151,6 +157,7 @@ interface ProjectStore {
   deleteSelected(): { ok: boolean; errors: string[] };
   addRack(rack: Rack): { ok: boolean; errors: string[] };
   moveRack(id: string, x: number, y: number, preview?: boolean): { ok: boolean; errors: string[] };
+  moveFan(id: string, x: number, y: number, preview?: boolean): { ok: boolean; errors: string[] };
   addFanInstance(fan: FanInstance): { ok: boolean; errors: string[] };
   setFleet(asicId: string, count: number): { ok: boolean; reason?: string };
   setPower(watts: number, reservePct?: number): { ok: boolean; reason?: string };
@@ -201,6 +208,8 @@ interface ProjectStore {
   updatePhotoOverlay(photoId: string, overlayId: string, patch: Partial<PhotoOverlayObject>): { ok: boolean; reason?: string };
   duplicatePhotoOverlay(photoId: string, overlayId: string): { ok: boolean; reason?: string };
   deletePhotoOverlay(photoId: string, overlayId: string): { ok: boolean; reason?: string };
+  detachPhotoOverlay(photoId: string, overlayId: string): { ok: boolean; reason?: string };
+  deleteLinkedFromModel(photoId: string, overlayId: string): { ok: boolean; reason?: string; errors?: string[] };
   applyPhotoOverlaysToModel(photoId: string): { ok: boolean; errors: string[]; appliedIds: string[] };
   commitVideoEvidence(video: RealityVideoMeta, frames: RealityPhotoMeta[]): void;
   toggleFrameSelect(photoId: string): void;
@@ -313,17 +322,18 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
   commit(next, label) {
     const { project, past, catalogs, failureSim, measure } = get();
-    const domains = validateCanonicalProjectDomains(next, catalogs);
+    const reconciled = reconcileLinkedReality(next);
+    const domains = validateCanonicalProjectDomains(reconciled, catalogs);
     if (!domains.ok) {
       set({ lastMutationError: domains.errors[0] ?? "Каноническая проверка не пройдена." });
       return false;
     }
-    const result = calculateAll(next, catalogs);
-    const overlay = overlayFrom(next, null, failureSim, catalogs);
+    const result = calculateAll(reconciled, catalogs);
+    const overlay = overlayFrom(reconciled, null, failureSim, catalogs);
     set({
       past: [...past.slice(-99), { label, project, measure: cloneMeasure(measure) }],
       future: [],
-      project: { ...next, updatedAt: Date.now() },
+      project: { ...reconciled, updatedAt: Date.now() },
       preview: null,
       previewResult: null,
       result,
@@ -339,10 +349,11 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       set({ preview: null, previewResult: null, ...overlayFrom(project, null, failureSim, catalogs) });
       return;
     }
+    const reconciled = reconcileLinkedReality(next);
     set({
-      preview: next,
-      previewResult: calculateAll(next, catalogs),
-      ...overlayFrom(project, next, failureSim, catalogs),
+      preview: reconciled,
+      previewResult: calculateAll(reconciled, catalogs),
+      ...overlayFrom(project, reconciled, failureSim, catalogs),
     });
   },
   commitGeometryPreview(label) {
@@ -517,6 +528,23 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     }
     if (!v.ok) return { ok: false, errors: v.errors };
     get().commit(next, "Move rack");
+    return { ok: true, errors: [] };
+  },
+  moveFan(id, x, y, preview) {
+    const src = get().project;
+    const nextFans = src.fans.map((f) => (f.id === id ? { ...f, x, y } : f));
+    const candidate = nextFans.find((f) => f.id === id);
+    if (!candidate) return { ok: false, errors: ["Вентилятор не найден."] };
+    const next = { ...src, fans: nextFans, updatedAt: Date.now() };
+    const valid = fanIsSpatiallyValid(next, candidate);
+    if (preview) {
+      get().setPreview(next);
+      return valid ? { ok: true, errors: [] } : { ok: false, errors: ["Вентилятор должен быть внутри помещения."] };
+    }
+    if (!valid) return { ok: false, errors: ["Вентилятор должен быть внутри помещения."] };
+    const domains = validateCanonicalProjectDomains(next, get().catalogs);
+    if (!domains.ok) return { ok: false, errors: domains.errors };
+    get().commit(next, "Move fan");
     return { ok: true, errors: [] };
   },
   addFanInstance(fan) {
@@ -889,13 +917,13 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
   updatePhotoOverlay(photoId, overlayId, patch) {
     const src = get().project;
-    const reality = src.reality ?? emptyReality();
-    const photo = reality.photos.find((p) => p.id === photoId);
-    if (!photo) return { ok: false, reason: "Фото не найдено." };
-    const overlays = (photo.overlays ?? []).map((o) => (o.id === overlayId ? { ...o, ...patch, id: o.id, kind: o.kind } : o));
-    if (!(photo.overlays ?? []).some((o) => o.id === overlayId)) return { ok: false, reason: "Объект на фото не найден." };
-    const photos = reality.photos.map((p) => (p.id === photoId ? { ...p, overlays } : p));
-    get().commit({ ...src, reality: { ...reality, photos } }, "Фото: правка");
+    const r = photoIntentToCanonical(src, photoId, overlayId, patch);
+    if (!r.ok) {
+      set({ lastMutationError: r.errors[0] ?? "Правка на фото отклонена." });
+      return { ok: false, reason: r.errors[0] };
+    }
+    const ok = get().commit(r.project, "Фото: правка");
+    if (!ok) return { ok: false, reason: get().lastMutationError ?? "Каноническая проверка не пройдена." };
     return { ok: true };
   },
   duplicatePhotoOverlay(photoId, overlayId) {
@@ -911,6 +939,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       ny: Math.min(0.9, srcOv.ny + 0.04),
       linkedObjectId: undefined,
       applied: false,
+      planeStatus: "ON_PLANE" as const,
     };
     const photos = reality.photos.map((p) =>
       p.id === photoId ? { ...p, overlays: [...(p.overlays ?? []), copy] } : p,
@@ -922,11 +951,39 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   deletePhotoOverlay(photoId, overlayId) {
     const src = get().project;
     const reality = src.reality ?? emptyReality();
-    const photos = reality.photos.map((p) =>
-      p.id === photoId ? { ...p, overlays: (p.overlays ?? []).filter((o) => o.id !== overlayId) } : p,
-    );
-    get().commit({ ...src, reality: { ...reality, photos } }, "Фото: удалить");
+    const photo = reality.photos.find((p) => p.id === photoId);
+    const overlay = photo?.overlays?.find((o) => o.id === overlayId);
+    if (!overlay) return { ok: false, reason: "Объект на фото не найден." };
+    if (overlay.applied && overlay.linkedObjectId) {
+      return { ok: false, reason: "Выберите: убрать с фото или удалить из модели." };
+    }
+    get().commit(detachOverlayFromPhoto(src, photoId, overlayId), "Фото: удалить черновик");
     set({ selectedIds: get().selectedIds.filter((id) => id !== overlayId) });
+    return { ok: true };
+  },
+  detachPhotoOverlay(photoId, overlayId) {
+    const src = get().project;
+    const reality = src.reality ?? emptyReality();
+    const overlay = reality.photos.find((p) => p.id === photoId)?.overlays?.find((o) => o.id === overlayId);
+    if (!overlay) return { ok: false, reason: "Объект на фото не найден." };
+    get().commit(detachOverlayFromPhoto(src, photoId, overlayId), "Фото: убрать с фото");
+    set({ selectedIds: overlay.linkedObjectId ? [overlay.linkedObjectId] : get().selectedIds.filter((id) => id !== overlayId) });
+    return { ok: true };
+  },
+  deleteLinkedFromModel(photoId, overlayId) {
+    const src = get().project;
+    const reality = src.reality ?? emptyReality();
+    const overlay = reality.photos.find((p) => p.id === photoId)?.overlays?.find((o) => o.id === overlayId);
+    if (!overlay) return { ok: false, reason: "Объект на фото не найден." };
+    if (!overlay.linkedObjectId) {
+      get().commit(detachOverlayFromPhoto(src, photoId, overlayId), "Фото: удалить черновик");
+      set({ selectedIds: get().selectedIds.filter((id) => id !== overlayId) });
+      return { ok: true };
+    }
+    const next = deleteCanonicalByOverlay(src, overlay);
+    const ok = get().commit(next, "Фото: удалить из модели");
+    if (!ok) return { ok: false, reason: get().lastMutationError ?? "Удаление отклонено.", errors: [get().lastMutationError ?? ""] };
+    set({ selectedIds: [] });
     return { ok: true };
   },
   applyPhotoOverlaysToModel(photoId) {
@@ -943,17 +1000,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     }
     const ok = get().commit(r.project, "APPLY TO MODEL");
     if (!ok) return { ok: false, errors: [get().lastMutationError ?? "Каноническая проверка не пройдена."], appliedIds: [] };
-    if (r.errors.length) {
-      get().pushGrok({
-        id: `rv${Date.now()}`,
-        role: "assistant",
-        text: `APPLY частично: ${r.appliedIds.length} объект. ${r.errors.join(" · ")}`,
-      });
-    }
     const photo = (get().project.reality ?? emptyReality()).photos.find((p) => p.id === photoId);
     const linked = (photo?.overlays ?? []).filter((o) => r.appliedIds.includes(o.id) && o.linkedObjectId).map((o) => o.linkedObjectId!);
     if (linked.length) set({ selectedIds: linked });
-    return { ok: true, errors: r.errors, appliedIds: r.appliedIds };
+    return { ok: true, errors: [], appliedIds: r.appliedIds };
   },
   commitVideoEvidence(video, frames) {
     const src = get().project;

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useProjectStore } from "@/project/store";
+import { useLiveProject, useProjectStore } from "@/project/store";
 import { loadMedia } from "@/reality/media";
 import { parseLengthToMeters } from "@/engineering/units";
 import { photoCalibration } from "@/engineering/reality";
@@ -8,6 +8,8 @@ import {
   PHOTO_OVERLAY_LABEL_RU,
   overlayHit,
 } from "@/engineering/photo-overlay";
+import { OUT_OF_PLANE_RU, isLinkedOverlay } from "@/engineering/photo-reconcile";
+import { clientToPhotoNorm, photoContentBox } from "@/engineering/photo-frame";
 import { Button } from "@/components/ui/button";
 import { nid } from "@/project/factory";
 import type { PhotoOverlayKind, WallId } from "@/engineering/types";
@@ -36,14 +38,18 @@ const ROT: Array<0 | 90 | 180 | 270> = [0, 90, 180, 270];
 
 export function PhotoAnnotator({ photoId }: { photoId: string }) {
   const store = useProjectStore();
-  const photo = store.project.reality?.photos.find((p) => p.id === photoId);
+  const live = useLiveProject();
+  const photo = live.reality?.photos.find((p) => p.id === photoId);
   const [src, setSrc] = useState<string | null>(null);
   const [pending, setPending] = useState<{ nx: number; ny: number } | null>(null);
   const [len, setLen] = useState("");
   const imgRef = useRef<HTMLImageElement>(null);
+  const hostRef = useRef<HTMLDivElement>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
   const pointers = useRef<Map<number, { x: number; y: number }>>(new Map());
   const pinch = useRef<{ dist: number; scale: number } | null>(null);
   const [scale, setScale] = useState(1);
+  const [frameBox, setFrameBox] = useState({ left: 0, top: 0, width: 0, height: 0 });
   const drag = useRef<{
     id: string;
     corner?: "se";
@@ -62,11 +68,31 @@ export function PhotoAnnotator({ photoId }: { photoId: string }) {
   const selectedId = store.selectedIds[0];
   const mode = store.photoTool;
 
+  const layoutFrame = () => {
+    const host = hostRef.current;
+    const img = imgRef.current;
+    if (!host || !img) return;
+    const naturalW = img.naturalWidth || photo?.widthPx || 1;
+    const naturalH = img.naturalHeight || photo?.heightPx || 1;
+    const box = photoContentBox(host.clientWidth, host.clientHeight, naturalW, naturalH);
+    setFrameBox({ left: box.x, top: box.y, width: box.w, height: box.h });
+  };
+
   useEffect(() => {
     void loadMedia(photoId).then(setSrc);
     setScale(1);
     setPending(null);
   }, [photoId]);
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => layoutFrame());
+    ro.observe(host);
+    layoutFrame();
+    return () => ro.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [src, photoId, photo?.widthPx, photo?.heightPx]);
 
   if (!photo) return <div className="p-3 text-[12px] text-muted">Фото не найдено</div>;
 
@@ -74,16 +100,14 @@ export function PhotoAnnotator({ photoId }: { photoId: string }) {
   const known = parseLengthToMeters(len);
   const overlays = photo.overlays ?? [];
   const selected = overlays.find((o) => o.id === selectedId || o.linkedObjectId === selectedId);
+  const outOfPlane = overlays.filter((o) => o.planeStatus === "OUT_OF_PHOTO_PLANE" && isLinkedOverlay(o));
 
   const isSel = (oId: string, linked?: string) => selectedId === oId || (linked != null && selectedId === linked);
 
   const normFromEvent = (e: { clientX: number; clientY: number }) => {
-    const box = imgRef.current?.getBoundingClientRect();
+    const box = frameRef.current?.getBoundingClientRect();
     if (!box || box.width < 1 || box.height < 1) return null;
-    return {
-      nx: (e.clientX - box.left) / box.width,
-      ny: (e.clientY - box.top) / box.height,
-    };
+    return clientToPhotoNorm(e.clientX, e.clientY, box);
   };
 
   const onTap = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -92,7 +116,7 @@ export function PhotoAnnotator({ photoId }: { photoId: string }) {
     if (!n || n.nx < 0 || n.ny < 0 || n.nx > 1 || n.ny > 1) return;
 
     if (mode === "select") {
-      const hit = [...overlays].reverse().find((o) => overlayHit(o, n.nx, n.ny));
+      const hit = [...overlays].reverse().find((o) => o.planeStatus !== "OUT_OF_PHOTO_PLANE" && overlayHit(o, n.nx, n.ny));
       store.select(hit ? [hit.linkedObjectId ?? hit.id] : []);
       return;
     }
@@ -141,6 +165,12 @@ export function PhotoAnnotator({ photoId }: { photoId: string }) {
     store.openSheet("props", "half");
   };
 
+  const metricLabel = (src?: string) => {
+    if (src === "CALIBRATED") return "метры: калибровка A–B";
+    if (src === "OWNER_ENTERED") return "метры: введены владельцем";
+    return "метры: DEFAULT (не фотограмметрия)";
+  };
+
   return (
     <div className="flex h-full min-h-0 flex-col" data-mf-id="photo-workspace">
       <div className="flex flex-wrap gap-1 border-b border-border px-2 py-1">
@@ -187,7 +217,7 @@ export function PhotoAnnotator({ photoId }: { photoId: string }) {
           if (mode !== "select") return;
           const n = normFromEvent(e);
           if (!n) return;
-          const hit = [...overlays].reverse().find((o) => overlayHit(o, n.nx, n.ny));
+          const hit = [...overlays].reverse().find((o) => o.planeStatus !== "OUT_OF_PHOTO_PLANE" && overlayHit(o, n.nx, n.ny));
           if (!hit) return;
           store.select([hit.linkedObjectId ?? hit.id]);
           const nearSe = Math.abs(n.nx - (hit.nx + hit.nw)) < 0.04 && Math.abs(n.ny - (hit.ny + hit.nh)) < 0.04;
@@ -249,68 +279,106 @@ export function PhotoAnnotator({ photoId }: { photoId: string }) {
         }}
       >
         <div className="flex h-full min-h-[140px] w-full items-center justify-center overflow-hidden">
-          <div className="relative flex h-full max-h-full w-full items-center justify-center" style={{ transform: `scale(${scale})`, transformOrigin: "center center" }}>
+          <div
+            ref={hostRef}
+            className="relative h-full w-full"
+            style={{ transform: `scale(${scale})`, transformOrigin: "center center" }}
+          >
             {src ? (
-              <img ref={imgRef} src={src} alt={photo.name} className="max-h-full max-w-full object-contain" draggable={false} data-mf-id="annotator-img" />
+              <div
+                ref={frameRef}
+                data-mf-id="photo-frame"
+                className="absolute overflow-hidden"
+                style={{ left: frameBox.left, top: frameBox.top, width: frameBox.width, height: frameBox.height }}
+              >
+                <img
+                  ref={imgRef}
+                  src={src}
+                  alt={photo.name}
+                  className="h-full w-full max-h-none max-w-none object-fill"
+                  draggable={false}
+                  data-mf-id="annotator-img"
+                  onLoad={layoutFrame}
+                />
+                <svg className="pointer-events-none absolute inset-0 h-full w-full">
+                  {pairs.map((p, i) => (
+                    <line
+                      key={i}
+                      x1={`${p.ax * 100}%`}
+                      y1={`${p.ay * 100}%`}
+                      x2={`${p.bx * 100}%`}
+                      y2={`${p.by * 100}%`}
+                      stroke="var(--color-cold)"
+                      strokeWidth="2"
+                    />
+                  ))}
+                </svg>
+                {photo.markers.map((m) => (
+                  <div
+                    key={m.id}
+                    className="pointer-events-none absolute size-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-bg bg-cold"
+                    style={{ left: `${m.nx * 100}%`, top: `${m.ny * 100}%` }}
+                  >
+                    <span className="absolute left-3 top-0 font-mono text-[10px] text-fg">{m.label}</span>
+                  </div>
+                ))}
+                {overlays.map((o) => {
+                  if (o.planeStatus === "OUT_OF_PHOTO_PLANE") return null;
+                  const vis = liveOv && liveOv.id === o.id ? { ...o, ...liveOv } : o;
+                  return (
+                    <div
+                      key={o.id}
+                      data-mf-id={`photo-overlay-${o.kind}`}
+                      data-mf-overlay={o.id}
+                      data-mf-linked={o.linkedObjectId ?? ""}
+                      data-mf-plane={o.planeStatus ?? "ON_PLANE"}
+                      className={cn(
+                        "absolute box-border rounded-[4px] border-2",
+                        OVERLAY_COLOR[o.kind],
+                        isSel(o.id, o.linkedObjectId) && "ring-2 ring-cold",
+                      )}
+                      style={{
+                        left: `${vis.nx * 100}%`,
+                        top: `${vis.ny * 100}%`,
+                        width: `${vis.nw * 100}%`,
+                        height: `${vis.nh * 100}%`,
+                        transform: vis.rotationDeg ? `rotate(${vis.rotationDeg}deg)` : undefined,
+                        transformOrigin: "center center",
+                      }}
+                    >
+                      <span className="absolute left-0.5 top-0.5 font-mono text-[9px] uppercase text-fg">
+                        {PHOTO_OVERLAY_LABEL_RU[o.kind]}
+                        {o.applied ? " · linked" : " · draft"}
+                      </span>
+                      {isSel(o.id, o.linkedObjectId) && (
+                        <span className="absolute bottom-0 right-0 size-4 rounded-sm bg-cold" data-mf-id="overlay-resize" />
+                      )}
+                    </div>
+                  );
+                })}
+                {pending && (
+                  <div
+                    className="pointer-events-none absolute size-4 -translate-x-1/2 -translate-y-1/2 rounded-full bg-warn"
+                    style={{ left: `${pending.nx * 100}%`, top: `${pending.ny * 100}%` }}
+                  />
+                )}
+              </div>
             ) : (
               <div className="flex h-40 items-center justify-center text-[12px] text-muted">Загрузка…</div>
-            )}
-            <svg className="pointer-events-none absolute inset-0 h-full w-full">
-              {pairs.map((p, i) => (
-                <line
-                  key={i}
-                  x1={`${p.ax * 100}%`}
-                  y1={`${p.ay * 100}%`}
-                  x2={`${p.bx * 100}%`}
-                  y2={`${p.by * 100}%`}
-                  stroke="var(--color-cold)"
-                  strokeWidth="2"
-                />
-              ))}
-            </svg>
-            {photo.markers.map((m) => (
-              <div
-                key={m.id}
-                className="pointer-events-none absolute size-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-bg bg-cold"
-                style={{ left: `${m.nx * 100}%`, top: `${m.ny * 100}%` }}
-              >
-                <span className="absolute left-3 top-0 font-mono text-[10px] text-fg">{m.label}</span>
-              </div>
-            ))}
-            {overlays.map((o) => {
-              const vis = liveOv && liveOv.id === o.id ? { ...o, ...liveOv } : o;
-              return (
-                <div
-                  key={o.id}
-                  data-mf-id={`photo-overlay-${o.kind}`}
-                  data-mf-overlay={o.id}
-                  data-mf-linked={o.linkedObjectId ?? ""}
-                  className={cn(
-                    "absolute box-border rounded-[4px] border-2",
-                    OVERLAY_COLOR[o.kind],
-                    isSel(o.id, o.linkedObjectId) && "ring-2 ring-cold",
-                  )}
-                  style={{ left: `${vis.nx * 100}%`, top: `${vis.ny * 100}%`, width: `${vis.nw * 100}%`, height: `${vis.nh * 100}%` }}
-                >
-                  <span className="absolute left-0.5 top-0.5 font-mono text-[9px] uppercase text-fg">
-                    {PHOTO_OVERLAY_LABEL_RU[o.kind]}
-                    {o.applied ? " · linked" : " · draft"}
-                  </span>
-                  {isSel(o.id, o.linkedObjectId) && (
-                    <span className="absolute bottom-0 right-0 size-4 rounded-sm bg-cold" data-mf-id="overlay-resize" />
-                  )}
-                </div>
-              );
-            })}
-            {pending && (
-              <div
-                className="pointer-events-none absolute size-4 -translate-x-1/2 -translate-y-1/2 rounded-full bg-warn"
-                style={{ left: `${pending.nx * 100}%`, top: `${pending.ny * 100}%` }}
-              />
             )}
           </div>
         </div>
       </div>
+      {outOfPlane.length > 0 && (
+        <div className="border-t border-border bg-warn/10 px-2 py-1 font-mono text-[11px] text-warn" data-mf-id="photo-out-of-plane">
+          {OUT_OF_PLANE_RU}
+        </div>
+      )}
+      {store.lastMutationError && (
+        <div className="border-t border-border bg-crit/10 px-2 py-1 font-mono text-[11px] text-crit" data-mf-id="photo-error">
+          {store.lastMutationError}
+        </div>
+      )}
       <div className="sticky bottom-0 z-10 flex flex-wrap gap-1 border-t border-border bg-surface p-2">
         <input
           suppressHydrationWarning
@@ -355,7 +423,7 @@ export function PhotoAnnotator({ photoId }: { photoId: string }) {
                 key={`w-${selected.id}-${selected.widthM}`}
                 onBlur={(e) => {
                   const m = parseLengthToMeters(e.target.value);
-                  if (m && m > 0) store.updatePhotoOverlay(photoId, selected.id, { widthM: m });
+                  if (m && m > 0) store.updatePhotoOverlay(photoId, selected.id, { widthM: m, metricSource: "OWNER_ENTERED" });
                 }}
               />
             </label>
@@ -369,7 +437,7 @@ export function PhotoAnnotator({ photoId }: { photoId: string }) {
                 key={`h-${selected.id}-${selected.heightM}`}
                 onBlur={(e) => {
                   const m = parseLengthToMeters(e.target.value);
-                  if (m && m > 0) store.updatePhotoOverlay(photoId, selected.id, { heightM: m });
+                  if (m && m > 0) store.updatePhotoOverlay(photoId, selected.id, { heightM: m, metricSource: "OWNER_ENTERED" });
                 }}
               />
             </label>
@@ -383,7 +451,7 @@ export function PhotoAnnotator({ photoId }: { photoId: string }) {
                 key={`e-${selected.id}-${selected.bottomElevationM ?? 0}`}
                 onBlur={(e) => {
                   const m = parseLengthToMeters(e.target.value);
-                  if (m != null) store.updatePhotoOverlay(photoId, selected.id, { bottomElevationM: m });
+                  if (m != null) store.updatePhotoOverlay(photoId, selected.id, { bottomElevationM: m, metricSource: "OWNER_ENTERED" });
                 }}
               />
             </label>
@@ -405,13 +473,28 @@ export function PhotoAnnotator({ photoId }: { photoId: string }) {
               </select>
             </label>
           </div>
+          <div className="font-mono text-[10px] text-muted" data-mf-id="overlay-metric-source">
+            {metricLabel(selected.metricSource)}
+            {!cal && " · нет калибровки — визуальный размер не является обмером"}
+          </div>
           <div className="flex gap-1">
             <Button variant="outline" className="h-11 flex-1" data-mf-id="overlay-dup" onClick={() => store.duplicatePhotoOverlay(photoId, selected.id)}>
               Дублировать
             </Button>
-            <Button variant="outline" className="h-11 flex-1" data-mf-id="overlay-del" onClick={() => store.deletePhotoOverlay(photoId, selected.id)}>
-              Удалить
-            </Button>
+            {isLinkedOverlay(selected) ? (
+              <>
+                <Button variant="outline" className="h-11 flex-1" data-mf-id="overlay-detach" onClick={() => store.detachPhotoOverlay(photoId, selected.id)}>
+                  Убрать с фото
+                </Button>
+                <Button variant="outline" className="h-11 flex-1" data-mf-id="overlay-del-model" onClick={() => store.deleteLinkedFromModel(photoId, selected.id)}>
+                  Удалить из модели
+                </Button>
+              </>
+            ) : (
+              <Button variant="outline" className="h-11 flex-1" data-mf-id="overlay-del" onClick={() => store.deletePhotoOverlay(photoId, selected.id)}>
+                Удалить
+              </Button>
+            )}
           </div>
         </div>
       )}

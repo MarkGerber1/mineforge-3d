@@ -59,6 +59,13 @@ Owner action required to mint the public URL: **Publish** in Grok Build (`*.grok
 
 Do not reopen MFQ-001…MFQ-006 unless a real regression appears.
 
+QX-03R (in progress, not independently accepted): one photo coordinate frame;
+calibrated visual resize writes meters; linked overlays are views of canonical
+objects (`reconcileLinkedReality`); APPLY ALL is atomic; linked delete is
+explicit (detach vs delete from model); 3D drag rack/fan + along-wall opening
++ rotate 90°. Photogrammetry is not implemented. Do not declare FINAL PASSED.
+
+
 QX-02A repairs wall-drag origin (West/South), preview/canonical isolation,
 shared rack-transform validation, auto-layout target semantics, validated
 `applyPatch`, and fan spatial integrity. Do not mix `live()` (visual, may

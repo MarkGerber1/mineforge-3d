@@ -27,6 +27,7 @@ Date: 2026-09-13
 | Mobile workspace (not shrunk desktop) | PASS |
 | Reality video frame evidence (seek+canvas, fail-closed) | PASS |
 | iPhone WebKit E2E (Playwright, CI mandatory) | PASS (CI) / local WebKit libs missing |
+| QX-03R photo↔canonical sync / atomic APPLY / 3D drag | READY FOR INDEPENDENT QUALITY RETEST |
 
 ## UNIT TESTS
 

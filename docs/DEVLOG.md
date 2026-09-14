@@ -341,3 +341,31 @@ Starting SHA `bc38a6df9ba9f1c1c8b15ee6938bd345841aee65`. Branch
 
 Does not start QX-02C. Does not publish. Does not declare FINAL PASSED.
 Does not reopen QX-01 / QX-02A / QX-02B / FINAL-SEC.
+
+## QX-03R — TRUE PHOTO↔CANONICAL SYNC + COORDINATE FRAME + ATOMIC APPLY + 3D EDIT
+
+Starting SHA `154feace35077e6eb9ce9897f0adf06f279fec0d`. Branch
+`repair/qx-03r-true-sync-3d-edit`.
+
+- R1: calibrated visual resize writes `widthM` / `heightM`
+  (`nw * widthPx * scaleMPerPx`). Uncalibrated resize is visual-only;
+  APPLY never pretends the box is a measured dimension. Rotation does not
+  swap object-local width/height. `metricSource`: CALIBRATED | OWNER_ENTERED | DEFAULT.
+- R2: one adapter `photoIntentToCanonical` + `reconcileLinkedReality`.
+  Linked overlay is a view of the canonical object. 2D / 3D / Inspector / AI /
+  Undo all commit canonical then reconcile. Cross-wall move → `OUT_OF_PHOTO_PLANE`
+  (no fake in-plane geometry).
+- R3: one photo coordinate frame — object-contain content box. Overlay 0,0 is
+  the visible photo top-left, not the letterboxed parent.
+- R4: APPLY TO MODEL is all-or-nothing. One history transaction. Any failure
+  leaves drafts and canonical unchanged.
+- R5: linked overlay delete is explicit: «Убрать с фото» vs «Удалить из модели».
+  Draft «Удалить» removes overlay only. Canonical delete unlinks the overlay.
+- R6: 3D drag rack on the floor, rotate 90°, drag fan, drag opening along wall.
+  Preview during drag; validate on release; invalid → REJECT + rollback.
+
+Photogrammetry is NOT implemented. Physical iPhone NOT performed. Public
+deploy NOT performed. FINAL PASSED is NOT declared.
+
+Does not start QX-02C. Does not publish. Does not declare FINAL PASSED.
+
