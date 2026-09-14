@@ -1108,6 +1108,7 @@ describe("MOB-QX03 owner editor chrome", () => {
       await mf(page, "twin-props").waitFor();
       await mf(page, "twin-ai").waitFor();
       await mf(page, "twin-delete").waitFor();
+      await mf(page, "twin-rotate").waitFor();
       assert.equal(await noPageOverflow(page), true);
     } finally {
       await ctx.close();
@@ -1706,6 +1707,214 @@ describe("QX-02B HUD + numeric fail-closed", () => {
         () => (window as unknown as { __MF_STORE__: { getState: () => { project: { racks: Array<{ asicCount: number }> } } } }).__MF_STORE__.getState().project.racks[0]?.asicCount,
       );
       assert.equal(afterC, beforeC);
+    } finally {
+      await ctx.close();
+    }
+  });
+});
+
+describe("PHOTO-E2E-R coordinate frame + atomic apply", () => {
+  it("photo-frame matches img; APPLY is atomic via store", async () => {
+    const { ctx, page } = await openPhone("390x844");
+    try {
+      await mf(page, "toolbar-reality").tap();
+      await mf(page, "reality-file").setInputFiles(PORTRAIT);
+      const img = mf(page, "annotator-img");
+      await img.waitFor({ timeout: 15000 });
+      await page.waitForTimeout(200);
+      const frame = mf(page, "photo-frame");
+      await frame.waitFor({ timeout: 8000 });
+      const imgBox = await img.boundingBox();
+      const frameBox = await frame.boundingBox();
+      assert.ok(imgBox && frameBox);
+      assert.ok(Math.abs(imgBox.x - frameBox.x) < 2, `img.x ${imgBox.x} frame.x ${frameBox.x}`);
+      assert.ok(Math.abs(imgBox.y - frameBox.y) < 2, `img.y ${imgBox.y} frame.y ${frameBox.y}`);
+      assert.ok(Math.abs(imgBox.width - frameBox.width) < 2);
+      assert.ok(Math.abs(imgBox.height - frameBox.height) < 2);
+
+      const atomic = await page.evaluate(() => {
+        const s = (
+          window as unknown as {
+            __MF_STORE__: {
+              getState: () => {
+                project: {
+                  openings: unknown[];
+                  racks: unknown[];
+                  reality?: { photos: Array<{ id: string; overlays?: Array<{ id: string; applied: boolean }> }> };
+                };
+                addPhotoOverlay: (id: string, kind: string, nx: number, ny: number) => { ok: boolean; overlay?: { id: string } };
+                updatePhotoOverlay: (pid: string, oid: string, patch: Record<string, unknown>) => { ok: boolean };
+                applyPhotoOverlaysToModel: (id: string) => { ok: boolean; appliedIds: string[]; errors: string[] };
+                activePhotoId: string | null;
+                setPhotoWallHint: (id: string, wall: string) => void;
+              };
+            };
+          }
+        ).__MF_STORE__.getState();
+        const pid = s.activePhotoId ?? s.project.reality?.photos[0]?.id;
+        if (!pid) return { ok: false, reason: "no photo" };
+        s.setPhotoWallHint(pid, "south");
+        s.addPhotoOverlay(pid, "intake", 0.3, 0.45);
+        s.addPhotoOverlay(pid, "exhaust", 0.55, 0.45);
+        const bad = s.addPhotoOverlay(pid, "door", 0.4, 0.6);
+        if (bad.overlay) s.updatePhotoOverlay(pid, bad.overlay.id, { widthM: 20, metricSource: "OWNER_ENTERED" });
+        const beforeOpen = s.project.openings.length;
+        const beforeRack = s.project.racks.length;
+        const r = s.applyPhotoOverlaysToModel(pid);
+        const drafts = (s.project.reality?.photos.find((p) => p.id === pid)?.overlays ?? []).filter((o) => !o.applied).length;
+        return {
+          ok: !r.ok,
+          applied: r.appliedIds.length,
+          openings: s.project.openings.length - beforeOpen,
+          racks: s.project.racks.length - beforeRack,
+          drafts,
+        };
+      });
+      assert.equal(atomic.ok, true, "APPLY ALL must fail closed");
+      assert.equal(atomic.applied, 0);
+      assert.equal(atomic.openings, 0);
+      assert.equal(atomic.racks, 0);
+      assert.ok((atomic.drafts ?? 0) >= 3);
+    } finally {
+      await ctx.close();
+    }
+  });
+});
+
+describe("3D-E2E-R direct rack move / rotate", () => {
+  it("store 3D path: move + rotate + undo on 390×844", async () => {
+    const { ctx, page } = await openPhone("390x844");
+    try {
+      await mf(page, "toolbar-3d").tap();
+      await mf(page, "twin").waitFor({ timeout: 20000 });
+      await mf(page, "twin-rotate").waitFor();
+      const result = await page.evaluate(() => {
+        const s = (
+          window as unknown as {
+            __MF_STORE__: {
+              getState: () => {
+                project: { racks: Array<{ id: string; x: number; y: number; rotationDeg: number }> };
+                addRack: (r: Record<string, unknown>) => { ok: boolean; errors: string[] };
+                moveRack: (id: string, x: number, y: number, preview?: boolean) => { ok: boolean; errors: string[] };
+                select: (ids: string[]) => void;
+                rotateSelectedRack: () => { ok: boolean; errors: string[] };
+                undo: () => void;
+              };
+            };
+          }
+        ).__MF_STORE__.getState();
+        const rack = {
+          id: "e2e_3d_r",
+          name: "R",
+          x: 2.2,
+          y: 1.4,
+          widthM: 1.6,
+          depthM: 0.6,
+          heightM: 2.0,
+          rotationDeg: 0,
+          shelves: 4,
+          usableShelfWidthM: 1.5,
+          usableShelfDepthM: 0.55,
+          asicCount: 0,
+          airflowToward: "south",
+        };
+        const added = s.addRack(rack);
+        if (!added.ok) return { ok: false, reason: added.errors.join("; ") };
+        const moved = s.moveRack("e2e_3d_r", 3.1, 2.0, false);
+        if (!moved.ok) return { ok: false, reason: moved.errors.join("; ") };
+        s.select(["e2e_3d_r"]);
+        const rot = s.rotateSelectedRack();
+        if (!rot.ok) return { ok: false, reason: rot.errors.join("; ") };
+        const after = s.project.racks.find((r) => r.id === "e2e_3d_r");
+        s.undo();
+        const undoneRot = s.project.racks.find((r) => r.id === "e2e_3d_r");
+        s.undo();
+        const undoneMove = s.project.racks.find((r) => r.id === "e2e_3d_r");
+        return {
+          ok: true,
+          rot: after?.rotationDeg,
+          x: after?.x,
+          undoneRot: undoneRot?.rotationDeg,
+          undoneX: undoneMove?.x,
+          undoneY: undoneMove?.y,
+        };
+      });
+      assert.equal(result.ok, true, result.reason ?? "");
+      assert.equal(result.rot, 90);
+      assert.equal(result.undoneRot, 0);
+      assert.ok(Math.abs((result.undoneX ?? 0) - 2.2) < 1e-9);
+      assert.ok(Math.abs((result.undoneY ?? 0) - 1.4) < 1e-9);
+    } finally {
+      await ctx.close();
+    }
+  });
+});
+
+describe("MOBILE-E2E-R linked delete lifecycle", () => {
+  it("detach keeps canonical; delete-from-model removes it", async () => {
+    const { ctx, page } = await openPhone("390x844");
+    try {
+      const out = await page.evaluate(() => {
+        const s = (
+          window as unknown as {
+            __MF_STORE__: {
+              getState: () => {
+                project: {
+                  openings: unknown[];
+                  reality?: { photos: Array<{ id: string; wallHint?: string; overlays?: Array<{ id: string; linkedObjectId?: string }> }> };
+                };
+                addPhotoMeta: (m: Record<string, unknown>) => void;
+                setPhotoWallHint: (id: string, wall: string) => void;
+                addPhotoOverlay: (id: string, kind: string, nx: number, ny: number) => { overlay?: { id: string } };
+                applyPhotoOverlaysToModel: (id: string) => { ok: boolean; errors: string[] };
+                detachPhotoOverlay: (pid: string, oid: string) => { ok: boolean };
+                deleteLinkedFromModel: (pid: string, oid: string) => { ok: boolean };
+              };
+            };
+          }
+        ).__MF_STORE__.getState();
+        s.addPhotoMeta({
+          id: "e2e_ph",
+          name: "t.jpg",
+          mime: "image/jpeg",
+          createdAt: 1,
+          notes: "",
+          wallHint: "south",
+          widthPx: 1000,
+          heightPx: 800,
+          markers: [],
+          overlays: [],
+        });
+        s.setPhotoWallHint("e2e_ph", "south");
+        const a = s.addPhotoOverlay("e2e_ph", "exhaust", 0.3, 0.5);
+        const applied = s.applyPhotoOverlaysToModel("e2e_ph");
+        if (!applied.ok) return { ok: false, reason: applied.errors.join("; ") };
+        const nOpen = s.project.openings.length;
+        const ov = s.project.reality?.photos.find((p) => p.id === "e2e_ph")?.overlays?.[0];
+        if (!ov) return { ok: false, reason: "no overlay" };
+        s.detachPhotoOverlay("e2e_ph", ov.id);
+        const afterDetach = s.project.openings.length;
+        const overlaysAfter = s.project.reality?.photos.find((p) => p.id === "e2e_ph")?.overlays?.length ?? 0;
+        const b = s.addPhotoOverlay("e2e_ph", "intake", 0.45, 0.5);
+        const applied2 = s.applyPhotoOverlaysToModel("e2e_ph");
+        if (!applied2.ok) return { ok: false, reason: applied2.errors.join("; ") };
+        const ov2 = s.project.reality?.photos.find((p) => p.id === "e2e_ph")?.overlays?.[0];
+        if (!ov2) return { ok: false, reason: "no overlay 2" };
+        s.deleteLinkedFromModel("e2e_ph", ov2.id);
+        return {
+          ok: true,
+          nOpen,
+          afterDetach,
+          overlaysAfter,
+          openingsEnd: s.project.openings.length,
+          overlaysEnd: s.project.reality?.photos.find((p) => p.id === "e2e_ph")?.overlays?.length ?? 0,
+        };
+      });
+      assert.equal(out.ok, true, out.reason ?? "");
+      assert.ok((out.nOpen ?? 0) >= 1);
+      assert.equal(out.afterDetach, out.nOpen);
+      assert.equal(out.overlaysAfter, 0);
+      assert.equal(out.overlaysEnd, 0);
     } finally {
       await ctx.close();
     }

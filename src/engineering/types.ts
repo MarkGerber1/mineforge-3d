@@ -267,6 +267,9 @@ export type PhotoMarkerKind =
   | "duct"
   | "other";
 
+export type OverlayPlaneStatus = "ON_PLANE" | "OUT_OF_PHOTO_PLANE";
+export type OverlayMetricSource = "CALIBRATED" | "OWNER_ENTERED" | "DEFAULT";
+
 export type PhotoOverlayKind =
   | "rack"
   | "intake"
@@ -293,6 +296,10 @@ export interface PhotoOverlayObject {
   wallId?: WallId;
   linkedObjectId?: string;
   applied: boolean;
+  /** Photo-plane projection of a linked canonical object. */
+  planeStatus?: OverlayPlaneStatus;
+  /** Provenance of widthM/heightM. Visual resize without calibration must stay DEFAULT. */
+  metricSource?: OverlayMetricSource;
 }
 
 export interface PhotoMarker {
