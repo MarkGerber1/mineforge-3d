@@ -1,6 +1,6 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Grid, OrbitControls, PerspectiveCamera } from "@react-three/drei";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ThreeEvent } from "@react-three/fiber";
 import { DoubleSide, Vector3, type Ray } from "three";
 import { useLiveProject, useLiveResult, useProjectStore } from "@/project/store";
@@ -10,7 +10,13 @@ import type { Project, WallId } from "@/engineering/types";
 
 function orbitLocked(): boolean {
   if (typeof window === "undefined") return false;
-  return Boolean((window as unknown as { __MF_TWIN_LOCK_ORBIT__?: boolean }).__MF_TWIN_LOCK_ORBIT__);
+  const w = window as unknown as { __MF_TWIN_LOCK_ORBIT__?: boolean; __MF_TWIN_CAMERA__?: string };
+  return Boolean(w.__MF_TWIN_LOCK_ORBIT__) || w.__MF_TWIN_CAMERA__ === "top";
+}
+
+function topCamera(): boolean {
+  if (typeof window === "undefined") return false;
+  return (window as unknown as { __MF_TWIN_CAMERA__?: string }).__MF_TWIN_CAMERA__ === "top";
 }
 
 type TwinScreenMap = {
@@ -30,7 +36,11 @@ function TwinScreenProbe({ project }: { project: Project }) {
       v.set(x, y, z).project(camera);
       const sx = rect.left + (v.x * 0.5 + 0.5) * rect.width;
       const sy = rect.top + (-v.y * 0.5 + 0.5) * rect.height;
-      objects[id] = { x: sx, y: sy, visible: v.z >= -1 && v.z <= 1 };
+      objects[id] = {
+        x: sx,
+        y: sy,
+        visible: v.z >= -1 && v.z <= 1 && v.x >= -0.95 && v.x <= 0.95 && v.y >= -0.95 && v.y <= 0.95,
+      };
     };
     for (const r of project.racks) {
       const bb = rackAabb(r);
@@ -48,6 +58,20 @@ function TwinScreenProbe({ project }: { project: Project }) {
       objects,
     };
   });
+  return null;
+}
+
+function TwinCameraRig({ project }: { project: Project }) {
+  const { camera } = useThree();
+  useLayoutEffect(() => {
+    if (!topCamera()) return;
+    const w = project.room.widthM;
+    const d = project.room.depthM;
+    camera.position.set(w / 2, Math.max(14, project.room.heightM * 5), d / 2 + 0.02);
+    camera.up.set(0, 0, -1);
+    camera.lookAt(w / 2, 0, d / 2);
+    camera.updateProjectionMatrix();
+  }, [camera, project.room.widthM, project.room.depthM, project.room.heightM]);
   return null;
 }
 
@@ -531,6 +555,13 @@ export function Twin3D() {
   const dragRef = useRef<TwinDrag | null>(null);
   useEffect(() => setMounted(true), []);
   const camPos = useMemo(() => {
+    if (topCamera()) {
+      return [project.room.widthM / 2, Math.max(14, project.room.heightM * 5), project.room.depthM / 2 + 0.02] as [
+        number,
+        number,
+        number,
+      ];
+    }
     const span = Math.max(project.room.widthM, project.room.depthM, 6);
     return [project.room.widthM * 0.55 + span * 0.7, Math.max(project.room.heightM * 2.6, 7), project.room.depthM * 0.45 + span * 0.85] as [
       number,
@@ -544,6 +575,7 @@ export function Twin3D() {
   }
 
   const selectedRack = project.racks.some((r) => store.selectedIds.includes(r.id));
+  const lockCam = orbitLocked();
 
   return (
     <div className="relative h-full w-full bg-bg" data-mf-id="twin" style={{ touchAction: "none" }}>
@@ -559,13 +591,16 @@ export function Twin3D() {
         <color attach="background" args={["#0b0d10"]} />
         <ambientLight intensity={0.7} />
         <directionalLight position={[10, 14, 8]} intensity={1.35} castShadow />
-        <PerspectiveCamera makeDefault position={camPos} fov={42} />
-        <OrbitControls
-          makeDefault
-          enabled={!dragging && !orbitLocked()}
-          target={[project.room.widthM / 2, project.room.heightM * 0.45, project.room.depthM / 2]}
-          enableDamping
-        />
+        <PerspectiveCamera makeDefault position={camPos} fov={topCamera() ? 50 : 42} />
+        <TwinCameraRig project={project} />
+        {!lockCam && (
+          <OrbitControls
+            makeDefault
+            enabled={!dragging}
+            target={[project.room.widthM / 2, project.room.heightM * 0.45, project.room.depthM / 2]}
+            enableDamping
+          />
+        )}
         <Grid
           position={[project.room.widthM / 2, 0, project.room.depthM / 2]}
           args={[Math.max(20, project.room.widthM * 2), Math.max(20, project.room.depthM * 2)]}
@@ -601,7 +636,7 @@ export function Twin3D() {
         <Shaft project={project} />
         <Board project={project} />
         <TempEstimate project={project} />
-        <Ceiling project={project} visible={showCeiling} />
+        <Ceiling project={project} visible={showCeiling && !topCamera()} />
       </Canvas>
       <div className="pointer-events-none absolute left-3 top-3 rounded-[8px] border border-border bg-panel/90 px-2 py-1 font-mono text-[11px] text-muted">
         1:1 Digital Twin · {project.room.widthM.toFixed(3)} × {project.room.depthM.toFixed(3)} × {project.room.heightM.toFixed(3)} m

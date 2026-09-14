@@ -1959,6 +1959,7 @@ describe("3D-E2E-R2 WebKit canvas pointer / touch", () => {
       const seeded = await page.evaluate(() => {
         const w = window as unknown as {
           __MF_TWIN_LOCK_ORBIT__: boolean;
+          __MF_TWIN_CAMERA__: string;
           __MF_STORE__: {
             getState: () => {
               project: {
@@ -1975,6 +1976,7 @@ describe("3D-E2E-R2 WebKit canvas pointer / touch", () => {
           };
         };
         w.__MF_TWIN_LOCK_ORBIT__ = true;
+        w.__MF_TWIN_CAMERA__ = "top";
         const live = () => w.__MF_STORE__.getState();
         const next = structuredClone(live().project) as {
           racks: unknown[];
@@ -2088,18 +2090,46 @@ describe("3D-E2E-R2 WebKit canvas pointer / touch", () => {
         });
 
       const drag = async (from: { x: number; y: number }, to: { x: number; y: number }) => {
-        await page.mouse.move(from.x, from.y);
-        await page.mouse.down();
-        await page.mouse.move((from.x + to.x) / 2, (from.y + to.y) / 2, { steps: 6 });
-        await page.mouse.move(to.x, to.y, { steps: 10 });
-        await page.mouse.up();
-        await page.waitForTimeout(120);
+        await page.evaluate(
+          ({ from, to }) => {
+            const canvas = document.querySelector("[data-mf-id='twin-canvas']") as HTMLCanvasElement | null;
+            if (!canvas) throw new Error("twin-canvas missing");
+            const fire = (type: string, x: number, y: number, buttons: number) => {
+              const rect = canvas.getBoundingClientRect();
+              const ev = new PointerEvent(type, {
+                bubbles: true,
+                cancelable: true,
+                composed: true,
+                view: window,
+                clientX: x,
+                clientY: y,
+                pointerId: 1,
+                pointerType: "mouse",
+                isPrimary: true,
+                buttons,
+                button: 0,
+                pressure: buttons ? 0.5 : 0,
+              });
+              Object.defineProperty(ev, "offsetX", { get: () => x - rect.left });
+              Object.defineProperty(ev, "offsetY", { get: () => y - rect.top });
+              canvas.dispatchEvent(ev);
+            };
+            fire("pointerdown", from.x, from.y, 1);
+            const steps = 12;
+            for (let i = 1; i <= steps; i++) {
+              fire("pointermove", from.x + ((to.x - from.x) * i) / steps, from.y + ((to.y - from.y) * i) / steps, 1);
+            }
+            fire("pointerup", to.x, to.y, 0);
+          },
+          { from, to },
+        );
+        await page.waitForTimeout(150);
       };
 
       const before = await readTwin();
       const r1s = await screenOf("e2e_r1");
       assert.ok(r1s, "rack screen coord missing");
-      await drag(r1s, { x: r1s.x + 70, y: r1s.y - 30 });
+      await drag(r1s, { x: r1s.x + 90, y: r1s.y });
       const afterRack = await readTwin();
       assert.ok(afterRack.r1);
       const rackMoved =
@@ -2134,9 +2164,7 @@ describe("3D-E2E-R2 WebKit canvas pointer / touch", () => {
       );
 
       const r1c = await screenOf("e2e_r1");
-      await page.mouse.move(r1c.x, r1c.y);
-      await page.mouse.down();
-      await page.mouse.up();
+      await drag(r1c, r1c);
       const sheet = page.locator("[data-mf-id=sheet]");
       if (await sheet.count()) {
         const vis = await sheet.first().isVisible().catch(() => false);
