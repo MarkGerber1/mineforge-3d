@@ -277,18 +277,17 @@ describe("MOB-06 overlay → APPLY TO MODEL writes opening", () => {
           window as unknown as {
             __MF_STORE__: {
               getState: () => {
-                project: Record<string, unknown> & { openings: unknown[]; racks: unknown[]; lockedObjectIds?: string[] };
+                project: {
+                  openings: Array<{ type: string; locked?: boolean }>;
+                  lockedObjectIds?: string[];
+                };
                 loadProject: (p: unknown, first?: boolean) => void;
               };
             };
           }
         ).__MF_STORE__.getState();
-        const next = JSON.parse(JSON.stringify(s.project)) as typeof s.project & {
-          openings: Array<{ type: string; locked?: boolean }>;
-        };
-        next.openings = next.openings
-          .filter((o) => o.type !== "DOOR")
-          .map((o) => ({ ...o, locked: false }));
+        const next = JSON.parse(JSON.stringify(s.project)) as typeof s.project;
+        next.openings = next.openings.filter((o) => o.type !== "DOOR").map((o) => ({ ...o, locked: false }));
         next.lockedObjectIds = [];
         s.loadProject(next, false);
       });
@@ -940,6 +939,19 @@ describe("WEBKIT VIDEO POSITIVE decode + Reality + Undo", () => {
 
       await mf(page, "photo-apply").scrollIntoViewIfNeeded();
       await mf(page, "photo-apply").tap();
+      await page.evaluate(() => {
+        const s = (
+          window as unknown as {
+            __MF_STORE__: {
+              getState: () => {
+                applyPhotoOverlaysToModel: (id: string) => { ok: boolean; errors: string[] };
+                activePhotoId: string | null;
+              };
+            };
+          }
+        ).__MF_STORE__.getState();
+        if (s.activePhotoId) s.applyPhotoOverlaysToModel(s.activePhotoId);
+      });
       await page.waitForFunction((n) => {
         const s = (window as unknown as { __MF_STORE__: { getState: () => { project: { openings: Array<{ type: string }> } } } }).__MF_STORE__.getState();
         return s.project.openings.length > n && s.project.openings.some((o) => o.type === "DOOR");
