@@ -435,15 +435,12 @@ function TwinPointerBridge({
       }
     };
 
-    const commit = () => {
+    const commitDrag = () => {
       const d = dragRef.current;
+      if (!d) return;
       dragRef.current = null;
       setDragging(false);
       const store = useProjectStore.getState();
-      if (!d) {
-        store.setPreview(null);
-        return;
-      }
       if (d.kind === "rack") {
         const live = store.preview ?? store.project;
         const rack = live.racks.find((r) => r.id === d.id);
@@ -476,12 +473,38 @@ function TwinPointerBridge({
       }
     };
 
+    const cancelDrag = () => {
+      if (!dragRef.current) {
+        const store = useProjectStore.getState();
+        if (store.preview) store.setPreview(null);
+        setDragging(false);
+        return;
+      }
+      dragRef.current = null;
+      setDragging(false);
+      useProjectStore.getState().setPreview(null);
+    };
+
+    let finished = false;
+    const finishCommit = () => {
+      if (finished) return;
+      if (!dragRef.current) return;
+      finished = true;
+      commitDrag();
+    };
+    const finishCancel = () => {
+      if (finished) return;
+      finished = true;
+      cancelDrag();
+    };
+
     const onDown = (e: Event) => {
       const pt = clientOf(e);
       if (!pt) return;
       if ("button" in e && (e as PointerEvent).button != null && (e as PointerEvent).button !== 0) return;
       const hit = pick(pt);
       if (!hit) return;
+      finished = false;
       const floor = floorHit(pt);
       const src = projectRef.current;
       useProjectStore.getState().select([hit.id]);
@@ -549,9 +572,28 @@ function TwinPointerBridge({
 
     const onUp = (e: Event) => {
       if (!dragRef.current) return;
-      commit();
+      finishCommit();
       e.preventDefault();
       e.stopPropagation();
+    };
+
+    const onCancel = (e: Event) => {
+      if (!dragRef.current) return;
+      finishCancel();
+      e.preventDefault();
+      e.stopPropagation();
+    };
+
+    const onLostCapture = () => {
+      if (!dragRef.current || finished) return;
+      finishCancel();
+    };
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (!dragRef.current) return;
+      finishCancel();
+      e.preventDefault();
     };
 
     const opts: AddEventListenerOptions = { capture: true, passive: false };
@@ -564,7 +606,10 @@ function TwinPointerBridge({
     window.addEventListener("pointerup", onUp, opts);
     window.addEventListener("mouseup", onUp, opts);
     window.addEventListener("touchend", onUp, opts);
-    window.addEventListener("pointercancel", onUp, opts);
+    window.addEventListener("pointercancel", onCancel, opts);
+    window.addEventListener("touchcancel", onCancel, opts);
+    el.addEventListener("lostpointercapture", onLostCapture, opts);
+    window.addEventListener("keydown", onKey, opts);
     return () => {
       el.removeEventListener("pointerdown", onDown, opts);
       el.removeEventListener("mousedown", onDown, opts);
@@ -575,7 +620,10 @@ function TwinPointerBridge({
       window.removeEventListener("pointerup", onUp, opts);
       window.removeEventListener("mouseup", onUp, opts);
       window.removeEventListener("touchend", onUp, opts);
-      window.removeEventListener("pointercancel", onUp, opts);
+      window.removeEventListener("pointercancel", onCancel, opts);
+      window.removeEventListener("touchcancel", onCancel, opts);
+      el.removeEventListener("lostpointercapture", onLostCapture, opts);
+      window.removeEventListener("keydown", onKey, opts);
     };
   }, [camera, gl, scene, dragRef, setDragging, raycaster, ndc, floorPlane, hitPoint]);
 

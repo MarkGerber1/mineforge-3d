@@ -349,7 +349,7 @@ export function reconcileLinkedReality(project: Project): Project {
 export type PhotoOverlayIntent = Partial<
   Pick<
     PhotoOverlayObject,
-    "nx" | "ny" | "nw" | "nh" | "widthM" | "heightM" | "depthM" | "bottomElevationM" | "wallId" | "rotationDeg" | "metricSource" | "ownerOffsetM"
+    "nx" | "ny" | "nw" | "nh" | "widthM" | "heightM" | "depthM" | "bottomElevationM" | "wallId" | "rotationDeg" | "metricSource" | "ownerOffsetM" | "ownerElevationM"
   >
 >;
 
@@ -414,8 +414,9 @@ function applyOpeningIntent(
   }
   if (intent.widthM != null) nextOpening = { ...nextOpening, widthM: intent.widthM };
   if (intent.heightM != null) nextOpening = { ...nextOpening, heightM: intent.heightM };
-  if (intent.bottomElevationM != null) nextOpening = { ...nextOpening, bottomElevationM: intent.bottomElevationM };
-  else if (intent.ny != null || intent.nh != null) {
+  if (intent.ownerElevationM != null && Number.isFinite(intent.ownerElevationM)) {
+    nextOpening = { ...nextOpening, bottomElevationM: intent.ownerElevationM };
+  } else if (intent.ny != null || intent.nh != null) {
     const elev = overlayElevationFromNy(photo, visual.ny, visual.nh);
     if (elev != null) nextOpening = { ...nextOpening, bottomElevationM: elev };
   }
@@ -535,7 +536,10 @@ function applyAsBuiltIntent(
   const mapped = resolveOverlayWallOffset(photo, nx, wall, project, overlay.ownerOffsetM);
   if (!mapped.ok) return mapped;
   const box = placeOnWall(project, wall, mapped.offsetM, widthM, obj.depthM);
-  const z = intent.bottomElevationM ?? obj.z;
+  const z =
+    intent.ownerElevationM != null && Number.isFinite(intent.ownerElevationM)
+      ? intent.ownerElevationM
+      : overlayElevationFromNy(photo, overlay.ny, overlay.nh) ?? obj.z;
   const next: AsBuiltObject = { ...obj, x: box.x, y: box.y, widthM: box.widthM, depthM: box.depthM, heightM, z };
   const reality = project.reality ?? emptyReality();
   return {

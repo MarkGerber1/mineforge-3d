@@ -623,11 +623,12 @@ export function PhotoAnnotator({ photoId }: { photoId: string }) {
                 suppressHydrationWarning
                 className="mt-0.5 h-11 w-full rounded-[6px] border border-border bg-bg px-2 font-mono text-[12px]"
                 data-mf-id="overlay-elev"
-                defaultValue={String(selected.bottomElevationM ?? 0)}
-                key={`e-${selected.id}-${selected.bottomElevationM ?? 0}`}
+                defaultValue={String(selected.ownerElevationM ?? "")}
+                key={`e-${selected.id}-${selected.ownerElevationM ?? ""}`}
+                placeholder="если нет привязки"
                 onBlur={(e) => {
                   const m = parseLengthToMeters(e.target.value);
-                  if (m != null) store.updatePhotoOverlay(photoId, selected.id, { bottomElevationM: m, metricSource: "OWNER_ENTERED" });
+                  if (m != null) store.updatePhotoOverlay(photoId, selected.id, { ownerElevationM: m, bottomElevationM: m });
                 }}
               />
             </label>

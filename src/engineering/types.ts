@@ -325,8 +325,10 @@ export interface PhotoOverlayObject {
   planeStatus?: OverlayPlaneStatus;
   /** Provenance of widthM/heightM. Visual resize without calibration must stay DEFAULT. */
   metricSource?: OverlayMetricSource;
-  /** Owner-typed absolute wall offset (m). Required for APPLY when the photo has scale but no wall registration. */
+  /** Owner-typed absolute wall offset (m). Required for APPLY when the photo has no wall registration. */
   ownerOffsetM?: number;
+  /** Owner-typed absolute elevation (m). DEFAULT bottomElevationM is never absolute provenance. */
+  ownerElevationM?: number;
 }
 
 export interface PhotoMarker {

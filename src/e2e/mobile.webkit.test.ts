@@ -337,7 +337,7 @@ describe("MOB-06 overlay → APPLY TO MODEL writes opening", () => {
         if (!pid) return;
         live().setPhotoWallHint(pid, "south");
         const ov = live().project.reality?.photos.find((p) => p.id === pid)?.overlays?.[0];
-        if (ov) live().updatePhotoOverlay(pid, ov.id, { ownerOffsetM: 2, wallId: "south" });
+        if (ov) live().updatePhotoOverlay(pid, ov.id, { ownerOffsetM: 2, ownerElevationM: 0, wallId: "south" });
         live().applyPhotoOverlaysToModel(pid);
       });
       await page.waitForFunction((n) => {
@@ -967,7 +967,7 @@ describe("WEBKIT VIDEO POSITIVE decode + Reality + Undo", () => {
         if (!pid) return;
         live().setPhotoWallHint(pid, "south");
         const ov = live().project.reality?.photos.find((p) => p.id === pid)?.overlays?.find((o) => !o.applied);
-        if (ov) live().updatePhotoOverlay(pid, ov.id, { ownerOffsetM: 2, wallId: "south" });
+        if (ov) live().updatePhotoOverlay(pid, ov.id, { ownerOffsetM: 2, ownerElevationM: 0, wallId: "south" });
         live().applyPhotoOverlaysToModel(pid);
       });
       await page.waitForFunction((n) => {
@@ -1934,7 +1934,8 @@ describe("MOBILE-E2E-R linked delete lifecycle", () => {
           overlays: [],
         });
         live().setPhotoWallHint("e2e_ph", "south");
-        live().addPhotoOverlay("e2e_ph", "exhaust", 0.3, 0.5);
+        const addedEx = live().addPhotoOverlay("e2e_ph", "exhaust", 0.3, 0.5);
+        if (addedEx.overlay) live().updatePhotoOverlay("e2e_ph", addedEx.overlay.id, { ownerOffsetM: 2, ownerElevationM: 0.4, wallId: "south" });
         const applied = live().applyPhotoOverlaysToModel("e2e_ph");
         if (!applied.ok) return { ok: false, reason: applied.errors.join("; ") };
         const nOpen = live().project.openings.length;
@@ -1944,7 +1945,7 @@ describe("MOBILE-E2E-R linked delete lifecycle", () => {
         const afterDetach = live().project.openings.length;
         const overlaysAfter = live().project.reality?.photos.find((p) => p.id === "e2e_ph")?.overlays?.length ?? 0;
         const added = live().addPhotoOverlay("e2e_ph", "intake", 0.45, 0.5);
-        if (added.overlay) live().updatePhotoOverlay("e2e_ph", added.overlay.id, { wallId: "west" });
+        if (added.overlay) live().updatePhotoOverlay("e2e_ph", added.overlay.id, { wallId: "west", ownerOffsetM: 1.5, ownerElevationM: 0.4 });
         const applied2 = live().applyPhotoOverlaysToModel("e2e_ph");
         if (!applied2.ok) return { ok: false, reason: applied2.errors.join("; ") };
         const ov2 = live().project.reality?.photos.find((p) => p.id === "e2e_ph")?.overlays?.[0];
@@ -2200,6 +2201,403 @@ describe("3D-E2E-R2 WebKit canvas pointer / touch", () => {
       await mf(page, "twin-rotate").tap();
       const rotAfter = (await readTwin()).r1!.rotationDeg;
       assert.notEqual(rotAfter, rotBefore, "rotate button must change canonical rotation");
+    } finally {
+      await ctx.close();
+    }
+  });
+});
+
+describe("3D-E2E-R3 cancel is not commit", () => {
+  it("R13-01..08 pointercancel / touchcancel / Escape / lostpointercapture rollback; pointerup commits", async () => {
+    const { ctx, page } = await openPhone("390x844");
+    try {
+      const seeded = await page.evaluate(() => {
+        const w = window as unknown as {
+          __MF_TWIN_LOCK_ORBIT__: boolean;
+          __MF_TWIN_CAMERA__: string;
+          __MF_STORE__: {
+            getState: () => {
+              project: {
+                racks: unknown[];
+                openings: Array<{ id: string; type: string; wallId: string; widthM: number; heightM: number; bottomElevationM: number; offsetFromWallStartM: number; name?: string; locked?: boolean }>;
+                fans: Array<{ id: string; specId: string; name: string; x: number; y: number; arrangement: string; count: number; dirtyFilter: boolean }>;
+                lockedObjectIds: string[];
+                reality?: {
+                  photos: unknown[];
+                  videos: unknown[];
+                  findings: unknown[];
+                  asBuilt: unknown[];
+                  compareMode: string;
+                  interview: unknown[];
+                };
+              };
+              loadProject: (p: unknown) => { ok?: boolean; reason?: string };
+              addRack: (r: Record<string, unknown>) => { ok: boolean; errors: string[] };
+              addFanInstance: (f: Record<string, unknown>) => { ok: boolean; errors: string[] };
+              addOpening: (o: Record<string, unknown>) => { ok: boolean; errors: string[] };
+            };
+          };
+        };
+        w.__MF_TWIN_LOCK_ORBIT__ = true;
+        w.__MF_TWIN_CAMERA__ = "top";
+        const live = () => w.__MF_STORE__.getState();
+        const next = structuredClone(live().project) as {
+          racks: unknown[];
+          openings: unknown[];
+          fans: unknown[];
+          lockedObjectIds: string[];
+          reality?: {
+            photos: unknown[];
+            videos: unknown[];
+            findings: unknown[];
+            asBuilt: unknown[];
+            compareMode: string;
+            interview: unknown[];
+          };
+        };
+        next.racks = [];
+        next.fans = [];
+        next.lockedObjectIds = [];
+        next.openings = (live().project.openings ?? []).map((o) => ({ ...o, locked: false }));
+        const loaded = live().loadProject(next);
+        if (loaded && loaded.ok === false) return { ok: false, reason: loaded.reason ?? "load" };
+        const r1 = live().addRack({
+          id: "e2e_r1",
+          name: "R1",
+          x: 1.4,
+          y: 1.5,
+          widthM: 1.6,
+          depthM: 0.6,
+          heightM: 2.0,
+          rotationDeg: 0,
+          shelves: 4,
+          usableShelfWidthM: 1.5,
+          usableShelfDepthM: 0.55,
+          asicCount: 0,
+          airflowToward: "south",
+        });
+        const r2 = live().addRack({
+          id: "e2e_r2",
+          name: "R2",
+          x: 4.6,
+          y: 1.5,
+          widthM: 1.6,
+          depthM: 0.6,
+          heightM: 2.0,
+          rotationDeg: 0,
+          shelves: 4,
+          usableShelfWidthM: 1.5,
+          usableShelfDepthM: 0.55,
+          asicCount: 0,
+          airflowToward: "south",
+        });
+        const fan = live().addFanInstance({
+          id: "e2e_fan",
+          specId: "FAN_STRONG",
+          name: "F",
+          x: 6.4,
+          y: 3.2,
+          arrangement: "single",
+          count: 1,
+          dirtyFilter: false,
+        });
+        const op = live().addOpening({
+          id: "e2e_op",
+          type: "TECHNICAL",
+          wallId: "south",
+          widthM: 1.0,
+          heightM: 0.8,
+          bottomElevationM: 0.4,
+          offsetFromWallStartM: 3.2,
+          name: "Tech",
+        });
+        const cur = structuredClone(live().project) as typeof next;
+        cur.reality = {
+          photos: [
+            {
+              id: "e2e_ph",
+              name: "south.jpg",
+              mime: "image/jpeg",
+              createdAt: 1,
+              notes: "",
+              wallHint: "south",
+              widthPx: 800,
+              heightPx: 280,
+              calibration: {
+                scaleMPerPx: 0.01,
+                lengthM: 8,
+                aId: "a",
+                bId: "b",
+                provenance: "FIELD_MEASUREMENT",
+              },
+              wallRegistration: {
+                wallId: "south",
+                anchorNx: 0,
+                wallOffsetM: 0,
+                hDirection: 1,
+                anchorNy: 1,
+                elevationM: 0,
+                vDirection: -1,
+                provenance: "USER_CONFIRMED",
+              },
+              markers: [],
+              overlays: [
+                {
+                  id: "e2e_ov_fan",
+                  kind: "fan",
+                  nx: 0.72,
+                  ny: 0.4,
+                  nw: 0.1,
+                  nh: 0.12,
+                  rotationDeg: 0,
+                  widthM: 0.8,
+                  heightM: 0.4,
+                  depthM: 0.8,
+                  bottomElevationM: 0,
+                  wallId: "south",
+                  linkedObjectId: "e2e_fan",
+                  applied: true,
+                  planeStatus: "ON_PLANE",
+                  metricSource: "DEFAULT",
+                },
+              ],
+            },
+          ],
+          videos: cur.reality?.videos ?? [],
+          findings: cur.reality?.findings ?? [],
+          asBuilt: cur.reality?.asBuilt ?? [],
+          compareMode: cur.reality?.compareMode ?? "as-designed",
+          interview: cur.reality?.interview ?? [],
+        };
+        const linked = live().loadProject(cur);
+        if (linked && linked.ok === false) return { ok: false, reason: linked.reason ?? "photo" };
+        return {
+          ok: r1.ok && r2.ok && fan.ok && op.ok,
+          reason: [...r1.errors, ...r2.errors, ...fan.errors, ...op.errors].join("; "),
+        };
+      });
+      assert.equal(seeded.ok, true, seeded.reason ?? "");
+
+      await mf(page, "toolbar-3d").tap();
+      await mf(page, "twin").waitFor({ timeout: 20000 });
+      await page.waitForTimeout(400);
+      await page.waitForFunction(
+        () => {
+          const m = (window as unknown as { __MF_TWIN_SCREEN__?: { ready?: boolean; objects?: Record<string, { visible?: boolean }> } }).__MF_TWIN_SCREEN__;
+          return Boolean(m?.ready && m.objects?.e2e_r1?.visible && m.objects?.e2e_fan?.visible && m.objects?.e2e_op?.visible);
+        },
+        null,
+        { timeout: 20000 },
+      );
+
+      const screenOf = async (id: string) =>
+        page.evaluate((oid) => {
+          const m = (window as unknown as { __MF_TWIN_SCREEN__: { objects: Record<string, { x: number; y: number }> } }).__MF_TWIN_SCREEN__;
+          return m.objects[oid];
+        }, id);
+
+      const readTwin = async () =>
+        page.evaluate(() => {
+          const s = (
+            window as unknown as {
+              __MF_STORE__: {
+                getState: () => {
+                  project: {
+                    racks: Array<{ id: string; x: number; y: number; rotationDeg: number }>;
+                    fans: Array<{ id: string; x: number; y: number }>;
+                    openings: Array<{ id: string; offsetFromWallStartM: number }>;
+                    reality?: { photos: Array<{ overlays?: Array<{ id: string; nx: number; ny: number; linkedObjectId?: string }> }> };
+                  };
+                  preview: unknown;
+                  past: unknown[];
+                  lastMutationError: string | null;
+                };
+              };
+            }
+          ).__MF_STORE__.getState();
+          const ov = s.project.reality?.photos[0]?.overlays?.find((o) => o.id === "e2e_ov_fan");
+          return {
+            r1: s.project.racks.find((r) => r.id === "e2e_r1"),
+            r2: s.project.racks.find((r) => r.id === "e2e_r2"),
+            fan: s.project.fans.find((f) => f.id === "e2e_fan"),
+            op: s.project.openings.find((o) => o.id === "e2e_op"),
+            ovNx: ov?.nx,
+            ovNy: ov?.ny,
+            preview: s.preview,
+            past: s.past.length,
+            err: s.lastMutationError,
+          };
+        });
+
+      type GestureEnd = "pointerup" | "pointercancel" | "touchcancel" | "escape" | "lostpointercapture";
+
+      const gesture = async (from: { x: number; y: number }, to: { x: number; y: number }, end: GestureEnd) => {
+        const result = await page.evaluate(
+          ({ from, to, end }) => {
+            const canvas = document.querySelector("[data-mf-id='twin-canvas']") as HTMLCanvasElement | null;
+            if (!canvas) throw new Error("twin-canvas missing");
+            const firePointer = (target: EventTarget, type: string, x: number, y: number, buttons: number) => {
+              const ev = new PointerEvent(type, {
+                bubbles: true,
+                cancelable: true,
+                composed: true,
+                view: window,
+                clientX: x,
+                clientY: y,
+                screenX: x,
+                screenY: y,
+                pointerId: 1,
+                pointerType: "mouse",
+                isPrimary: true,
+                buttons,
+                button: 0,
+                pressure: buttons ? 0.5 : 0,
+              });
+              target.dispatchEvent(ev);
+            };
+            const fireTouch = (target: EventTarget, type: string, x: number, y: number, ended: boolean) => {
+              const touch = new Touch({
+                identifier: 1,
+                target: canvas,
+                clientX: x,
+                clientY: y,
+                screenX: x,
+                screenY: y,
+                pageX: x,
+                pageY: y,
+                radiusX: 2.5,
+                radiusY: 2.5,
+                rotationAngle: 0,
+                force: ended ? 0 : 0.5,
+              });
+              const list = ended ? [] : [touch];
+              const ev = new TouchEvent(type, {
+                bubbles: true,
+                cancelable: true,
+                composed: true,
+                view: window,
+                touches: list,
+                targetTouches: list,
+                changedTouches: [touch],
+              });
+              target.dispatchEvent(ev);
+            };
+            const steps = 16;
+            if (end === "touchcancel") {
+              fireTouch(canvas, "touchstart", from.x, from.y, false);
+              for (let i = 1; i <= steps; i++) {
+                const x = from.x + ((to.x - from.x) * i) / steps;
+                const y = from.y + ((to.y - from.y) * i) / steps;
+                fireTouch(canvas, "touchmove", x, y, false);
+                fireTouch(window, "touchmove", x, y, false);
+              }
+              fireTouch(canvas, "touchcancel", to.x, to.y, true);
+              fireTouch(window, "touchcancel", to.x, to.y, true);
+              return { touch: true };
+            }
+            firePointer(canvas, "pointerdown", from.x, from.y, 1);
+            for (let i = 1; i <= steps; i++) {
+              const x = from.x + ((to.x - from.x) * i) / steps;
+              const y = from.y + ((to.y - from.y) * i) / steps;
+              firePointer(canvas, "pointermove", x, y, 1);
+              firePointer(window, "pointermove", x, y, 1);
+            }
+            if (end === "pointerup") {
+              firePointer(canvas, "pointerup", to.x, to.y, 0);
+              firePointer(window, "pointerup", to.x, to.y, 0);
+            } else if (end === "pointercancel") {
+              firePointer(canvas, "pointercancel", to.x, to.y, 0);
+              firePointer(window, "pointercancel", to.x, to.y, 0);
+            } else if (end === "escape") {
+              window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true, composed: true }));
+            } else if (end === "lostpointercapture") {
+              canvas.dispatchEvent(new Event("lostpointercapture", { bubbles: true, cancelable: true }));
+            }
+            return { touch: false };
+          },
+          { from, to, end },
+        );
+        await page.waitForTimeout(250);
+        return result;
+      };
+
+      const unchanged = (
+        a: Awaited<ReturnType<typeof readTwin>>,
+        b: Awaited<ReturnType<typeof readTwin>>,
+        label: string,
+      ) => {
+        assert.ok(Math.abs((a.r1?.x ?? 0) - (b.r1?.x ?? 0)) < 1e-9, `${label} rack x`);
+        assert.ok(Math.abs((a.r1?.y ?? 0) - (b.r1?.y ?? 0)) < 1e-9, `${label} rack y`);
+        assert.ok(Math.abs((a.fan?.x ?? 0) - (b.fan?.x ?? 0)) < 1e-9, `${label} fan x`);
+        assert.ok(Math.abs((a.fan?.y ?? 0) - (b.fan?.y ?? 0)) < 1e-9, `${label} fan y`);
+        assert.ok(
+          Math.abs((a.op?.offsetFromWallStartM ?? 0) - (b.op?.offsetFromWallStartM ?? 0)) < 1e-9,
+          `${label} opening`,
+        );
+        assert.equal(a.past, b.past, `${label} history`);
+        assert.equal(b.preview, null, `${label} preview must be null`);
+      };
+
+      const before = await readTwin();
+      assert.ok(before.r1 && before.fan && before.op, "seed missing");
+      assert.ok(typeof before.ovNx === "number", "linked overlay missing");
+      const overlayBefore = { nx: before.ovNx, ny: before.ovNy };
+
+      const r1s = await screenOf("e2e_r1");
+      assert.ok(r1s, "rack screen coord missing");
+      await gesture(r1s, { x: r1s.x + 36, y: r1s.y + 28 }, "pointercancel");
+      unchanged(before, await readTwin(), "R13-01 pointercancel rack");
+
+      const fanS = await screenOf("e2e_fan");
+      assert.ok(fanS, "fan screen coord missing");
+      await gesture(fanS, { x: fanS.x - 50, y: fanS.y + 20 }, "pointercancel");
+      const afterFanCancel = await readTwin();
+      unchanged(before, afterFanCancel, "R13-02 pointercancel fan");
+      assert.equal(afterFanCancel.ovNx, overlayBefore.nx, "R13-08 linked overlay nx after fan cancel");
+      assert.equal(afterFanCancel.ovNy, overlayBefore.ny, "R13-08 linked overlay ny after fan cancel");
+
+      const opS = await screenOf("e2e_op");
+      assert.ok(opS, "opening screen coord missing");
+      await gesture(opS, { x: opS.x + 80, y: opS.y }, "pointercancel");
+      unchanged(before, await readTwin(), "R13-03 pointercancel opening");
+
+      let touchOk = true;
+      let touchErr = "";
+      try {
+        await gesture(r1s, { x: r1s.x + 40, y: r1s.y + 24 }, "touchcancel");
+      } catch (e) {
+        touchOk = false;
+        touchErr = e instanceof Error ? e.message : String(e);
+      }
+      assert.equal(touchOk, true, `R13-04 WebKit TouchEvent touchcancel failed: ${touchErr}`);
+      unchanged(before, await readTwin(), "R13-04 touchcancel rack");
+
+      await gesture(r1s, { x: r1s.x + 36, y: r1s.y + 28 }, "escape");
+      unchanged(before, await readTwin(), "R13-05 Escape rack");
+
+      await gesture(r1s, { x: r1s.x + 36, y: r1s.y + 28 }, "lostpointercapture");
+      unchanged(before, await readTwin(), "R13 lostpointercapture rack");
+
+      await gesture(r1s, { x: r1s.x + 36, y: r1s.y + 28 }, "pointerup");
+      const afterCommit = await readTwin();
+      const rackMoved =
+        Math.abs((afterCommit.r1!.x ?? 0) - (before.r1?.x ?? 0)) > 0.05 ||
+        Math.abs((afterCommit.r1!.y ?? 0) - (before.r1?.y ?? 0)) > 0.05;
+      assert.equal(rackMoved, true, `R13-06 pointerup must commit: ${JSON.stringify({ before: before.r1, after: afterCommit.r1 })}`);
+      assert.equal(afterCommit.past, before.past + 1, "R13-06 history +1");
+      assert.equal(afterCommit.preview, null, "R13-06 preview cleared");
+
+      const validPos = { x: afterCommit.r1!.x, y: afterCommit.r1!.y };
+      const pastAfterCommit = afterCommit.past;
+      const r1b = await screenOf("e2e_r1");
+      const r2s = await screenOf("e2e_r2");
+      await gesture(r1b, r2s, "pointerup");
+      const afterInvalid = await readTwin();
+      assert.ok(Math.abs(afterInvalid.r1!.x - validPos.x) < 1e-6, "R13-07 invalid pointerup must rollback x");
+      assert.ok(Math.abs(afterInvalid.r1!.y - validPos.y) < 1e-6, "R13-07 invalid pointerup must rollback y");
+      assert.ok(afterInvalid.err, "R13-07 invalid pointerup must show error");
+      assert.equal(afterInvalid.past, pastAfterCommit, "R13-07 invalid must not add history");
+      assert.equal(afterInvalid.preview, null, "R13-07 preview null");
     } finally {
       await ctx.close();
     }

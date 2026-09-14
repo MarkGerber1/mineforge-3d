@@ -384,8 +384,8 @@ describe("APPLY-ATOMIC-01 six valid commit as one history transaction", () => {
     const exhaust = live().addPhotoOverlay("ph1", "exhaust", 0.3, 0.4);
     live().addPhotoOverlay("ph1", "fan", 0.75, 0.55);
     live().addPhotoOverlay("ph1", "duct", 0.4, 0.2);
-    live().updatePhotoOverlay("ph1", intake.overlay!.id, { wallId: "west" });
-    live().updatePhotoOverlay("ph1", exhaust.overlay!.id, { wallId: "east" });
+    live().updatePhotoOverlay("ph1", intake.overlay!.id, { wallId: "west", ownerOffsetM: 1.5 });
+    live().updatePhotoOverlay("ph1", exhaust.overlay!.id, { wallId: "east", ownerOffsetM: 1.6 });
     const pastBefore = live().past.length;
     const applied = live().applyPhotoOverlaysToModel("ph1");
     assert.equal(applied.ok, true, applied.errors.join("; "));
