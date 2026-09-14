@@ -444,7 +444,7 @@ describe("REG-07b owner-entered offset allows APPLY without registration", () =>
   it("explicit offset is not invented from nx", () => {
     live().loadProject(seeded(scaleOnlyPhoto()));
     const add = live().addPhotoOverlay("ph1", "door", 0.9, 0.7);
-    live().updatePhotoOverlay("ph1", add.overlay!.id, { ownerOffsetM: 2, widthM: 1, heightM: 2.1, metricSource: "OWNER_ENTERED" });
+    live().updatePhotoOverlay("ph1", add.overlay!.id, { ownerOffsetM: 2, ownerElevationM: 0, widthM: 1, heightM: 2.1, metricSource: "OWNER_ENTERED" });
     const applied = live().applyPhotoOverlaysToModel("ph1");
     assert.equal(applied.ok, true, applied.errors.join("; "));
     approx(live().project.openings[0]!.offsetFromWallStartM, 2, 1e-6);

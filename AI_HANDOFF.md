@@ -59,6 +59,13 @@ Owner action required to mint the public URL: **Publish** in Grok Build (`*.grok
 
 Do not reopen MFQ-001…MFQ-006 unless a real regression appears.
 
+QX-03R3 (in progress, not independently accepted): unregistered photos
+cannot invent absolute wall position; DEFAULT overlay elevation cannot
+become canonical z; lock policy is generic across every ID-addressable
+canonical collection; 3D cancel (pointercancel / touchcancel / Escape /
+lostpointercapture) rolls back and is not commit. Photogrammetry is not
+implemented. Do not declare FINAL PASSED.
+
 QX-03R2 (in progress, not independently accepted): A–B is scale only;
 PhotoWallRegistration is the wall-plane mapping (cropped / reversed /
 interior anchors). Scale-only photos cannot invent wall offset.

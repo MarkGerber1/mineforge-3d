@@ -38,6 +38,12 @@ function seededProject() {
   return p;
 }
 
+function ownerAbs(overlayId: string, offsetM: number, elevationM?: number, extra: Record<string, unknown> = {}) {
+  const patch: Record<string, unknown> = { ownerOffsetM: offsetM, ...extra };
+  if (elevationM != null) patch.ownerElevationM = elevationM;
+  live().updatePhotoOverlay("ph1", overlayId, patch);
+}
+
 function southExhaust(): Opening {
   return {
     id: "ex_s",
@@ -83,12 +89,18 @@ describe("PHOTO-02 APPLY TO MODEL links overlays to canonical objects", () => {
     live().addPhotoOverlay("ph1", "rack", 0.52, 0.5);
     const intake = live().addPhotoOverlay("ph1", "intake", 0.3, 0.4);
     const exhaust = live().addPhotoOverlay("ph1", "exhaust", 0.3, 0.4);
-    live().addPhotoOverlay("ph1", "fan", 0.75, 0.55);
-    live().addPhotoOverlay("ph1", "duct", 0.4, 0.2);
+    const fan = live().addPhotoOverlay("ph1", "fan", 0.75, 0.55);
+    const duct = live().addPhotoOverlay("ph1", "duct", 0.4, 0.2);
     assert.ok(intake.overlay?.id);
     assert.ok(exhaust.overlay?.id);
-    live().updatePhotoOverlay("ph1", intake.overlay!.id, { wallId: "west" });
-    live().updatePhotoOverlay("ph1", exhaust.overlay!.id, { wallId: "east" });
+    const ovs0 = live().project.reality?.photos[0]?.overlays ?? [];
+    const racks = ovs0.filter((o) => o.kind === "rack");
+    ownerAbs(racks[0]!.id, 1.2);
+    ownerAbs(racks[1]!.id, 3.4);
+    ownerAbs(intake.overlay!.id, 1.5, 0.4, { wallId: "west" });
+    ownerAbs(exhaust.overlay!.id, 1.6, 0.4, { wallId: "east" });
+    ownerAbs(fan.overlay!.id, 5.5);
+    ownerAbs(duct.overlay!.id, 4.0, 1.8);
 
     const drafts = live().project.reality?.photos[0]?.overlays ?? [];
     assert.equal(drafts.length, 6);
@@ -197,6 +209,9 @@ describe("PHOTO-04 undo APPLY and overlay add", () => {
   it("undo restores pre-APPLY canonical and unapplied overlays", () => {
     live().loadProject(seededProject());
     live().addPhotoOverlay("ph1", "door", 0.3, 0.6);
+    const doorOv = live().project.reality?.photos[0]?.overlays?.[0];
+    assert.ok(doorOv);
+    ownerAbs(doorOv.id, 2.0, 0);
     const preApply = JSON.stringify(live().project.openings);
     const preOv = live().project.reality?.photos[0]?.overlays?.[0];
     assert.ok(preOv && !preOv.applied);
@@ -209,6 +224,7 @@ describe("PHOTO-04 undo APPLY and overlay add", () => {
     assert.ok(ov);
     assert.equal(ov!.applied, false);
     live().undo();
+    live().undo();
     assert.equal((live().project.reality?.photos[0]?.overlays ?? []).length, 0);
   });
 });
@@ -217,6 +233,9 @@ describe("PHOTO-05 persist linked overlays", () => {
   it("parseProject keeps overlays + linkedObjectId", () => {
     live().loadProject(seededProject());
     live().addPhotoOverlay("ph1", "intake", 0.25, 0.4);
+    const intakeOv = live().project.reality?.photos[0]?.overlays?.[0];
+    assert.ok(intakeOv);
+    ownerAbs(intakeOv.id, 2.0, 0.4);
     const applied = live().applyPhotoOverlaysToModel("ph1");
     assert.equal(applied.ok, true, applied.errors.join("; "));
     const json = JSON.parse(JSON.stringify(live().project));
@@ -233,6 +252,9 @@ describe("PHOTO-06 view selection sync", () => {
   it("select in 2D remains selected in 3D and photo link", () => {
     live().loadProject(seededProject());
     live().addPhotoOverlay("ph1", "exhaust", 0.3, 0.4);
+    const exOv = live().project.reality?.photos[0]?.overlays?.[0];
+    assert.ok(exOv);
+    ownerAbs(exOv.id, 2.4, 0.4);
     const applied = live().applyPhotoOverlaysToModel("ph1");
     assert.equal(applied.ok, true, applied.errors.join("; "));
     const id = live().project.openings.find((o) => o.type === "EXHAUST")!.id;
@@ -256,7 +278,7 @@ describe("PHOTO-07 applyOneOverlay helper is the same validator path", () => {
   it("createPhotoOverlay then applyPhotoOverlays matches store", () => {
     const p = seededProject();
     const photo = p.reality!.photos[0]!;
-    const ov = createPhotoOverlay(photo, "door", 0.4, 0.5, "ov_test");
+    const ov = { ...createPhotoOverlay(photo, "door", 0.4, 0.5, "ov_test"), ownerOffsetM: 2, ownerElevationM: 0 };
     const withOv = {
       ...p,
       reality: { ...p.reality!, photos: [{ ...photo, overlays: [ov] }] },
@@ -295,6 +317,9 @@ describe("PHOTO-08 deleteSelected unlinks overlay", () => {
   it("deleting canonical un-applies overlay, does not drop photo", () => {
     live().loadProject(seededProject());
     live().addPhotoOverlay("ph1", "door", 0.35, 0.5);
+    const dOv = live().project.reality?.photos[0]?.overlays?.[0];
+    assert.ok(dOv);
+    ownerAbs(dOv.id, 2.0, 0);
     assert.equal(live().applyPhotoOverlaysToModel("ph1").ok, true);
     const door = live().project.openings.find((o) => o.type === "DOOR")!;
     live().select([door.id]);

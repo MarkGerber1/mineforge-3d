@@ -398,3 +398,28 @@ deploy NOT performed. FINAL PASSED is NOT declared.
 
 Does not start QX-02C. Does not publish. Does not declare FINAL PASSED.
 
+## QX-03R3 — FAIL-CLOSED PHOTO ABSOLUTE POSITION + COMPLETE LOCK + 3D CANCEL
+
+Starting SHA `5d02eec621563656a5f784ca2c6d488505c6e989`. Branch
+`repair/qx-03r3-final-residuals`.
+
+- R11: uncalibrated / scale-only / unregistered photos MUST NOT invent
+  absolute wall offset from a photo-normalized fraction of wall length.
+  APPLY requires PhotoWallRegistration or explicit `ownerOffsetM`.
+- R14: DEFAULT overlay `bottomElevationM` (exhaust 0.4, duct 1.8, …)
+  is never absolute provenance. Vertical APPLY requires registration
+  mapping or explicit `ownerElevationM`.
+- R12: `lockedCanonicalDeletions` compares before/after IDs across
+  openings, racks, fans, ventilation components, asBuilt, findings,
+  photos, videos. Locked fan / asBuilt cannot be wiped by a validated
+  patch. Unlocked delete remains allowed.
+- R13: TwinPointerBridge `commitDrag` vs `cancelDrag`. pointerup /
+  mouseup / touchend commit; pointercancel / touchcancel / Escape /
+  lostpointercapture (active unfinished drag) rollback. No history,
+  preview cleared, linked photo overlay unchanged.
+
+Photogrammetry is NOT implemented. Physical iPhone NOT performed. Public
+deploy NOT performed. FINAL PASSED is NOT declared.
+
+Does not start QX-02C. Does not publish. Does not declare FINAL PASSED.
+

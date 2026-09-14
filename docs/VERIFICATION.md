@@ -28,14 +28,15 @@ Date: 2026-09-13
 | Reality video frame evidence (seek+canvas, fail-closed) | PASS |
 | iPhone WebKit E2E (Playwright, CI mandatory) | PASS (CI) / local WebKit libs missing |
 | QX-03R photo↔canonical sync / atomic APPLY / 3D drag | READY FOR INDEPENDENT QUALITY RETEST |
-| QX-03R2 wall registration / fail-closed APPLY / locked delete / canvas 3D | IN PROGRESS (PR #24, not independently accepted) |
+| QX-03R2 wall registration / fail-closed APPLY / locked delete / canvas 3D | READY FOR INDEPENDENT QUALITY RETEST (not independently accepted) |
+| QX-03R3 fail-closed absolute photo position / complete lock / 3D cancel | IN PROGRESS (not independently accepted) |
 
 ## UNIT TESTS
 
 Oracle suite: `src/engineering/oracle/*.test.ts`
 
-TOTAL: 457
-PASSED: 457
+TOTAL: 552
+PASSED: 552
 FAILED: 0
 
 | Test ID | Subsystem | Status |
@@ -60,6 +61,10 @@ FAILED: 0
 | WALL-RESIZE-01 … WALL-RESIZE-10 | Direct-wall numeric resize anchors, cancel/undo/redo | PASS |
 | DIM-VALIDATION-01 … DIM-VALIDATION-08 | Reject not clamp; MIN 0.50 m; canonical unchanged | PASS |
 | OBJECT-PLACE-01 … OBJECT-PLACE-11 | Shared CREATE/MOVE validator, fully outside invalid | PASS |
+| R11-01 … R11-09 | Unregistered photo cannot invent absolute wall offset | PASS (oracle) |
+| R14-01 … R14-07 | DEFAULT elevation is not absolute provenance | PASS (oracle) |
+| R12-01 … R12-08 | Generic locked delete across fans / asBuilt / mixed | PASS (oracle) |
+| R13 Twin3D code | commitDrag ≠ cancelDrag; pointercancel is not onUp | PASS (oracle) |
 
 ## E2E / UX
 

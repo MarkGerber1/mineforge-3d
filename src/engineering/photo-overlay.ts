@@ -147,6 +147,10 @@ export function placeOnWall(
   }
 }
 
+function overlayNeedsAbsoluteElevation(kind: PhotoOverlayKind): boolean {
+  return kind !== "rack" && kind !== "fan";
+}
+
 function overlayPlacement(
   photo: RealityPhotoMeta,
   o: PhotoOverlayObject,
@@ -155,17 +159,11 @@ function overlayPlacement(
 ): { ok: true; offsetM: number; elevationM: number } | { ok: false; errors: string[] } {
   const offset = resolveOverlayWallOffset(photo, o.nx, wall, project, o.ownerOffsetM);
   if (!offset.ok) return offset;
-  const elev = resolveOverlayElevation(
-    photo,
-    o.ny + o.nh,
-    o.metricSource === "OWNER_ENTERED" || o.ownerOffsetM != null ? o.bottomElevationM : o.bottomElevationM,
-  );
-  if (!elev.ok) {
-    if (offset.source === "UNCALIBRATED_PROPORTIONAL" || offset.source === "OWNER_ENTERED") {
-      return { ok: true, offsetM: offset.offsetM, elevationM: o.bottomElevationM ?? 0 };
-    }
-    return elev;
+  if (!overlayNeedsAbsoluteElevation(o.kind)) {
+    return { ok: true, offsetM: offset.offsetM, elevationM: 0 };
   }
+  const elev = resolveOverlayElevation(photo, o.ny + o.nh, o.ownerElevationM);
+  if (!elev.ok) return elev;
   return { ok: true, offsetM: offset.offsetM, elevationM: elev.elevationM };
 }
 
@@ -318,10 +316,7 @@ export function applyOneOverlay(
     if (!asBuiltInsideRoom(project, box)) {
       return { ok: false, errors: [`${PHOTO_OVERLAY_LABEL_RU[overlay.kind]} выходит за пределы помещения.`] };
     }
-    const z =
-      overlay.kind === "beam"
-        ? Math.max(0, project.room.heightM - overlay.heightM)
-        : placed.elevationM;
+    const z = placed.elevationM;
     const obj: AsBuiltObject = {
       id: overlay.linkedObjectId ?? `ab_${overlay.id}`,
       kind: overlay.kind,

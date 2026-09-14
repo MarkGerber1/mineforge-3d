@@ -8,17 +8,21 @@
  * PHASE 1 wall-plane model. Not photogrammetry. Do not invent camera pose.
  */
 import { photoCalibration, photoSize } from "./reality.ts";
-import { wallLength } from "./geometry.ts";
 import type {
   PhotoRegDirection,
   PhotoWallRegistration,
-  Project,
   RealityPhotoMeta,
   WallId,
 } from "./types.ts";
 
 export const SCALE_ONLY_POSITION_RU =
   "Фото откалибровано по размеру, но не привязано к координатам стены.";
+
+export const ABSOLUTE_POSITION_RU =
+  "Нет привязки фото к стене и нет координаты, введённой владельцем.";
+
+export const ABSOLUTE_ELEVATION_RU =
+  "Нет вертикальной привязки фото и нет высоты, введённой владельцем.";
 
 export function isPhotoRegistered(photo: RealityPhotoMeta | undefined | null): boolean {
   const r = photo?.wallRegistration;
@@ -90,7 +94,7 @@ export function nyFromRegisteredElevation(photo: RealityPhotoMeta, elevationM: n
   return Number.isFinite(ny) ? ny : null;
 }
 
-export type OverlayPositionSource = "REGISTERED" | "OWNER_ENTERED" | "UNCALIBRATED_PROPORTIONAL";
+export type OverlayPositionSource = "REGISTERED" | "OWNER_ENTERED";
 
 export type OverlayPositionResult =
   | { ok: true; offsetM: number; source: OverlayPositionSource }
@@ -98,35 +102,27 @@ export type OverlayPositionResult =
 
 /**
  * Absolute wall offset for APPLY / linked photo intent.
- * Scale without registration must not invent photo-left = wall start.
- * Visual nx may still be clamped by the UI; this function does not clamp.
+ * Unregistered photos must not invent world position from a photo-normalized
+ * fraction of wall length. Visual nx may still be clamped by the UI; this
+ * function does not clamp.
  */
 export function resolveOverlayWallOffset(
   photo: RealityPhotoMeta,
   nx: number,
   wall: WallId,
-  project: Project,
+  _project: unknown,
   ownerOffsetM?: number,
 ): OverlayPositionResult {
   if (isPhotoRegistered(photo) && photo.wallRegistration!.wallId === wall) {
     const offsetM = registeredOffsetFromNx(photo, nx);
-    if (offsetM == null) return { ok: false, errors: [SCALE_ONLY_POSITION_RU] };
+    if (offsetM == null) return { ok: false, errors: [ABSOLUTE_POSITION_RU] };
     return { ok: true, offsetM, source: "REGISTERED" };
   }
   if (ownerOffsetM != null && Number.isFinite(ownerOffsetM)) {
     return { ok: true, offsetM: ownerOffsetM, source: "OWNER_ENTERED" };
   }
-  if (photoCalibration(photo) && photo.wallRegistration?.wallId === wall) {
-    return { ok: false, errors: [SCALE_ONLY_POSITION_RU] };
-  }
-  if (photoCalibration(photo) && !isPhotoRegistered(photo)) {
-    return { ok: false, errors: [SCALE_ONLY_POSITION_RU] };
-  }
-  const L = wallLength(project, wall);
-  if (!(L > 1e-12) || !Number.isFinite(nx)) {
-    return { ok: false, errors: [SCALE_ONLY_POSITION_RU] };
-  }
-  return { ok: true, offsetM: nx * L, source: "UNCALIBRATED_PROPORTIONAL" };
+  const msg = photoCalibration(photo) ? SCALE_ONLY_POSITION_RU : ABSOLUTE_POSITION_RU;
+  return { ok: false, errors: [msg] };
 }
 
 export function resolveOverlayElevation(
@@ -136,16 +132,14 @@ export function resolveOverlayElevation(
 ): { ok: true; elevationM: number } | { ok: false; errors: string[] } {
   if (isPhotoRegistered(photo)) {
     const elev = registeredElevationFromNy(photo, nyBottom);
-    if (elev == null) return { ok: false, errors: [SCALE_ONLY_POSITION_RU] };
+    if (elev == null) return { ok: false, errors: [ABSOLUTE_ELEVATION_RU] };
     return { ok: true, elevationM: elev };
   }
   if (ownerElevationM != null && Number.isFinite(ownerElevationM)) {
     return { ok: true, elevationM: ownerElevationM };
   }
-  if (photoCalibration(photo)) {
-    return { ok: false, errors: [SCALE_ONLY_POSITION_RU] };
-  }
-  return { ok: true, elevationM: ownerElevationM ?? 0 };
+  const msg = photoCalibration(photo) ? SCALE_ONLY_POSITION_RU : ABSOLUTE_ELEVATION_RU;
+  return { ok: false, errors: [msg] };
 }
 
 export function registrationOnPhoto(reg: PhotoWallRegistration): boolean {
