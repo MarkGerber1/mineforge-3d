@@ -25,6 +25,7 @@ const tools: Array<{ id: CadTool; label: string; icon: typeof MousePointer2; hin
   { id: "intake", label: "Приток", icon: Wind, hint: "" },
   { id: "exhaust", label: "Вытяжка", icon: Wind, hint: "" },
   { id: "rack", label: "Стойка", icon: Box, hint: "" },
+  { id: "fan", label: "Вентилятор", icon: Fan, hint: "" },
 ];
 
 export function LeftSidebar() {

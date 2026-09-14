@@ -316,3 +316,28 @@ Floor OPTION A remains the Owner-approved PHASE 1 contract introduced
 during QX-02B-R6/R7 (PR #20). Calculation not reopened.
 
 Does not start QX-02C. Does not publish. Does not declare FINAL PASSED.
+
+## QX-03 — OWNER EDITOR + INTERACTIVE PHOTO WORKSPACE
+
+Starting SHA `bc38a6df9ba9f1c1c8b15ee6938bd345841aee65`. Branch
+`feature/qx-03-owner-editor-photo-workspace`.
+
+- Persistent Owner Assistant: mobile nav Выбор | Добавить | AI | Reality | 2D/3D.
+  Desktop AI button is visible. Grok conversation is Zustand `grok[]` and
+  survives view switches. AI OFFLINE does not hide the panel or disable CAD.
+- Photo workspace is a calibrated interactive 2D overlay editor (not
+  photogrammetry): add/select/drag/resize, real dimensions, elevation, wall,
+  rotate, duplicate, delete. A–B calibration kept (`kind-point`).
+- Draft overlays live on `RealityPhotoMeta.overlays`. APPLY TO MODEL creates
+  or updates canonical Opening / Rack / FanInstance / AsBuilt via existing
+  validators (`validateOpening`, `validateRackPlacement`, domain boundary).
+  `linkedObjectId` binds photo ↔ canonical. Preview never leaks.
+- Wall reassignment for DOOR/INTAKE/EXHAUST/TECHNICAL: Inspector wall dropdown
+  + 2D drag across a corner. Offset is ratio-clamped and validated. Locked or
+  oversized → REJECT. Delete+recreate is not the path.
+- 3D is an editor: select openings/racks/fans/as-built, Свойства / Удалить / AI
+  chrome, same `selectedIds`. Mobile select opens the properties sheet.
+- Cad2D places fans; selection syncs across 2D / 3D / Photo.
+
+Does not start QX-02C. Does not publish. Does not declare FINAL PASSED.
+Does not reopen QX-01 / QX-02A / QX-02B / FINAL-SEC.

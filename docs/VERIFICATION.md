@@ -32,8 +32,8 @@ Date: 2026-09-13
 
 Oracle suite: `src/engineering/oracle/*.test.ts`
 
-TOTAL: 126
-PASSED: 126
+TOTAL: 457
+PASSED: 457
 FAILED: 0
 
 | Test ID | Subsystem | Status |
@@ -54,6 +54,7 @@ FAILED: 0
 | VIDEO-01 … VIDEO-13 | Real video policy, provenance, bounded frames, no silent mutate, persistRaw=false, VP8 demux | PASS |
 | PERSIST-01 … PERSIST-08 | Save state idle/saving/saved/error, retry, stale-save race | PASS (oracle; PERSIST-03/04 via mobile CI) |
 | TWIN-OPENING-01 … TWIN-OPENING-09 | Deterministic wall apertures, undo/redo, Reality ADD | PASS |
+| PHOTO-01 … PHOTO-08 / WALL-REASSIGN-01 … 03 / INT-QX03 | Photo overlay drafts, APPLY linkage, wall reassignment, view sync, intent | QX-03 |
 | WALL-RESIZE-01 … WALL-RESIZE-10 | Direct-wall numeric resize anchors, cancel/undo/redo | PASS |
 | DIM-VALIDATION-01 … DIM-VALIDATION-08 | Reject not clamp; MIN 0.50 m; canonical unchanged | PASS |
 | OBJECT-PLACE-01 … OBJECT-PLACE-11 | Shared CREATE/MOVE validator, fully outside invalid | PASS |

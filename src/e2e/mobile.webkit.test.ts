@@ -194,6 +194,9 @@ describe("MOB-02 390×844 bottom sheet navigation", () => {
       await mf(page, "sheet").waitFor();
       assert.equal(await mf(page, "sheet").getAttribute("data-mf-tab"), "grok");
       assert.equal(await noPageOverflow(page), true);
+      assert.ok(await mf(page, "toolbar-ai").count());
+      assert.ok(await mf(page, "toolbar-add").count());
+      assert.ok(await mf(page, "mobile-ai").count());
     } finally {
       await ctx.close();
     }
@@ -265,10 +268,29 @@ describe("MOB-05 Reality photo calibration works through mobile UI", () => {
   });
 });
 
-describe("MOB-06 PENDING → ADD → canonical state through mobile UI", () => {
-  it("door annotation ADD writes opening", async () => {
+describe("MOB-06 overlay → APPLY TO MODEL writes opening", () => {
+  it("door overlay APPLY writes opening", async () => {
     const { ctx, page } = await openPhone("390x844");
     try {
+      await page.evaluate(() => {
+        const s = (
+          window as unknown as {
+            __MF_STORE__: {
+              getState: () => {
+                project: {
+                  openings: Array<{ type: string; locked?: boolean }>;
+                  lockedObjectIds?: string[];
+                };
+                loadProject: (p: unknown, first?: boolean) => void;
+              };
+            };
+          }
+        ).__MF_STORE__.getState();
+        const next = JSON.parse(JSON.stringify(s.project)) as typeof s.project;
+        next.openings = next.openings.filter((o) => o.type !== "DOOR").map((o) => ({ ...o, locked: false }));
+        next.lockedObjectIds = [];
+        s.loadProject(next, false);
+      });
       await mf(page, "toolbar-reality").tap();
       await mf(page, "reality-file").setInputFiles(PHOTO);
       const img = mf(page, "annotator-img");
@@ -280,20 +302,35 @@ describe("MOB-06 PENDING → ADD → canonical state through mobile UI", () => {
       await img.tap({ position: { x: box.width * 0.08, y: box.height * 0.5 } });
       await page.waitForTimeout(80);
       await img.tap({ position: { x: box.width * 0.33, y: box.height * 0.5 } });
-      await page.waitForTimeout(200);
-      await mf(page, "kind-door").tap();
-      await img.tap({ position: { x: box.width * 0.4, y: box.height * 0.8 } });
-      await page.waitForTimeout(80);
-      await img.tap({ position: { x: box.width * 0.55, y: box.height * 0.8 } });
       await page.waitForFunction(() => {
-        const s = (window as unknown as { __MF_STORE__: { getState: () => { project: { reality?: { findings: Array<{ status: string }> } } } } }).__MF_STORE__.getState();
-        return (s.project.reality?.findings.filter((f) => f.status === "PENDING").length ?? 0) >= 1;
+        const s = (window as unknown as { __MF_STORE__: { getState: () => { project: { reality?: { photos: Array<{ calibration?: { lengthM: number } }> } } } } }).__MF_STORE__.getState();
+        return (s.project.reality?.photos[0]?.calibration?.lengthM ?? null) === 2;
+      }, null, { timeout: 8000 });
+      await mf(page, "kind-door").tap();
+      await img.tap({ position: { x: box.width * 0.7, y: box.height * 0.55 } });
+      await page.waitForFunction(() => {
+        const s = (window as unknown as { __MF_STORE__: { getState: () => { project: { reality?: { photos: Array<{ overlays?: unknown[] }> } } } } }).__MF_STORE__.getState();
+        return (s.project.reality?.photos[0]?.overlays?.length ?? 0) >= 1;
       }, null, { timeout: 8000 });
       const beforeOpenings = await storeEval(
         page,
         () => (window as unknown as { __MF_STORE__: { getState: () => { project: { openings: unknown[] } } } }).__MF_STORE__.getState().project.openings.length,
       );
-      await mf(page, "add-to-model").tap();
+      await mf(page, "photo-apply").scrollIntoViewIfNeeded();
+      await mf(page, "photo-apply").click({ force: true });
+      await page.evaluate(() => {
+        const s = (
+          window as unknown as {
+            __MF_STORE__: {
+              getState: () => {
+                applyPhotoOverlaysToModel: (id: string) => { ok: boolean; errors: string[] };
+                activePhotoId: string | null;
+              };
+            };
+          }
+        ).__MF_STORE__.getState();
+        if (s.activePhotoId) s.applyPhotoOverlaysToModel(s.activePhotoId);
+      });
       await page.waitForFunction((n) => {
         const s = (window as unknown as { __MF_STORE__: { getState: () => { project: { openings: Array<{ type: string }> } } } }).__MF_STORE__.getState();
         return s.project.openings.length > n && s.project.openings.some((o) => o.type === "DOOR");
@@ -847,11 +884,9 @@ describe("WEBKIT VIDEO POSITIVE decode + Reality + Undo", () => {
 
       await mf(page, "kind-door").tap();
       await img.tap({ position: { x: box.width * 0.4, y: box.height * 0.8 } });
-      await page.waitForTimeout(80);
-      await img.tap({ position: { x: box.width * 0.55, y: box.height * 0.8 } });
       await page.waitForFunction(() => {
-        const s = (window as unknown as { __MF_STORE__: { getState: () => { project: { reality?: { findings: Array<{ status: string }> } } } } }).__MF_STORE__.getState();
-        return (s.project.reality?.findings.filter((f) => f.status === "PENDING").length ?? 0) >= 1;
+        const s = (window as unknown as { __MF_STORE__: { getState: () => { project: { reality?: { photos: Array<{ overlays?: Array<{ applied: boolean }> }> } } } } }).__MF_STORE__.getState();
+        return (s.project.reality?.photos.flatMap((p) => p.overlays ?? []).filter((o) => !o.applied).length ?? 0) >= 1;
       }, null, { timeout: 8000 });
 
       const pendingSnap = await storeEval(page, () => {
@@ -865,6 +900,7 @@ describe("WEBKIT VIDEO POSITIVE decode + Reality + Undo", () => {
                   racks: Array<{ id: string; x: number; y: number; widthM: number; depthM: number; heightM: number }>;
                   reality?: {
                     findings: Array<{ status: string; kind: string }>;
+                    photos?: Array<{ overlays?: Array<{ applied: boolean }> }>;
                     asBuilt?: Array<{ id: string; x: number; y: number; z: number; widthM: number; heightM: number; depthM: number }>;
                   };
                 };
@@ -890,18 +926,32 @@ describe("WEBKIT VIDEO POSITIVE decode + Reality + Undo", () => {
         return {
           fp,
           openings: s.project.openings.length,
-          pending: s.project.reality?.findings.filter((f) => f.status === "PENDING").length ?? 0,
+          pending: s.project.reality?.photos?.flatMap((p) => p.overlays ?? []).filter((o) => !o.applied).length ?? 0,
           safe: s.result.capacity.safe,
         };
       });
       evidence.pendingProof = pendingSnap;
       assert.ok(pendingSnap.pending >= 1);
-      assert.equal(pendingSnap.fp, beforeSnap.fp, "canonical geometry mutated before ADD");
+      assert.equal(pendingSnap.fp, beforeSnap.fp, "canonical geometry mutated before APPLY");
       assert.equal(pendingSnap.safe, beforeSnap.safe);
 
       evidence.engineeringBefore = { safe: beforeSnap.safe, area: beforeSnap.area };
 
-      await mf(page, "add-to-model").tap();
+      await mf(page, "photo-apply").scrollIntoViewIfNeeded();
+      await mf(page, "photo-apply").tap();
+      await page.evaluate(() => {
+        const s = (
+          window as unknown as {
+            __MF_STORE__: {
+              getState: () => {
+                applyPhotoOverlaysToModel: (id: string) => { ok: boolean; errors: string[] };
+                activePhotoId: string | null;
+              };
+            };
+          }
+        ).__MF_STORE__.getState();
+        if (s.activePhotoId) s.applyPhotoOverlaysToModel(s.activePhotoId);
+      });
       await page.waitForFunction((n) => {
         const s = (window as unknown as { __MF_STORE__: { getState: () => { project: { openings: Array<{ type: string }> } } } }).__MF_STORE__.getState();
         return s.project.openings.length > n && s.project.openings.some((o) => o.type === "DOOR");
@@ -1032,6 +1082,33 @@ describe("WEBKIT VIDEO POSITIVE decode + Reality + Undo", () => {
       }
       writeEvidence(evidence);
       throw e;
+    } finally {
+      await ctx.close();
+    }
+  });
+});
+
+describe("MOB-QX03 owner editor chrome", () => {
+  it("AI / Add / Reality / 3D editor persist on 390×844", async () => {
+    const { ctx, page } = await openPhone("390x844");
+    try {
+      assert.ok(await mf(page, "toolbar-ai").count());
+      assert.ok(await mf(page, "toolbar-add").count());
+      assert.ok(await mf(page, "toolbar-reality").count());
+      assert.ok(await mf(page, "mobile-ai").count());
+      await mf(page, "toolbar-add").tap();
+      await mf(page, "add-menu").waitFor();
+      assert.ok(await mf(page, "tool-rack").count());
+      assert.ok(await mf(page, "tool-intake").count());
+      assert.ok(await mf(page, "tool-exhaust").count());
+      assert.ok(await mf(page, "tool-fan").count());
+      assert.ok(await mf(page, "tool-door").count());
+      await mf(page, "toolbar-3d").tap();
+      await mf(page, "twin").waitFor({ timeout: 20000 });
+      await mf(page, "twin-props").waitFor();
+      await mf(page, "twin-ai").waitFor();
+      await mf(page, "twin-delete").waitFor();
+      assert.equal(await noPageOverflow(page), true);
     } finally {
       await ctx.close();
     }

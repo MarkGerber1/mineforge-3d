@@ -17,7 +17,7 @@ export type AirflowDirection = "FRONT_TO_BACK" | "BACK_TO_FRONT" | "SIDE";
 export type ElectricalPolicy = "typical" | "design";
 
 export type AppMode = "project" | "xray" | "twin";
-export type ViewMode = "2d" | "3d" | "split";
+export type ViewMode = "2d" | "3d" | "split" | "photo";
 
 export type ProjectStatus = "PASS" | "WARNING" | "FAIL" | "INCOMPLETE";
 export type SafeConfidence = "VERIFIED" | "PRELIMINARY" | "INCOMPLETE" | "CRITICAL";
@@ -267,6 +267,34 @@ export type PhotoMarkerKind =
   | "duct"
   | "other";
 
+export type PhotoOverlayKind =
+  | "rack"
+  | "intake"
+  | "exhaust"
+  | "fan"
+  | "duct"
+  | "door"
+  | "opening"
+  | "column"
+  | "beam";
+
+export interface PhotoOverlayObject {
+  id: string;
+  kind: PhotoOverlayKind;
+  nx: number;
+  ny: number;
+  nw: number;
+  nh: number;
+  rotationDeg: 0 | 90 | 180 | 270;
+  widthM: number;
+  heightM: number;
+  depthM?: number;
+  bottomElevationM?: number;
+  wallId?: WallId;
+  linkedObjectId?: string;
+  applied: boolean;
+}
+
 export interface PhotoMarker {
   id: string;
   nx: number;
@@ -299,6 +327,8 @@ export interface RealityPhotoMeta {
   heightPx?: number;
   calibration?: PhotoCalibration;
   markers: PhotoMarker[];
+  /** Draft / linked objects on the calibrated photo plane. Not photogrammetry. */
+  overlays?: PhotoOverlayObject[];
   /** photo = still; video-frame = extracted still from a video. */
   kind?: "photo" | "video-frame";
   sourceVideoId?: string;

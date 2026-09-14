@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect } from "react";
 import { Cad2D } from "@/components/cad/Cad2D";
+import { PhotoAnnotator } from "@/components/reality/PhotoAnnotator";
 import { useLiveProject, useLiveResult, useProjectStore } from "@/project/store";
 import { emptyRectangularProject, undergroundParkingFarm } from "@/project/factory";
 import { loadLastProject } from "@/project/persistence";
@@ -46,21 +47,14 @@ export function Workspace() {
       }
       if (e.key === "Delete" || e.key === "Backspace") {
         const t = e.target as HTMLElement;
-        if (t.tagName === "INPUT" || t.tagName === "TEXTAREA") return;
-        const ids = new Set(store.selectedIds);
-        const next = {
-          ...store.project,
-          openings: store.project.openings.filter((o) => !ids.has(o.id) || o.locked),
-          racks: store.project.racks.filter((r) => !ids.has(r.id)),
-          fans: store.project.fans.filter((f) => !ids.has(f.id)),
-        };
-        store.commit(next, "Delete");
-        store.select([]);
+        if (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT") return;
+        store.deleteSelected();
       }
       if (e.key.toLowerCase() === "m" && !(e.target as HTMLElement).closest("input")) store.setTool("measure");
       if (e.key === "1") store.setView("2d");
       if (e.key === "2") store.setView("3d");
       if (e.key === "3") store.setView("split");
+      if (e.key === "4") store.setView("photo");
       if (e.key.toLowerCase() === "g" && !meta) store.toggleGrid();
       if (e.key.toLowerCase() === "s" && !meta) store.toggleSnap();
     };
@@ -70,15 +64,19 @@ export function Workspace() {
   }, []);
 
   const view = store.view;
+  const realitySheetOpen = store.sheet !== "closed" && store.sheetTab === "reality";
+  const photoWorkspace = view === "photo" && Boolean(store.activePhotoId) && !realitySheetOpen;
   return (
     <div className="relative min-h-0 flex-1 overflow-hidden" data-mf-id="workspace">
-      {view === "2d" && <Cad2D />}
-      {view === "3d" && (
+      {photoWorkspace && store.activePhotoId && <PhotoAnnotator photoId={store.activePhotoId} />}
+      {!photoWorkspace && view === "2d" && <Cad2D />}
+      {!photoWorkspace && view === "photo" && <Cad2D />}
+      {!photoWorkspace && view === "3d" && (
         <Suspense fallback={<div className="flex h-full items-center justify-center text-[12px] text-muted">Digital Twin…</div>}>
           <Twin3D />
         </Suspense>
       )}
-      {view === "split" && (
+      {!photoWorkspace && view === "split" && (
         <div className="grid h-full min-h-0 grid-cols-2 max-md:grid-cols-1">
           <div className="min-h-0 border-r border-border">
             <Cad2D />

@@ -7,13 +7,15 @@ import { validateCanonicalProjectDomains, validateRequestedCount } from "../engi
 import { applyPatchValidated, type PartialProjectPatch } from "../engineering/upgrade.ts";
 import { grokImportedAsic } from "../engineering/asic-trust.ts";
 import { placedAsicCount, placedExceedsRequestedReason } from "../engineering/inventory.ts";
-import type { AppMode, EngineeringResult, Opening, Project, Rack, ViewMode, WallId } from "../engineering/types.ts";
+import type { AppMode, EngineeringResult, FanInstance, Opening, Project, Rack, ViewMode, WallId } from "../engineering/types.ts";
 import { SNAP_MODES_M, type SnapMode } from "../engineering/constants.ts";
-import { undergroundParkingFarm } from "./factory.ts";
+import { nid, undergroundParkingFarm } from "./factory.ts";
 import { applyFailure, type FailureKind } from "../ai/failure.ts";
 import type { GrokScope } from "../ai/intent.ts";
-import { emptyReality, type AsBuiltObject, type PhotoMarker, type PhotoMarkerKind, type RealityFinding, type RealityPhotoMeta, type RealityVideoMeta, type VideoErrorCode } from "../engineering/types.ts";
+import { emptyReality, type AsBuiltObject, type PhotoMarker, type PhotoMarkerKind, type PhotoOverlayKind, type PhotoOverlayObject, type RealityFinding, type RealityPhotoMeta, type RealityVideoMeta, type VideoErrorCode } from "../engineering/types.ts";
 import { applyFinding, attachVideoFrames, recordAnnotation } from "../engineering/reality.ts";
+import { applyPhotoOverlays, createPhotoOverlay } from "../engineering/photo-overlay.ts";
+import { reassignOpeningWall } from "../engineering/wall-reassign.ts";
 import type { RuntimeSnapshot } from "../ai/runtime-client.ts";
 import { validateRoomHeightM, validateRoomLengthM } from "../engineering/room-resize.ts";
 import { validateAvailablePowerW } from "../engineering/electrical.ts";
@@ -23,6 +25,7 @@ import { validateRackPlacement, validateRacksConfiguration } from "../engineerin
 import { saveScheduler, type PersistState } from "./save-scheduler.ts";
 
 export type CadTool = "select" | "pan" | "measure" | "door" | "intake" | "exhaust" | "rack" | "fan";
+export type PhotoTool = "calibrate" | "select" | PhotoOverlayKind;
 export type SheetState = "closed" | "half" | "full";
 export type SheetTab = "props" | "why" | "grok" | "reality" | "app";
 
@@ -84,6 +87,7 @@ interface ProjectStore {
   mode: AppMode;
   view: ViewMode;
   tool: CadTool;
+  photoTool: PhotoTool;
   snapMode: SnapMode;
   snapEnabled: boolean;
   gridEnabled: boolean;
@@ -135,6 +139,7 @@ interface ProjectStore {
   setMode(mode: AppMode): void;
   setView(view: ViewMode): void;
   setTool(tool: CadTool): void;
+  setPhotoTool(tool: PhotoTool): void;
   setSnap(mode: SnapMode): void;
   toggleSnap(): void;
   toggleGrid(): void;
@@ -142,8 +147,11 @@ interface ProjectStore {
   resizeWall(wall: WallId, lengthM: number, preview?: boolean): { ok: boolean; reason?: string };
   addOpening(o: Opening): { ok: boolean; errors: string[] };
   updateOpening(id: string, patch: Partial<Opening>, preview?: boolean): { ok: boolean; errors: string[] };
+  reassignOpeningWall(id: string, wallId: WallId, offsetM?: number): { ok: boolean; errors: string[] };
+  deleteSelected(): { ok: boolean; errors: string[] };
   addRack(rack: Rack): { ok: boolean; errors: string[] };
   moveRack(id: string, x: number, y: number, preview?: boolean): { ok: boolean; errors: string[] };
+  addFanInstance(fan: FanInstance): { ok: boolean; errors: string[] };
   setFleet(asicId: string, count: number): { ok: boolean; reason?: string };
   setPower(watts: number, reservePct?: number): { ok: boolean; reason?: string };
   setRoomHeight(heightM: number): { ok: boolean; reason?: string };
@@ -189,6 +197,11 @@ interface ProjectStore {
   addPhotoMarker(photoId: string, marker: NonNullable<Project["reality"]>["photos"][number]["markers"][number]): void;
   setPhotoWallHint(photoId: string, wall: WallId | undefined): void;
   annotatePhoto(photoId: string, a: PhotoMarker, b: PhotoMarker, opts: { knownLengthM?: number; kind: PhotoMarkerKind }): void;
+  addPhotoOverlay(photoId: string, kind: PhotoOverlayKind, nx: number, ny: number): { ok: boolean; overlay?: PhotoOverlayObject; reason?: string };
+  updatePhotoOverlay(photoId: string, overlayId: string, patch: Partial<PhotoOverlayObject>): { ok: boolean; reason?: string };
+  duplicatePhotoOverlay(photoId: string, overlayId: string): { ok: boolean; reason?: string };
+  deletePhotoOverlay(photoId: string, overlayId: string): { ok: boolean; reason?: string };
+  applyPhotoOverlaysToModel(photoId: string): { ok: boolean; errors: string[]; appliedIds: string[] };
   commitVideoEvidence(video: RealityVideoMeta, frames: RealityPhotoMeta[]): void;
   toggleFrameSelect(photoId: string): void;
   removePhoto(photoId: string): void;
@@ -245,6 +258,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   mode: "project",
   view: "2d",
   tool: "select",
+  photoTool: "calibrate",
   snapMode: "1cm",
   snapEnabled: true,
   gridEnabled: true,
@@ -396,6 +410,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
   setView: (view) => set({ view }),
   setTool: (tool) => set({ tool, measure: tool === "measure" ? get().measure : { a: null, b: null } }),
+  setPhotoTool: (photoTool) => set({ photoTool }),
   setSnap: (snapMode) => set({ snapMode }),
   toggleSnap: () => set({ snapEnabled: !get().snapEnabled }),
   toggleGrid: () => set({ gridEnabled: !get().gridEnabled }),
@@ -439,6 +454,48 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     else get().commit(next, "Update opening");
     return { ok: true, errors: [] };
   },
+  reassignOpeningWall(id, wallId, offsetM) {
+    const src = get().project;
+    const r = reassignOpeningWall(src, id, wallId, offsetM);
+    if (!r.ok) {
+      set({ lastMutationError: r.errors[0] ?? "Перенос на стену отклонён." });
+      return { ok: false, errors: r.errors };
+    }
+    get().commit(r.project, `Стена проёма: ${wallId}`);
+    set({ selectedIds: [id], lastMutationError: null });
+    return { ok: true, errors: [] };
+  },
+  deleteSelected() {
+    const src = get().project;
+    const ids = new Set(get().selectedIds);
+    if (!ids.size) return { ok: false, errors: ["Ничего не выбрано."] };
+    const next = {
+      ...src,
+      openings: src.openings.filter((o) => !ids.has(o.id) || o.locked),
+      racks: src.racks.filter((r) => !ids.has(r.id)),
+      fans: src.fans.filter((f) => !ids.has(f.id)),
+      reality: src.reality
+        ? {
+            ...src.reality,
+            asBuilt: src.reality.asBuilt.filter((a) => !ids.has(a.id)),
+            photos: src.reality.photos.map((p) => ({
+              ...p,
+              overlays: (p.overlays ?? []).flatMap((o) => {
+                if (ids.has(o.id)) return [];
+                if (o.linkedObjectId && ids.has(o.linkedObjectId)) {
+                  return [{ ...o, applied: false, linkedObjectId: undefined }];
+                }
+                return [o];
+              }),
+            })),
+          }
+        : src.reality,
+    };
+    const ok = get().commit(next, "Delete");
+    if (!ok) return { ok: false, errors: [get().lastMutationError ?? "Удаление отклонёно."] };
+    set({ selectedIds: [] });
+    return { ok: true, errors: [] };
+  },
   addRack(rack) {
     const src = get().project;
     const v = validateRackPlacement(src, rack);
@@ -460,6 +517,16 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     }
     if (!v.ok) return { ok: false, errors: v.errors };
     get().commit(next, "Move rack");
+    return { ok: true, errors: [] };
+  },
+  addFanInstance(fan) {
+    const src = get().project;
+    if (src.fans.some((f) => f.id === fan.id)) return { ok: false, errors: ["Вентилятор уже есть."] };
+    const next = { ...src, fans: [...src.fans, fan], updatedAt: Date.now() };
+    const domains = validateCanonicalProjectDomains(next, get().catalogs);
+    if (!domains.ok) return { ok: false, errors: domains.errors };
+    get().commit(next, "Add fan");
+    set({ selectedIds: [fan.id] });
     return { ok: true, errors: [] };
   },
   setFleet(asicId, count) {
@@ -743,7 +810,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
   setPendingAppEdit: (pendingAppEdit) => set({ pendingAppEdit }),
   pushAppEditJob: (job) => set({ appEditJobs: [job, ...get().appEditJobs].slice(0, 40) }),
-  setActivePhoto: (activePhotoId) => set({ activePhotoId }),
+  setActivePhoto: (activePhotoId) => set({ activePhotoId, view: activePhotoId ? "photo" : get().view }),
   setPendingImages: (pendingImages) => set({ pendingImages }),
   addAsBuilt(obj) {
     const src = get().project;
@@ -772,7 +839,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     const src = get().project;
     const reality = src.reality ?? emptyReality();
     get().commit({ ...src, reality: { ...reality, photos: [...reality.photos, meta] } }, "Add photo");
-    set({ activePhotoId: meta.id, sheet: "full", sheetTab: "reality" });
+    set({ activePhotoId: meta.id, sheet: "full", sheetTab: "reality", view: "photo" });
   },
   addPhotoMarker(photoId, marker) {
     const src = get().project;
@@ -806,6 +873,87 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     const src = get().project;
     const { project, finding } = recordAnnotation(src, photoId, a, b, opts);
     get().commit(project, finding ? `Аннотация ${finding.kind}` : "Калибровка фото");
+  },
+  addPhotoOverlay(photoId, kind, nx, ny) {
+    const src = get().project;
+    const reality = src.reality ?? emptyReality();
+    const photo = reality.photos.find((p) => p.id === photoId);
+    if (!photo) return { ok: false, reason: "Фото не найдено." };
+    const overlay = createPhotoOverlay(photo, kind, nx, ny, nid("ov"));
+    const photos = reality.photos.map((p) =>
+      p.id === photoId ? { ...p, overlays: [...(p.overlays ?? []), overlay] } : p,
+    );
+    get().commit({ ...src, reality: { ...reality, photos } }, `Фото: ${kind}`);
+    set({ selectedIds: [overlay.id], photoTool: "select" });
+    return { ok: true, overlay };
+  },
+  updatePhotoOverlay(photoId, overlayId, patch) {
+    const src = get().project;
+    const reality = src.reality ?? emptyReality();
+    const photo = reality.photos.find((p) => p.id === photoId);
+    if (!photo) return { ok: false, reason: "Фото не найдено." };
+    const overlays = (photo.overlays ?? []).map((o) => (o.id === overlayId ? { ...o, ...patch, id: o.id, kind: o.kind } : o));
+    if (!(photo.overlays ?? []).some((o) => o.id === overlayId)) return { ok: false, reason: "Объект на фото не найден." };
+    const photos = reality.photos.map((p) => (p.id === photoId ? { ...p, overlays } : p));
+    get().commit({ ...src, reality: { ...reality, photos } }, "Фото: правка");
+    return { ok: true };
+  },
+  duplicatePhotoOverlay(photoId, overlayId) {
+    const src = get().project;
+    const reality = src.reality ?? emptyReality();
+    const photo = reality.photos.find((p) => p.id === photoId);
+    const srcOv = photo?.overlays?.find((o) => o.id === overlayId);
+    if (!photo || !srcOv) return { ok: false, reason: "Объект на фото не найден." };
+    const copy = {
+      ...srcOv,
+      id: nid("ov"),
+      nx: Math.min(0.9, srcOv.nx + 0.04),
+      ny: Math.min(0.9, srcOv.ny + 0.04),
+      linkedObjectId: undefined,
+      applied: false,
+    };
+    const photos = reality.photos.map((p) =>
+      p.id === photoId ? { ...p, overlays: [...(p.overlays ?? []), copy] } : p,
+    );
+    get().commit({ ...src, reality: { ...reality, photos } }, "Фото: дублировать");
+    set({ selectedIds: [copy.id] });
+    return { ok: true };
+  },
+  deletePhotoOverlay(photoId, overlayId) {
+    const src = get().project;
+    const reality = src.reality ?? emptyReality();
+    const photos = reality.photos.map((p) =>
+      p.id === photoId ? { ...p, overlays: (p.overlays ?? []).filter((o) => o.id !== overlayId) } : p,
+    );
+    get().commit({ ...src, reality: { ...reality, photos } }, "Фото: удалить");
+    set({ selectedIds: get().selectedIds.filter((id) => id !== overlayId) });
+    return { ok: true };
+  },
+  applyPhotoOverlaysToModel(photoId) {
+    const src = get().project;
+    const r = applyPhotoOverlays(src, photoId);
+    if (!r.ok) {
+      set({ lastMutationError: r.errors[0] ?? "APPLY отклонён." });
+      get().pushGrok({
+        id: `rv${Date.now()}`,
+        role: "assistant",
+        text: `APPLY TO MODEL: ${r.errors.join(" · ") || "нет объектов"}. Каноническая геометрия не изменена.`,
+      });
+      return { ok: false, errors: r.errors, appliedIds: [] };
+    }
+    const ok = get().commit(r.project, "APPLY TO MODEL");
+    if (!ok) return { ok: false, errors: [get().lastMutationError ?? "Каноническая проверка не пройдена."], appliedIds: [] };
+    if (r.errors.length) {
+      get().pushGrok({
+        id: `rv${Date.now()}`,
+        role: "assistant",
+        text: `APPLY частично: ${r.appliedIds.length} объект. ${r.errors.join(" · ")}`,
+      });
+    }
+    const photo = (get().project.reality ?? emptyReality()).photos.find((p) => p.id === photoId);
+    const linked = (photo?.overlays ?? []).filter((o) => r.appliedIds.includes(o.id) && o.linkedObjectId).map((o) => o.linkedObjectId!);
+    if (linked.length) set({ selectedIds: linked });
+    return { ok: true, errors: r.errors, appliedIds: r.appliedIds };
   },
   commitVideoEvidence(video, frames) {
     const src = get().project;
