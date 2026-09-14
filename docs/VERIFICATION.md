@@ -28,7 +28,7 @@ Date: 2026-09-13
 | Reality video frame evidence (seek+canvas, fail-closed) | PASS |
 | iPhone WebKit E2E (Playwright, CI mandatory) | PASS (CI) / local WebKit libs missing |
 | QX-03R photo↔canonical sync / atomic APPLY / 3D drag | READY FOR INDEPENDENT QUALITY RETEST |
-| QX-03R2 wall registration / fail-closed APPLY / locked delete / canvas 3D | READY FOR INDEPENDENT QUALITY RETEST |
+| QX-03R2 wall registration / fail-closed APPLY / locked delete / canvas 3D | IN PROGRESS (PR #24, not independently accepted) |
 
 ## UNIT TESTS
 

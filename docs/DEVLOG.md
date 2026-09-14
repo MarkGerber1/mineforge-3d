@@ -385,8 +385,13 @@ Starting SHA `be963d1af5f7af2886478ae1476ad63f45fce345`. Branch
   object returns ok=false, overlay and link unchanged, no history row.
   Same rule for 2D / 3D / AI patch.
 - R10: WebKit E2E drives the rendered 3D canvas with real pointer
-  events. Read-only `__MF_TWIN_SCREEN__` projection hook. Store
-  mutators are not called in the action phase.
+  events. Native canvas pointer bridge (clientX/Y → raycast → store)
+  because R3F's event manager does not receive Playwright/WebKit
+  synthetic hits. Read-only `__MF_TWIN_SCREEN__` projection hook and
+  `__MF_TWIN_CAMERA__='top'` view affordance. Store mutators are not
+  called in the action phase.
+- Photo chrome: kind tools nowrap-scroll; wall chips live in the
+  registration panel so they do not cover the photo on 390×844.
 
 Photogrammetry is NOT implemented. Physical iPhone NOT performed. Public
 deploy NOT performed. FINAL PASSED is NOT declared.

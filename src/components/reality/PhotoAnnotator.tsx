@@ -236,8 +236,8 @@ export function PhotoAnnotator({ photoId }: { photoId: string }) {
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col" data-mf-id="photo-workspace">
-      <div className="flex flex-wrap gap-1 border-b border-border px-2 py-1">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden" data-mf-id="photo-workspace">
+      <div className="flex shrink-0 flex-nowrap gap-1 overflow-x-auto border-b border-border px-2 py-1">
         <button
           type="button"
           data-mf-id="kind-point"
@@ -354,7 +354,7 @@ export function PhotoAnnotator({ photoId }: { photoId: string }) {
           }
         }}
       >
-        <div className="flex h-full min-h-[140px] w-full items-center justify-center overflow-hidden">
+        <div className="flex h-full min-h-0 w-full items-center justify-center overflow-hidden">
           <div
             ref={hostRef}
             className="relative h-full w-full"
@@ -481,7 +481,7 @@ export function PhotoAnnotator({ photoId }: { photoId: string }) {
           {store.lastMutationError}
         </div>
       )}
-      <div className="flex flex-wrap items-center gap-2 border-t border-border px-2 py-1 font-mono text-[11px]">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-border px-2 py-1 font-mono text-[11px]">
         <span data-mf-id="photo-scale-status" className={calReady ? "text-cold" : "text-muted"}>
           МАСШТАБ: {calReady ? "ГОТОВ" : "НЕТ"}
         </span>
@@ -489,22 +489,22 @@ export function PhotoAnnotator({ photoId }: { photoId: string }) {
           ПРИВЯЗКА К СТЕНЕ: {regReady ? "ГОТОВА" : "НЕ ЗАДАНА"}
         </span>
       </div>
-      <div className="flex flex-wrap gap-1 border-t border-border px-2 py-1">
-        <span className="mr-1 self-center text-[10px] uppercase text-muted">Стена фото</span>
-        {WALLS.map((w) => (
-          <button
-            key={w.id}
-            type="button"
-            data-mf-id={`photo-wall-${w.id}`}
-            className={cn("h-11 min-w-[44px] rounded-[8px] px-2 text-[11px] uppercase", photo.wallHint === w.id ? "bg-raised text-fg" : "text-muted")}
-            onClick={() => store.setPhotoWallHint(photoId, w.id)}
-          >
-            {w.label}
-          </button>
-        ))}
-      </div>
       {mode === "register" && (
         <div className="space-y-2 border-t border-border p-2" data-mf-id="photo-reg-panel">
+          <div className="flex flex-wrap gap-1">
+            <span className="mr-1 self-center text-[10px] uppercase text-muted">Стена фото</span>
+            {WALLS.map((w) => (
+              <button
+                key={w.id}
+                type="button"
+                data-mf-id={`photo-wall-${w.id}`}
+                className={cn("h-11 min-w-[44px] rounded-[8px] px-2 text-[11px] uppercase", photo.wallHint === w.id ? "bg-raised text-fg" : "text-muted")}
+                onClick={() => store.setPhotoWallHint(photoId, w.id)}
+              >
+                {w.label}
+              </button>
+            ))}
+          </div>
           <div className="text-[11px] text-muted">
             {!hAnchor
               ? "1. Коснитесь известной точки на фото."

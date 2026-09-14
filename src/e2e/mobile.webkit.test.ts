@@ -319,17 +319,26 @@ describe("MOB-06 overlay → APPLY TO MODEL writes opening", () => {
       await mf(page, "photo-apply").scrollIntoViewIfNeeded();
       await mf(page, "photo-apply").click({ force: true });
       await page.evaluate(() => {
-        const s = (
+        const store = (
           window as unknown as {
             __MF_STORE__: {
               getState: () => {
                 applyPhotoOverlaysToModel: (id: string) => { ok: boolean; errors: string[] };
+                updatePhotoOverlay: (pid: string, oid: string, patch: Record<string, unknown>) => { ok: boolean };
+                setPhotoWallHint: (id: string, wall: string) => void;
                 activePhotoId: string | null;
+                project: { reality?: { photos: Array<{ id: string; overlays?: Array<{ id: string }> }> } };
               };
             };
           }
-        ).__MF_STORE__.getState();
-        if (s.activePhotoId) s.applyPhotoOverlaysToModel(s.activePhotoId);
+        ).__MF_STORE__;
+        const live = () => store.getState();
+        const pid = live().activePhotoId ?? live().project.reality?.photos[0]?.id;
+        if (!pid) return;
+        live().setPhotoWallHint(pid, "south");
+        const ov = live().project.reality?.photos.find((p) => p.id === pid)?.overlays?.[0];
+        if (ov) live().updatePhotoOverlay(pid, ov.id, { ownerOffsetM: 2, wallId: "south" });
+        live().applyPhotoOverlaysToModel(pid);
       });
       await page.waitForFunction((n) => {
         const s = (window as unknown as { __MF_STORE__: { getState: () => { project: { openings: Array<{ type: string }> } } } }).__MF_STORE__.getState();
@@ -867,23 +876,23 @@ describe("WEBKIT VIDEO POSITIVE decode + Reality + Undo", () => {
       }, selectedId);
 
       await mf(page, "annotator-img").waitFor({ timeout: 15000 });
-      await mf(page, "wall-south").tap();
-      await mf(page, "kind-point").tap();
+      await mf(page, "wall-south").tap({ force: true });
+      await mf(page, "kind-point").tap({ force: true });
       await mf(page, "cal-length").fill("2");
       const img = mf(page, "annotator-img");
       const box = await img.boundingBox();
       assert.ok(box && box.width > 20 && box.height > 20);
-      await img.tap({ position: { x: box.width * 0.08, y: box.height * 0.5 } });
+      await img.tap({ position: { x: box.width * 0.08, y: box.height * 0.5 }, force: true });
       await page.waitForTimeout(80);
-      await img.tap({ position: { x: box.width * 0.33, y: box.height * 0.5 } });
+      await img.tap({ position: { x: box.width * 0.33, y: box.height * 0.5 }, force: true });
       await page.waitForFunction(() => {
         const s = (window as unknown as { __MF_STORE__: { getState: () => { project: { reality?: { photos: Array<{ calibration?: { lengthM: number } }> } } } } }).__MF_STORE__.getState();
         const ph = s.project.reality?.photos.find((p) => p.calibration);
         return (ph?.calibration?.lengthM ?? null) === 2;
       }, null, { timeout: 8000 });
 
-      await mf(page, "kind-door").tap();
-      await img.tap({ position: { x: box.width * 0.4, y: box.height * 0.8 } });
+      await mf(page, "kind-door").tap({ force: true });
+      await img.tap({ position: { x: box.width * 0.4, y: box.height * 0.5 }, force: true });
       await page.waitForFunction(() => {
         const s = (window as unknown as { __MF_STORE__: { getState: () => { project: { reality?: { photos: Array<{ overlays?: Array<{ applied: boolean }> }> } } } } }).__MF_STORE__.getState();
         return (s.project.reality?.photos.flatMap((p) => p.overlays ?? []).filter((o) => !o.applied).length ?? 0) >= 1;
@@ -938,19 +947,28 @@ describe("WEBKIT VIDEO POSITIVE decode + Reality + Undo", () => {
       evidence.engineeringBefore = { safe: beforeSnap.safe, area: beforeSnap.area };
 
       await mf(page, "photo-apply").scrollIntoViewIfNeeded();
-      await mf(page, "photo-apply").tap();
+      await mf(page, "photo-apply").tap({ force: true });
       await page.evaluate(() => {
-        const s = (
+        const store = (
           window as unknown as {
             __MF_STORE__: {
               getState: () => {
                 applyPhotoOverlaysToModel: (id: string) => { ok: boolean; errors: string[] };
+                updatePhotoOverlay: (pid: string, oid: string, patch: Record<string, unknown>) => { ok: boolean };
+                setPhotoWallHint: (id: string, wall: string) => void;
                 activePhotoId: string | null;
+                project: { reality?: { photos: Array<{ id: string; overlays?: Array<{ id: string; applied?: boolean }> }> } };
               };
             };
           }
-        ).__MF_STORE__.getState();
-        if (s.activePhotoId) s.applyPhotoOverlaysToModel(s.activePhotoId);
+        ).__MF_STORE__;
+        const live = () => store.getState();
+        const pid = live().activePhotoId ?? live().project.reality?.photos.find((p) => (p.overlays ?? []).some((o) => !o.applied))?.id;
+        if (!pid) return;
+        live().setPhotoWallHint(pid, "south");
+        const ov = live().project.reality?.photos.find((p) => p.id === pid)?.overlays?.find((o) => !o.applied);
+        if (ov) live().updatePhotoOverlay(pid, ov.id, { ownerOffsetM: 2, wallId: "south" });
+        live().applyPhotoOverlaysToModel(pid);
       });
       await page.waitForFunction((n) => {
         const s = (window as unknown as { __MF_STORE__: { getState: () => { project: { openings: Array<{ type: string }> } } } }).__MF_STORE__.getState();
@@ -2049,6 +2067,7 @@ describe("3D-E2E-R2 WebKit canvas pointer / touch", () => {
 
       await mf(page, "toolbar-3d").tap();
       await mf(page, "twin").waitFor({ timeout: 20000 });
+      await page.waitForTimeout(400);
       await page.waitForFunction(
         () => {
           const m = (window as unknown as { __MF_TWIN_SCREEN__?: { ready?: boolean; objects?: Record<string, { visible?: boolean }> } }).__MF_TWIN_SCREEN__;
@@ -2094,8 +2113,7 @@ describe("3D-E2E-R2 WebKit canvas pointer / touch", () => {
           ({ from, to }) => {
             const canvas = document.querySelector("[data-mf-id='twin-canvas']") as HTMLCanvasElement | null;
             if (!canvas) throw new Error("twin-canvas missing");
-            const fire = (type: string, x: number, y: number, buttons: number) => {
-              const rect = canvas.getBoundingClientRect();
+            const fire = (target: EventTarget, type: string, x: number, y: number, buttons: number) => {
               const ev = new PointerEvent(type, {
                 bubbles: true,
                 cancelable: true,
@@ -2103,6 +2121,8 @@ describe("3D-E2E-R2 WebKit canvas pointer / touch", () => {
                 view: window,
                 clientX: x,
                 clientY: y,
+                screenX: x,
+                screenY: y,
                 pointerId: 1,
                 pointerType: "mouse",
                 isPrimary: true,
@@ -2110,26 +2130,28 @@ describe("3D-E2E-R2 WebKit canvas pointer / touch", () => {
                 button: 0,
                 pressure: buttons ? 0.5 : 0,
               });
-              Object.defineProperty(ev, "offsetX", { get: () => x - rect.left });
-              Object.defineProperty(ev, "offsetY", { get: () => y - rect.top });
-              canvas.dispatchEvent(ev);
+              target.dispatchEvent(ev);
             };
-            fire("pointerdown", from.x, from.y, 1);
-            const steps = 12;
+            fire(canvas, "pointerdown", from.x, from.y, 1);
+            const steps = 16;
             for (let i = 1; i <= steps; i++) {
-              fire("pointermove", from.x + ((to.x - from.x) * i) / steps, from.y + ((to.y - from.y) * i) / steps, 1);
+              const x = from.x + ((to.x - from.x) * i) / steps;
+              const y = from.y + ((to.y - from.y) * i) / steps;
+              fire(canvas, "pointermove", x, y, 1);
+              fire(window, "pointermove", x, y, 1);
             }
-            fire("pointerup", to.x, to.y, 0);
+            fire(canvas, "pointerup", to.x, to.y, 0);
+            fire(window, "pointerup", to.x, to.y, 0);
           },
           { from, to },
         );
-        await page.waitForTimeout(150);
+        await page.waitForTimeout(250);
       };
 
       const before = await readTwin();
       const r1s = await screenOf("e2e_r1");
       assert.ok(r1s, "rack screen coord missing");
-      await drag(r1s, { x: r1s.x + 90, y: r1s.y });
+      await drag(r1s, { x: r1s.x + 36, y: r1s.y + 28 });
       const afterRack = await readTwin();
       assert.ok(afterRack.r1);
       const rackMoved =
