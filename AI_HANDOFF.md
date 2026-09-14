@@ -59,6 +59,13 @@ Owner action required to mint the public URL: **Publish** in Grok Build (`*.grok
 
 Do not reopen MFQ-001…MFQ-006 unless a real regression appears.
 
+QX-03R4 (in progress, not independently accepted): Canonical → Photo
+reconciliation must not invent nx from offset/wallLength on unregistered
+photos. Linked overlay stays at last visual nx/ny and is marked
+UNREGISTERED. Lock comparison uses typed canonical identity (`fan:id`
+vs `asBuilt:id`) so a different collection cannot satisfy a locked
+deletion. Photogrammetry is not implemented. Do not declare FINAL PASSED.
+
 QX-03R3 (in progress, not independently accepted): unregistered photos
 cannot invent absolute wall position; DEFAULT overlay elevation cannot
 become canonical z; lock policy is generic across every ID-addressable

@@ -267,7 +267,7 @@ export type PhotoMarkerKind =
   | "duct"
   | "other";
 
-export type OverlayPlaneStatus = "ON_PLANE" | "OUT_OF_PHOTO_PLANE";
+export type OverlayPlaneStatus = "ON_PLANE" | "OUT_OF_PHOTO_PLANE" | "UNREGISTERED";
 export type OverlayMetricSource = "CALIBRATED" | "OWNER_ENTERED" | "DEFAULT";
 
 /** Horizontal / vertical photo→wall mapping direction. Not photogrammetry. */

@@ -1,25 +1,49 @@
 /**
  * One deletion-permission rule for 2D, 3D, Photo, and AI.
  * Locked means locked regardless of mutation source.
+ *
+ * Identity contract (QX-03R4 R16): TYPED CANONICAL IDENTITY.
+ * Lock comparison keys are `kind:id` so a different collection that happens
+ * to reuse the same raw string cannot satisfy "still present".
  */
 import type { Project } from "./types.ts";
 
 export const OBJECT_LOCKED_RU = "Объект заблокирован и не может быть удалён.";
 
-export function canonicalObjectIds(project: Project): string[] {
-  const ids: string[] = [];
-  const push = (id: string | undefined) => {
-    if (id) ids.push(id);
+export type CanonicalCollection =
+  | "opening"
+  | "rack"
+  | "fan"
+  | "vent"
+  | "asBuilt"
+  | "finding"
+  | "photo"
+  | "video";
+
+export type TypedCanonicalId = { kind: CanonicalCollection; id: string };
+
+export function typedCanonicalKey(kind: CanonicalCollection, id: string): string {
+  return `${kind}:${id}`;
+}
+
+export function typedCanonicalIds(project: Project): TypedCanonicalId[] {
+  const out: TypedCanonicalId[] = [];
+  const push = (kind: CanonicalCollection, id: string | undefined) => {
+    if (id) out.push({ kind, id });
   };
-  for (const o of project.openings) push(o.id);
-  for (const r of project.racks) push(r.id);
-  for (const f of project.fans) push(f.id);
-  for (const c of project.ventilation.components) push(c.id);
-  for (const a of project.reality?.asBuilt ?? []) push(a.id);
-  for (const f of project.reality?.findings ?? []) push(f.id);
-  for (const p of project.reality?.photos ?? []) push(p.id);
-  for (const v of project.reality?.videos ?? []) push(v.id);
-  return ids;
+  for (const o of project.openings) push("opening", o.id);
+  for (const r of project.racks) push("rack", r.id);
+  for (const f of project.fans) push("fan", f.id);
+  for (const c of project.ventilation.components) push("vent", c.id);
+  for (const a of project.reality?.asBuilt ?? []) push("asBuilt", a.id);
+  for (const f of project.reality?.findings ?? []) push("finding", f.id);
+  for (const p of project.reality?.photos ?? []) push("photo", p.id);
+  for (const v of project.reality?.videos ?? []) push("video", v.id);
+  return out;
+}
+
+export function canonicalObjectIds(project: Project): string[] {
+  return typedCanonicalIds(project).map((t) => t.id);
 }
 
 export function isCanonicalLocked(project: Project, id: string): boolean {
@@ -36,12 +60,17 @@ export function lockedDeletionTargets(project: Project, ids: Iterable<string>): 
   return [...ids].filter((id) => isCanonicalLocked(project, id));
 }
 
-/** Locked IDs that exist in `before` and are missing from `after`. */
+/**
+ * Locked typed identities that exist in `before` and are missing from `after`.
+ * A raw ID appearing in a different collection does not count as still present.
+ */
 export function lockedCanonicalDeletions(before: Project, after: Project): string[] {
-  const afterIds = new Set(canonicalObjectIds(after));
+  const afterKeys = new Set(typedCanonicalIds(after).map((t) => typedCanonicalKey(t.kind, t.id)));
   const missing: string[] = [];
-  for (const id of canonicalObjectIds(before)) {
-    if (isCanonicalLocked(before, id) && !afterIds.has(id)) missing.push(id);
+  for (const t of typedCanonicalIds(before)) {
+    if (isCanonicalLocked(before, t.id) && !afterKeys.has(typedCanonicalKey(t.kind, t.id))) {
+      missing.push(t.id);
+    }
   }
   return missing;
 }
