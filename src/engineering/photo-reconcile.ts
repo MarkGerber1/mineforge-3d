@@ -7,7 +7,7 @@
  *
  * PHASE 1 wall-plane model. Not photogrammetry. Do not invent depth.
  */
-import { fanIsSpatiallyValid, rackAabb, validateOpening, wallLength } from "./geometry.ts";
+import { fanIsSpatiallyValid, rackAabb, validateOpening } from "./geometry.ts";
 import { validateRackPlacement } from "./placement.ts";
 import { photoCalibration, photoSize } from "./reality.ts";
 import { placeOnWall, PHOTO_OVERLAY_LABEL_RU } from "./photo-overlay.ts";
@@ -37,6 +37,9 @@ const WALL_FLUSH_M = 0.25;
 
 export const OUT_OF_PLANE_RU =
   "Объект перенесён на другую стену и больше не проецируется на это фото.";
+
+export const PHOTO_UNREGISTERED_RU =
+  "Фото не привязано к стене — положение объекта на фото не синхронизировано.";
 
 export function isLinkedOverlay(o: PhotoOverlayObject): boolean {
   return Boolean(o.applied && o.linkedObjectId);
@@ -117,20 +120,6 @@ export function overlayElevationFromNy(
     return registeredElevationFromNy(photo, ny + nh);
   }
   return null;
-}
-
-function nxFromOffset(photo: RealityPhotoMeta, offsetM: number, wall: WallId, project: Project): number {
-  if (isPhotoRegistered(photo) && photo.wallRegistration!.wallId === wall) {
-    const nx = nxFromRegisteredOffset(photo, offsetM);
-    if (nx != null) return nx;
-  }
-  const cal = photoCalibration(photo);
-  if (cal && !isPhotoRegistered(photo)) {
-    return Number.NaN;
-  }
-  const L = wallLength(project, wall);
-  if (L > 1e-12) return offsetM / L;
-  return 0;
 }
 
 function nyFromElevation(photo: RealityPhotoMeta, bottomElevationM: number, nh: number): number {
@@ -287,6 +276,21 @@ function reconcileOne(
   if (!onPlane || !photo.wallHint) {
     return { ...base, planeStatus: "OUT_OF_PHOTO_PLANE" };
   }
+  const registeredOnWall =
+    isPhotoRegistered(photo) && photo.wallRegistration!.wallId === photo.wallHint;
+  const norm = overlayNormalizedFromMeters(photo, alongWidthOf(linked, photo.wallHint), heightM);
+  const nw = norm?.nw ?? overlay.nw;
+  const nh = norm?.nh ?? overlay.nh;
+  if (!registeredOnWall) {
+    return {
+      ...base,
+      nx: overlay.nx,
+      ny: overlay.ny,
+      nw,
+      nh,
+      planeStatus: "UNREGISTERED",
+    };
+  }
   const offsetM =
     linked.kind === "opening"
       ? linked.object.offsetFromWallStartM
@@ -306,12 +310,9 @@ function reconcileOne(
               },
               photo.wallHint,
             );
-  const rawNx = nxFromOffset(photo, offsetM, photo.wallHint, project);
-  const norm = overlayNormalizedFromMeters(photo, alongWidthOf(linked, photo.wallHint), heightM);
-  const nw = norm?.nw ?? overlay.nw;
-  const nh = norm?.nh ?? overlay.nh;
-  const rawNy = isPhotoRegistered(photo) ? nyFromElevation(photo, bottomElevationM, nh) : overlay.ny;
-  if (!inPhotoFrame(rawNx, Number.isFinite(rawNy) ? rawNy : overlay.ny, nw, nh)) {
+  const rawNx = nxFromRegisteredOffset(photo, offsetM);
+  const rawNy = nyFromElevation(photo, bottomElevationM, nh);
+  if (rawNx == null || !inPhotoFrame(rawNx, Number.isFinite(rawNy) ? rawNy : overlay.ny, nw, nh)) {
     return { ...base, planeStatus: "OUT_OF_PHOTO_PLANE" };
   }
   return {

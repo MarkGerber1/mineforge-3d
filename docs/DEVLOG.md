@@ -423,3 +423,24 @@ deploy NOT performed. FINAL PASSED is NOT declared.
 
 Does not start QX-02C. Does not publish. Does not declare FINAL PASSED.
 
+## QX-03R4 — FINAL CROSS-VIEW REGISTRATION CLOSEOUT + TYPED IDENTITY
+
+Starting SHA `da7c5233392a7cb8e7bec044c4e7467df31eae9e`. Branch
+`repair/qx-03r4-final-crossview-closeout`.
+
+- R15: Canonical → unregistered Photo must not invent `nx` from
+  offset/wallLength. Linked overlay keeps previous visual nx/ny,
+  stays linked, canonical geometry is unchanged, `planeStatus=UNREGISTERED`.
+  Registered full-wall / cropped / reversed inverse mapping still works.
+  Removing registration unsynchronizes the photo, does not invent
+  coordinates. Undo/redo and parseProject preserve sync state.
+- R16: lock comparison uses typed canonical identity (`kind:id`).
+  A locked fan is not "still present" because an asBuilt object reuses
+  the same raw string. Inverse asBuilt → fan likewise. Unlocked
+  replacement remains allowed.
+
+Photogrammetry is NOT implemented. Physical iPhone NOT performed. Public
+deploy NOT performed. FINAL PASSED is NOT declared.
+
+Does not start QX-02C. Does not publish. Does not declare FINAL PASSED.
+

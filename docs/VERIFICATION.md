@@ -29,14 +29,15 @@ Date: 2026-09-13
 | iPhone WebKit E2E (Playwright, CI mandatory) | PASS (CI) / local WebKit libs missing |
 | QX-03R photo↔canonical sync / atomic APPLY / 3D drag | READY FOR INDEPENDENT QUALITY RETEST |
 | QX-03R2 wall registration / fail-closed APPLY / locked delete / canvas 3D | READY FOR INDEPENDENT QUALITY RETEST (not independently accepted) |
-| QX-03R3 fail-closed absolute photo position / complete lock / 3D cancel | IN PROGRESS (not independently accepted) |
+| QX-03R3 fail-closed absolute photo position / complete lock / 3D cancel | READY FOR INDEPENDENT QUALITY RETEST (not independently accepted) |
+| QX-03R4 Canonical→Photo no invented nx / typed lock identity | IN PROGRESS (not independently accepted) |
 
 ## UNIT TESTS
 
 Oracle suite: `src/engineering/oracle/*.test.ts`
 
-TOTAL: 552
-PASSED: 552
+TOTAL: 566
+PASSED: 566
 FAILED: 0
 
 | Test ID | Subsystem | Status |

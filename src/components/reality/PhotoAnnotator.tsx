@@ -8,7 +8,7 @@ import {
   PHOTO_OVERLAY_LABEL_RU,
   overlayHit,
 } from "@/engineering/photo-overlay";
-import { OUT_OF_PLANE_RU, isLinkedOverlay } from "@/engineering/photo-reconcile";
+import { OUT_OF_PLANE_RU, PHOTO_UNREGISTERED_RU, isLinkedOverlay } from "@/engineering/photo-reconcile";
 import { clientToPhotoNorm, photoContentBox } from "@/engineering/photo-frame";
 import { isPhotoRegistered } from "@/engineering/photo-registration";
 import { Button } from "@/components/ui/button";
@@ -107,6 +107,7 @@ export function PhotoAnnotator({ photoId }: { photoId: string }) {
   const overlays = photo.overlays ?? [];
   const selected = overlays.find((o) => o.id === selectedId || o.linkedObjectId === selectedId);
   const outOfPlane = overlays.filter((o) => o.planeStatus === "OUT_OF_PHOTO_PLANE" && isLinkedOverlay(o));
+  const unsynced = overlays.filter((o) => o.planeStatus === "UNREGISTERED" && isLinkedOverlay(o));
 
   const isSel = (oId: string, linked?: string) => selectedId === oId || (linked != null && selectedId === linked);
 
@@ -437,6 +438,7 @@ export function PhotoAnnotator({ photoId }: { photoId: string }) {
                       className={cn(
                         "absolute box-border rounded-[4px] border-2",
                         OVERLAY_COLOR[o.kind],
+                        o.planeStatus === "UNREGISTERED" && "border-dashed",
                         isSel(o.id, o.linkedObjectId) && "ring-2 ring-cold",
                       )}
                       style={{
@@ -474,6 +476,11 @@ export function PhotoAnnotator({ photoId }: { photoId: string }) {
       {outOfPlane.length > 0 && (
         <div className="border-t border-border bg-warn/10 px-2 py-1 font-mono text-[11px] text-warn" data-mf-id="photo-out-of-plane">
           {OUT_OF_PLANE_RU}
+        </div>
+      )}
+      {unsynced.length > 0 && (
+        <div className="border-t border-border bg-warn/10 px-2 py-1 font-mono text-[11px] text-warn" data-mf-id="photo-unregistered">
+          {PHOTO_UNREGISTERED_RU}
         </div>
       )}
       {store.lastMutationError && (

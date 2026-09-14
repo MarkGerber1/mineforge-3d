@@ -7,12 +7,13 @@ import { FAN_STRONG } from "../equipment/fan-catalog.ts";
 import { aabbInside, fanIsSpatiallyValid, roomAabb, validateOpening } from "./geometry.ts";
 import { validateRackPlacement } from "./placement.ts";
 import { photoCalibration, photoSize } from "./reality.ts";
-import { resolveOverlayElevation, resolveOverlayWallOffset } from "./photo-registration.ts";
+import { isPhotoRegistered, resolveOverlayElevation, resolveOverlayWallOffset } from "./photo-registration.ts";
 import type {
   AsBuiltObject,
   FanInstance,
   Opening,
   OpeningType,
+  OverlayPlaneStatus,
   PhotoOverlayKind,
   PhotoOverlayObject,
   Project,
@@ -167,6 +168,11 @@ function overlayPlacement(
   return { ok: true, offsetM: offset.offsetM, elevationM: elev.elevationM };
 }
 
+function planeAfterApply(photo: RealityPhotoMeta, wall: WallId): OverlayPlaneStatus {
+  if (isPhotoRegistered(photo) && photo.wallRegistration!.wallId === wall) return "ON_PLANE";
+  return "UNREGISTERED";
+}
+
 function asBuiltInsideRoom(
   project: Project,
   box: { x: number; y: number; widthM: number; depthM: number },
@@ -233,7 +239,7 @@ export function applyOneOverlay(
       applied: true,
       linkedObjectId: opening.id,
       wallId: wall,
-      planeStatus: "ON_PLANE",
+      planeStatus: planeAfterApply(photo, wall),
     };
     return { ok: true, project: withPhoto({ ...project, openings: nextOpening }, upsertOverlay(photo, linked)), overlay: linked };
   }
@@ -271,7 +277,7 @@ export function applyOneOverlay(
       applied: true,
       linkedObjectId: rack.id,
       wallId: wall,
-      planeStatus: "ON_PLANE",
+      planeStatus: planeAfterApply(photo, wall),
     };
     return { ok: true, project: withPhoto({ ...project, racks }, upsertOverlay(photo, linked)), overlay: linked };
   }
@@ -302,7 +308,7 @@ export function applyOneOverlay(
       applied: true,
       linkedObjectId: fan.id,
       wallId: wall,
-      planeStatus: "ON_PLANE",
+      planeStatus: planeAfterApply(photo, wall),
     };
     return { ok: true, project: withPhoto({ ...project, fans }, upsertOverlay(photo, linked)), overlay: linked };
   }
@@ -340,7 +346,7 @@ export function applyOneOverlay(
       applied: true,
       linkedObjectId: obj.id,
       wallId: wall,
-      planeStatus: "ON_PLANE",
+      planeStatus: planeAfterApply(photo, wall),
     };
     const photo2 = upsertOverlay(photo, linked);
     return {
