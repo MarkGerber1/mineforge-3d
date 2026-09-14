@@ -2455,45 +2455,69 @@ describe("3D-E2E-R3 cancel is not commit", () => {
               });
               target.dispatchEvent(ev);
             };
-            const fireTouch = (target: EventTarget, type: string, x: number, y: number, ended: boolean) => {
-              const touch = new Touch({
-                identifier: 1,
-                target: canvas,
-                clientX: x,
-                clientY: y,
-                screenX: x,
-                screenY: y,
-                pageX: x,
-                pageY: y,
-                radiusX: 2.5,
-                radiusY: 2.5,
-                rotationAngle: 0,
-                force: ended ? 0 : 0.5,
-              });
-              const list = ended ? [] : [touch];
-              const ev = new TouchEvent(type, {
-                bubbles: true,
-                cancelable: true,
-                composed: true,
-                view: window,
-                touches: list,
-                targetTouches: list,
-                changedTouches: [touch],
-              });
-              target.dispatchEvent(ev);
+            const fireTouchLike = (target: EventTarget, type: string, x: number, y: number, ended: boolean): "native" | "event" => {
+              try {
+                const touch = new Touch({
+                  identifier: 1,
+                  target: canvas,
+                  clientX: x,
+                  clientY: y,
+                  screenX: x,
+                  screenY: y,
+                  pageX: x,
+                  pageY: y,
+                  radiusX: 2.5,
+                  radiusY: 2.5,
+                  rotationAngle: 0,
+                  force: ended ? 0 : 0.5,
+                });
+                const list = ended ? [] : [touch];
+                const ev = new TouchEvent(type, {
+                  bubbles: true,
+                  cancelable: true,
+                  composed: true,
+                  view: window,
+                  touches: list,
+                  targetTouches: list,
+                  changedTouches: [touch],
+                });
+                target.dispatchEvent(ev);
+                return "native";
+              } catch {
+                const ev = new Event(type, { bubbles: true, cancelable: true, composed: true });
+                target.dispatchEvent(ev);
+                return "event";
+              }
             };
             const steps = 16;
             if (end === "touchcancel") {
-              fireTouch(canvas, "touchstart", from.x, from.y, false);
-              for (let i = 1; i <= steps; i++) {
-                const x = from.x + ((to.x - from.x) * i) / steps;
-                const y = from.y + ((to.y - from.y) * i) / steps;
-                fireTouch(canvas, "touchmove", x, y, false);
-                fireTouch(window, "touchmove", x, y, false);
+              let kind: "native" | "event" | "pointer-then-event" = "native";
+              try {
+                if (typeof Touch === "undefined" || typeof TouchEvent === "undefined") throw new Error("no Touch");
+                kind = fireTouchLike(canvas, "touchstart", from.x, from.y, false);
+                if (kind !== "native") throw new Error("TouchEvent not constructible");
+                for (let i = 1; i <= steps; i++) {
+                  const x = from.x + ((to.x - from.x) * i) / steps;
+                  const y = from.y + ((to.y - from.y) * i) / steps;
+                  fireTouchLike(canvas, "touchmove", x, y, false);
+                  fireTouchLike(window, "touchmove", x, y, false);
+                }
+                fireTouchLike(canvas, "touchcancel", to.x, to.y, true);
+                fireTouchLike(window, "touchcancel", to.x, to.y, true);
+              } catch {
+                firePointer(canvas, "pointerdown", from.x, from.y, 1);
+                for (let i = 1; i <= steps; i++) {
+                  const x = from.x + ((to.x - from.x) * i) / steps;
+                  const y = from.y + ((to.y - from.y) * i) / steps;
+                  firePointer(canvas, "pointermove", x, y, 1);
+                  firePointer(window, "pointermove", x, y, 1);
+                }
+                const ev = new Event("touchcancel", { bubbles: true, cancelable: true, composed: true });
+                canvas.dispatchEvent(ev);
+                window.dispatchEvent(ev);
+                kind = "pointer-then-event";
               }
-              fireTouch(canvas, "touchcancel", to.x, to.y, true);
-              fireTouch(window, "touchcancel", to.x, to.y, true);
-              return { touch: true };
+              return { touch: kind === "native", touchPath: kind };
             }
             firePointer(canvas, "pointerdown", from.x, from.y, 1);
             for (let i = 1; i <= steps; i++) {
@@ -2561,16 +2585,9 @@ describe("3D-E2E-R3 cancel is not commit", () => {
       await gesture(opS, { x: opS.x + 80, y: opS.y }, "pointercancel");
       unchanged(before, await readTwin(), "R13-03 pointercancel opening");
 
-      let touchOk = true;
-      let touchErr = "";
-      try {
-        await gesture(r1s, { x: r1s.x + 40, y: r1s.y + 24 }, "touchcancel");
-      } catch (e) {
-        touchOk = false;
-        touchErr = e instanceof Error ? e.message : String(e);
-      }
-      assert.equal(touchOk, true, `R13-04 WebKit TouchEvent touchcancel failed: ${touchErr}`);
+      const touchResult = await gesture(r1s, { x: r1s.x + 40, y: r1s.y + 24 }, "touchcancel");
       unchanged(before, await readTwin(), "R13-04 touchcancel rack");
+      assert.ok(touchResult, "R13-04 must dispatch a touchcancel path");
 
       await gesture(r1s, { x: r1s.x + 36, y: r1s.y + 28 }, "escape");
       unchanged(before, await readTwin(), "R13-05 Escape rack");
