@@ -1882,6 +1882,7 @@ describe("MOBILE-E2E-R linked delete lifecycle", () => {
                 addPhotoMeta: (m: Record<string, unknown>) => void;
                 setPhotoWallHint: (id: string, wall: string) => void;
                 addPhotoOverlay: (id: string, kind: string, nx: number, ny: number) => { overlay?: { id: string } };
+                updatePhotoOverlay: (pid: string, oid: string, patch: Record<string, unknown>) => { ok: boolean };
                 applyPhotoOverlaysToModel: (id: string) => { ok: boolean; errors: string[] };
                 detachPhotoOverlay: (pid: string, oid: string) => { ok: boolean };
                 deleteLinkedFromModel: (pid: string, oid: string) => { ok: boolean };
@@ -1924,7 +1925,8 @@ describe("MOBILE-E2E-R linked delete lifecycle", () => {
         live().detachPhotoOverlay("e2e_ph", ov.id);
         const afterDetach = live().project.openings.length;
         const overlaysAfter = live().project.reality?.photos.find((p) => p.id === "e2e_ph")?.overlays?.length ?? 0;
-        live().addPhotoOverlay("e2e_ph", "intake", 0.45, 0.5);
+        const added = live().addPhotoOverlay("e2e_ph", "intake", 0.45, 0.5);
+        if (added.overlay) live().updatePhotoOverlay("e2e_ph", added.overlay.id, { wallId: "west" });
         const applied2 = live().applyPhotoOverlaysToModel("e2e_ph");
         if (!applied2.ok) return { ok: false, reason: applied2.errors.join("; ") };
         const ov2 = live().project.reality?.photos.find((p) => p.id === "e2e_ph")?.overlays?.[0];
