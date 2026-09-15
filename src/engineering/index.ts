@@ -16,4 +16,5 @@ export * from "./layout.ts";
 export * from "./pipeline.ts";
 export * from "./upgrade.ts";
 export * from "./reality.ts";
+export * from "./asic-trust.ts";
 export * from "./catalogs.ts";

@@ -93,9 +93,8 @@ describe("ASIC-REL-05 design < typical load/import rejected", () => {
     const beforeImported = live().project.fleet.imported;
     const bad = imported(cloneAsic({ typicalPowerW: 3510, designPowerW: 1000 }));
     assert.equal(live().loadProject(bad, false).ok, false);
-    assert.equal(live().project.fleet.asicId, TEST_ASIC_A.id);
+    assert.equal(live().project.fleet.asicId, ASIC_S21_PRO.id);
     assert.equal(live().project.fleet.imported, beforeImported);
-    assert.equal(live().project.fleet.imported?.source.trust, "OFFICIAL_VERIFIED");
   });
 });
 
@@ -138,7 +137,7 @@ describe("R6-C malformed imported cannot raise electrical SAFE", () => {
     });
     assert.equal(live().applyProposed().ok, false);
     assert.equal(live().project.fleet.imported, p.fleet.imported);
-    assert.equal(live().project.fleet.imported?.source.trust, "OFFICIAL_VERIFIED");
+    assert.equal(live().project.fleet.asicId, ASIC_S21_PRO.id);
     const after = calculateAll(live().project, catalogs);
     assert.ok((after.electrical.maxByDesign ?? 0) <= (baseline.electrical.maxByDesign ?? 0) + 1e-9);
     assert.equal(after.capacity.verified, baseline.capacity.verified);
@@ -160,6 +159,7 @@ describe("VOLT-01 TEST_ASIC_A + 230 V compatible", () => {
 describe("VOLT-02 229.99 V incompatible", () => {
   it("CRITICAL not VERIFIED", () => {
     const p = verifiedBase();
+    p.fleet = { asicId: TEST_ASIC_A.id, requestedCount: p.fleet.requestedCount };
     p.electrical.voltageV = 229.99;
     const r = calculateAll(p, catalogs);
     assert.equal(r.electrical.supplyVoltageCompatible, false);
@@ -172,6 +172,7 @@ describe("VOLT-02 229.99 V incompatible", () => {
 describe("VOLT-03 230.01 V incompatible", () => {
   it("CRITICAL not VERIFIED", () => {
     const p = verifiedBase();
+    p.fleet = { asicId: TEST_ASIC_A.id, requestedCount: p.fleet.requestedCount };
     p.electrical.voltageV = 230.01;
     const r = calculateAll(p, catalogs);
     assert.equal(r.electrical.supplyVoltageCompatible, false);

@@ -9,11 +9,13 @@ import {
   type Aabb,
 } from "./geometry.ts";
 import {
+  aabb3,
   aabb3Intersects,
   asBuiltAabb3,
   exceedsCeiling,
   rackAabb3,
   roomEnvelope3,
+  type Aabb3,
 } from "./aabb3.ts";
 
 export function asicsPerShelf(rack: Rack, asic: AsicSpec, sideSpacingM = 0): number {
@@ -116,6 +118,64 @@ export function serviceAabb(r: Rack, front: number, rear: number) {
       return { x1: bb.x1 - rear, y1: bb.y1, x2: bb.x2 + front, y2: bb.y2 };
   }
 }
+
+/** Mandatory service volume: plan strip extruded 0 → min(rack.heightM, ceiling). */
+export function serviceVolumeAabb3(zone: Aabb, rackHeightM: number, ceilingM: number): Aabb3 {
+  const z2 = Math.min(Math.max(0, rackHeightM), Math.max(0, ceilingM));
+  return aabb3(zone.x1, zone.x2, zone.y1, zone.y2, 0, z2);
+}
+
+export type ServiceObstacleHit = {
+  rackId: string;
+  zone: "front" | "rear";
+  kind: "asBuilt" | "door";
+  objectId: string;
+  reason: string;
+};
+
+/**
+ * One rule for mutation-time placement and analyzeRacks().
+ * As-built solids use AABB3 vs the service volume. Door swing uses the
+ * existing plan AABB + epsilon (exact boundary touch is not an intrusion).
+ */
+export function rackServiceObstacleHits(project: Project, rack: Rack): ServiceObstacleHit[] {
+  const front = project.constraints.frontServiceClearanceM;
+  const rear = project.constraints.rearServiceClearanceM;
+  const ceilingM = project.room.heightM;
+  const hits: ServiceObstacleHit[] = [];
+  const zones: Array<{ zone: "front" | "rear"; plan: Aabb | null }> = [
+    { zone: "front", plan: frontServiceAabb(rack, front) },
+    { zone: "rear", plan: rearServiceAabb(rack, rear) },
+  ];
+  for (const { zone, plan } of zones) {
+    if (!plan) continue;
+    const volume = serviceVolumeAabb3(plan, rack.heightM, ceilingM);
+    for (const obj of project.reality?.asBuilt ?? []) {
+      if (!aabb3Intersects(volume, asBuiltAabb3(obj))) continue;
+      hits.push({
+        rackId: rack.id,
+        zone,
+        kind: "asBuilt",
+        objectId: obj.id,
+        reason: `${rack.name} ${zone} service collides with as-built ${obj.kind} «${obj.name}».`,
+      });
+    }
+    for (const door of project.openings.filter((o) => o.type === "DOOR")) {
+      const swing = doorSwingAabb(project, door);
+      if (!swing) continue;
+      if (aabbOverlap(plan, swing) <= 0) continue;
+      hits.push({
+        rackId: rack.id,
+        zone,
+        kind: "door",
+        objectId: door.id,
+        reason: `${rack.name} ${zone} service overlaps door swing of ${door.name ?? door.id}.`,
+      });
+    }
+  }
+  return hits;
+}
+
 
 /**
  * Clear gap between intake faces of two opposing racks that look at each other.
@@ -310,6 +370,12 @@ export function analyzeRacks(project: Project, asic: AsicSpec | null) {
           reason: `Aisle ${gap.toFixed(3)} m between ${b.name} and ${a.name} is below min ${aisle.toFixed(3)} m.`,
         });
       }
+    }
+  }
+
+  for (const r of project.racks) {
+    for (const hit of rackServiceObstacleHits(project, r)) {
+      clearanceHits.push({ id: hit.rackId, reason: hit.reason });
     }
   }
 

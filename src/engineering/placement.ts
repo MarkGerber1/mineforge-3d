@@ -1,11 +1,14 @@
 import { aabbInside, aabbOverlap, doorSwingAabb, rackAabb, roomAabb } from "./geometry.ts";
+import { rackServiceObstacleHits } from "./racks.ts";
 import type { Project, Rack } from "./types.ts";
 
 export interface PlacementResult {
   ok: boolean;
   errors: string[];
-  code: "OK" | "OUTSIDE" | "RACK_OVERLAP" | "DOOR_SWING" | "DUPLICATE_ID";
+  code: "OK" | "OUTSIDE" | "RACK_OVERLAP" | "DOOR_SWING" | "DUPLICATE_ID" | "SERVICE_ENVELOPE";
 }
+
+export const SERVICE_ENVELOPE_RU = "Обязательная зона обслуживания стойки заблокирована.";
 
 export function validateRackPlacement(
   project: Project,
@@ -40,6 +43,14 @@ export function validateRackPlacement(
         code: "DOOR_SWING",
       };
     }
+  }
+  const serviceHits = rackServiceObstacleHits(project, rack);
+  if (serviceHits.length > 0) {
+    return {
+      ok: false,
+      errors: [SERVICE_ENVELOPE_RU],
+      code: "SERVICE_ENVELOPE",
+    };
   }
   return { ok: true, errors: [], code: "OK" };
 }

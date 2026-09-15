@@ -37,13 +37,14 @@ Product auth / shared database: **OFF** (`.grok/app-env.json` `VITE_AUTH_ENABLED
 | REQUESTED / SAFE | HUD; bottlenecks; PRELIMINARY when floor load unknown |
 | Reality photo | import, EXIF-aware size, A–B known-distance scale (m/px, not photogrammetry) |
 | PENDING → ADD | findings stay PENDING until Owner ADD TO MODEL |
-| As-built | 3D AABB vs racks; Z-separation is not a collision |
+| As-built | 3D AABB vs rack body and mandatory front/rear service volume (z: 0→rack.heightM); Z-separation is not a collision |
 | Reality → Engineering | confirmed openings/as-built feed pipeline; SAFE only if that constraint binds |
 | AI scopes | PROJECT / APPLICATION / REALITY via `routeIntent` |
 | App Edit | owner session, isolated git job, fail-closed preview, exact SHA promote; UI paths only |
 | Persistence | IndexedDB `mineforge` (projects + JPEG media). Raw video **not** stored |
 | Mobile | separate shell (CAD + HUD + toolbar + sheet), not a shrunk desktop |
-| Owner editor (QX-03 / QX-03R / QX-03R2 / QX-03R3 / QX-03R4) | persistent AI; photo overlay workspace; wall registration separate from A–B scale; atomic APPLY; fail-closed absolute position+elevation both directions; typed locked delete; 3D canvas drag with cancel≠commit |
+| Owner editor (QX-03 / QX-03R / QX-03R2 / QX-03R3 / QX-03R4) | persistent AI; photo overlay workspace; wall registration separate from A–B scale; atomic APPLY; fail-closed absolute position+elevation both directions; typed locked delete; 3D canvas drag with cancel≠commit. **QX-03 CLOSED for this repair** (no QX-03 source change). |
+| QX-02B-R12 service envelope + imported ASIC trust | mandatory front/rear service vs AsBuilt AABB3 and door swing; imported `source.trust` is data, catalog rebind is authority |
 | Playwright WebKit | CI-mandatory iPhone profiles 375×812 / 390×844 / 430×932 |
 | Playwright WebKit | CI-mandatory iPhone profiles 375×812 / 390×844 / 430×932 |
 | Video | real browser decode → bounded JPEG stills → `VIDEO_FRAME_ESTIMATE` |

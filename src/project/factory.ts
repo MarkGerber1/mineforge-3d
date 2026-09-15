@@ -286,8 +286,10 @@ export function withKnownFloor(p: Project, limitPa = STANDARD_NET_FLOOR_PAYLOAD_
 }
 
 /**
- * TEST_ASIC_A numbers with OFFICIAL_VERIFIED provenance for VERIFIED fixtures.
- * Catalog TEST_ASIC_A remains TEST_FIXTURE and is not final-safe eligible.
+ * TEST_ASIC_A numbers with a claimed OFFICIAL_VERIFIED flag.
+ * Catalog TEST_ASIC_A remains TEST_FIXTURE. The JSON claim is not authority:
+ * Engineering Core will not treat this as final-safe unless it exact-matches
+ * a trusted catalog ASIC (it does not).
  */
 export function officialTestAsicA(extra: Partial<AsicSpec> = {}): AsicSpec {
   return {
@@ -303,13 +305,12 @@ export function officialTestAsicA(extra: Partial<AsicSpec> = {}): AsicSpec {
   };
 }
 
-/** Acceptance fixture: official TEST_ASIC_A, known floor, placed === requested. */
+/** Acceptance fixture: catalog-trusted S21 Pro, known floor, placed === requested. */
 export function verifiedAcceptanceProject(requestedCount = 24): Project {
   const p = undergroundParkingFarm();
   withKnownFloor(p);
-  const asic = officialTestAsicA();
-  p.fleet = { asicId: asic.id, requestedCount, imported: asic };
-  p.racks = generateAutoLayout(p, asic);
+  p.fleet = { asicId: ASIC_S21_PRO.id, requestedCount };
+  p.racks = generateAutoLayout(p, ASIC_S21_PRO);
   return p;
 }
 
