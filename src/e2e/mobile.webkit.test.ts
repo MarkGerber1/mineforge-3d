@@ -1834,6 +1834,10 @@ describe("3D-E2E-R direct rack move / rotate", () => {
           fans: unknown[];
         };
         next.racks = [];
+        next.openings = (live().project.openings ?? []).filter((o) => {
+          const t = (o as { type?: string }).type;
+          return t !== "DOOR";
+        });
         live().loadProject(next);
         const rack = {
           id: "e2e_3d_r",
@@ -2006,7 +2010,9 @@ describe("3D-E2E-R2 WebKit canvas pointer / touch", () => {
         next.racks = [];
         next.fans = [];
         next.lockedObjectIds = [];
-        next.openings = (live().project.openings ?? []).map((o) => ({ ...o, locked: false }));
+        next.openings = (live().project.openings ?? [])
+          .filter((o) => o.type !== "DOOR")
+          .map((o) => ({ ...o, locked: false }));
         const loaded = live().loadProject(next);
         if (loaded && loaded.ok === false) return { ok: false, reason: loaded.reason ?? "load" };
         const r1 = live().addRack({
@@ -2258,7 +2264,9 @@ describe("3D-E2E-R3 cancel is not commit", () => {
         next.racks = [];
         next.fans = [];
         next.lockedObjectIds = [];
-        next.openings = (live().project.openings ?? []).map((o) => ({ ...o, locked: false }));
+        next.openings = (live().project.openings ?? [])
+          .filter((o) => o.type !== "DOOR")
+          .map((o) => ({ ...o, locked: false }));
         const loaded = live().loadProject(next);
         if (loaded && loaded.ok === false) return { ok: false, reason: loaded.reason ?? "load" };
         const r1 = live().addRack({
