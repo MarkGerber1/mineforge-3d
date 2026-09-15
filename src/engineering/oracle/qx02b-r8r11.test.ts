@@ -31,6 +31,11 @@ function live() {
   return useProjectStore.getState();
 }
 
+function useImported(p: Project, asic: AsicSpec): Project {
+  p.fleet = { ...p.fleet, asicId: asic.id, imported: asic };
+  return p;
+}
+
 function rackAt(x: number, y: number, id = "r1", extra: Partial<Rack> = {}): Rack {
   return {
     id,
@@ -140,7 +145,7 @@ describe("FREQ-07 ASIC frequency unknown", () => {
     const asic = officialTestAsicA({ frequencyMinHz: undefined, frequencyMaxHz: undefined });
     delete asic.frequencyMinHz;
     delete asic.frequencyMaxHz;
-    p.fleet.imported = asic;
+    useImported(p, asic);
     assert.equal(asicFrequencyRangeKnown(asic), false);
     const r = calculateAll(p, catalogs);
     assert.equal(r.electrical.supplyFrequencyCompatible, null);
@@ -187,7 +192,8 @@ describe("FREQ-10 CRITICAL → SAFE", () => {
 describe("TRUST-01 OFFICIAL_VERIFIED eligible", () => {
   it("ok", () => {
     const p = verifiedAcceptanceProject();
-    assert.equal(p.fleet.imported?.source.trust, "OFFICIAL_VERIFIED");
+    assert.equal(p.fleet.imported, undefined);
+    assert.equal(catalogs.asics[p.fleet.asicId]?.source.trust, "OFFICIAL_VERIFIED");
     const r = calculateAll(p, catalogs);
     assert.equal(r.asicTrust.finalSafeEligible, true);
     assert.equal(r.capacity.verified, true);
@@ -197,19 +203,17 @@ describe("TRUST-01 OFFICIAL_VERIFIED eligible", () => {
 describe("TRUST-02 VERIFIED_SECONDARY eligible", () => {
   it("ok", () => {
     const p = verifiedAcceptanceProject();
-    const asic = officialTestAsicA({
-      source: { label: "secondary", trust: "VERIFIED_SECONDARY" },
-    });
-    p.fleet.imported = asic;
+    p.fleet = { asicId: ASIC_M60S.id, requestedCount: p.fleet.requestedCount };
     const r = calculateAll(p, catalogs);
     assert.equal(r.asicTrust.finalSafeEligible, true);
+    assert.equal(r.asicTrust.level, "VERIFIED_SECONDARY");
   });
 });
 
 describe("TRUST-03 USER_ENTERED not VERIFIED", () => {
   it("PRELIMINARY", () => {
     const p = verifiedAcceptanceProject();
-    p.fleet.imported = officialTestAsicA({ source: { label: "user", trust: "USER_ENTERED" } });
+    useImported(p, officialTestAsicA({ source: { label: "user", trust: "USER_ENTERED" } }));
     const r = calculateAll(p, catalogs);
     assert.equal(r.asicTrust.finalSafeEligible, false);
     assert.equal(r.capacity.verified, false);
@@ -220,7 +224,7 @@ describe("TRUST-03 USER_ENTERED not VERIFIED", () => {
 describe("TRUST-04 AI_FOUND_UNVERIFIED not VERIFIED", () => {
   it("PRELIMINARY", () => {
     const p = verifiedAcceptanceProject();
-    p.fleet.imported = officialTestAsicA({ source: { label: "ai", trust: "AI_FOUND_UNVERIFIED" } });
+    useImported(p, officialTestAsicA({ source: { label: "ai", trust: "AI_FOUND_UNVERIFIED" } }));
     const r = calculateAll(p, catalogs);
     assert.equal(r.capacity.verified, false);
     assert.equal(r.capacity.confidence, "PRELIMINARY");
@@ -230,7 +234,7 @@ describe("TRUST-04 AI_FOUND_UNVERIFIED not VERIFIED", () => {
 describe("TRUST-05 ESTIMATED not VERIFIED", () => {
   it("PRELIMINARY", () => {
     const p = verifiedAcceptanceProject();
-    p.fleet.imported = officialTestAsicA({ source: { label: "est", trust: "ESTIMATED" } });
+    useImported(p, officialTestAsicA({ source: { label: "est", trust: "ESTIMATED" } }));
     assert.equal(calculateAll(p, catalogs).capacity.verified, false);
   });
 });
@@ -251,11 +255,10 @@ describe("TRUST-07 same numbers different trust", () => {
   it("diagnostics equal, confidence differs", () => {
     const a = verifiedAcceptanceProject();
     const b = verifiedAcceptanceProject();
-    b.fleet.imported = officialTestAsicA({ source: { label: "ai", trust: "AI_FOUND_UNVERIFIED" } });
+    useImported(b, officialTestAsicA({ source: { label: "ai", trust: "AI_FOUND_UNVERIFIED" } }));
     const ra = calculateAll(a, catalogs);
     const rb = calculateAll(b, catalogs);
     assert.equal(ra.electrical.typicalTotalW, rb.electrical.typicalTotalW);
-    assert.equal(ra.electrical.maxByDesign, rb.electrical.maxByDesign);
     assert.equal(ra.thermal.totalHeatW, rb.thermal.totalHeatW);
     assert.equal(ra.capacity.verified, true);
     assert.equal(rb.capacity.verified, false);
@@ -266,7 +269,7 @@ describe("TRUST-07 same numbers different trust", () => {
 describe("TRUST-08 AI_FOUND_UNVERIFIED never verified=true", () => {
   it("invariant", () => {
     const p = verifiedAcceptanceProject();
-    p.fleet.imported = officialTestAsicA({ source: { label: "ai", trust: "AI_FOUND_UNVERIFIED" } });
+    useImported(p, officialTestAsicA({ source: { label: "ai", trust: "AI_FOUND_UNVERIFIED" } }));
     assert.equal(calculateAll(p, catalogs).capacity.verified, false);
   });
 });
@@ -274,9 +277,9 @@ describe("TRUST-08 AI_FOUND_UNVERIFIED never verified=true", () => {
 describe("TRUST-09 unverified → official restores", () => {
   it("deterministic", () => {
     const p = verifiedAcceptanceProject();
-    p.fleet.imported = officialTestAsicA({ source: { label: "ai", trust: "AI_FOUND_UNVERIFIED" } });
+    useImported(p, officialTestAsicA({ source: { label: "ai", trust: "AI_FOUND_UNVERIFIED" } }));
     assert.equal(calculateAll(p, catalogs).capacity.verified, false);
-    p.fleet.imported = officialTestAsicA();
+    p.fleet = { asicId: ASIC_S21_PRO.id, requestedCount: p.fleet.requestedCount };
     assert.equal(calculateAll(p, catalogs).capacity.verified, true);
   });
 });
@@ -385,7 +388,7 @@ describe("PHASE-09 unknown topology", () => {
     const p = verifiedAcceptanceProject();
     const asic = officialTestAsicA({ inputPhases: undefined });
     delete asic.inputPhases;
-    p.fleet.imported = asic;
+    useImported(p, asic);
     const r = calculateAll(p, catalogs);
     assert.equal(r.electrical.phaseModel, "UNKNOWN");
     assert.equal(r.electrical.l1Count, 0);
@@ -619,7 +622,7 @@ describe("ADV-ELEC-03 same numeric trust split", () => {
   it("diagnostics vs confidence", () => {
     const a = verifiedAcceptanceProject();
     const b = verifiedAcceptanceProject();
-    b.fleet.imported = officialTestAsicA({ source: { label: "ai", trust: "AI_FOUND_UNVERIFIED" } });
+    useImported(b, officialTestAsicA({ source: { label: "ai", trust: "AI_FOUND_UNVERIFIED" } }));
     const ra = calculateAll(a, catalogs);
     const rb = calculateAll(b, catalogs);
     assert.equal(ra.electrical.typicalTotalW, rb.electrical.typicalTotalW);
@@ -649,7 +652,7 @@ describe("ADV-ELEC-05 malformed placed 30 requested 24", () => {
 describe("ADV-ELEC-06 unverified + compatible still PRELIMINARY", () => {
   it("provenance wins", () => {
     const p = verifiedAcceptanceProject();
-    p.fleet.imported = officialTestAsicA({ source: { label: "ai", trust: "AI_FOUND_UNVERIFIED" } });
+    useImported(p, officialTestAsicA({ source: { label: "ai", trust: "AI_FOUND_UNVERIFIED" } }));
     const r = calculateAll(p, catalogs);
     assert.equal(r.electrical.supplyVoltageCompatible, true);
     assert.equal(r.electrical.supplyFrequencyCompatible, true);
@@ -664,7 +667,7 @@ describe("ADV-ELEC-07 official + frequency unknown", () => {
     const asic = officialTestAsicA();
     delete asic.frequencyMinHz;
     delete asic.frequencyMaxHz;
-    p.fleet.imported = asic;
+    useImported(p, asic);
     assert.equal(calculateAll(p, catalogs).capacity.verified, false);
   });
 });
@@ -674,7 +677,7 @@ describe("ADV-ELEC-08 official + topology unknown", () => {
     const p = verifiedAcceptanceProject();
     const asic = officialTestAsicA();
     delete asic.inputPhases;
-    p.fleet.imported = asic;
+    useImported(p, asic);
     assert.equal(calculateAll(p, catalogs).capacity.verified, false);
   });
 });

@@ -1,6 +1,6 @@
 import { AIR_CP_J_KG_K, AIR_DENSITY_KG_M3 } from "./constants.ts";
 import { asicFrequencyRangeKnown, asicTopologyKnown, validateAsicSpecRelations } from "./asic-spec.ts";
-import { asicTrustDecision } from "./asic-trust.ts";
+import { asicTrustDecision, deriveImportedAsic } from "./asic-trust.ts";
 import { calculateCapacity } from "./capacity.ts";
 import { calculateElectrical } from "./electrical.ts";
 import { evaluateProjectFans } from "./fans.ts";
@@ -21,7 +21,7 @@ export interface Catalogs {
 
 export function resolveAsic(project: Project, catalogs: Catalogs): AsicSpec | null {
   if (project.fleet.imported && project.fleet.imported.id === project.fleet.asicId) {
-    return project.fleet.imported;
+    return deriveImportedAsic(project.fleet.imported, Object.values(catalogs.asics));
   }
   return catalogs.asics[project.fleet.asicId] ?? null;
 }
@@ -47,7 +47,7 @@ export function calculateAll(project: Project, catalogs: Catalogs): EngineeringR
   const openings = analyzeOpenings(project);
   const asic = resolveAsic(project, catalogs);
   const asicRel = asic ? validateAsicSpecRelations(asic) : { ok: true as const };
-  const asicTrust = asicTrustDecision(asic);
+  const asicTrust = asicTrustDecision(asic, Object.values(catalogs.asics));
   const inventory = {
     requestedCount: project.fleet.requestedCount,
     placedAsicCount: placedAsicCount(project),

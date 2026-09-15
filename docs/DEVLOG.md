@@ -444,3 +444,22 @@ deploy NOT performed. FINAL PASSED is NOT declared.
 
 Does not start QX-02C. Does not publish. Does not declare FINAL PASSED.
 
+## QX-02B-R12 — SERVICE ENVELOPE + IMPORTED ASIC TRUST
+
+Starting SHA `08a2e75cb23dda6b6d24e287982ed4cdf2e7d7d9`. Branch
+`repair/qx-02b-r12-service-envelope-import-trust`.
+
+- QX02B-CLOSEOUT-01: one `rackServiceObstacleHits` rule for placement and
+  `analyzeRacks`. Front/rear service volumes (z: 0 → min(rack.heightM,
+  ceiling)) collide with AsBuilt AABB3; door swing uses existing plan
+  epsilon. Blocked rack contributes 0 to usableCapacity → CRITICAL, not
+  VERIFIED. Auto layout uses the same placement validator.
+- QX02B-CLOSEOUT-02: `fleet.imported.source.trust` is data. Engineering
+  `finalSafeEligible` requires an exact trusted-catalog spec match
+  (safety-driving fields). Otherwise official-looking JSON is
+  USER_ENTERED. Grok path still AI_FOUND_UNVERIFIED.
+
+QX-03 is not reopened. Photogrammetry NOT implemented. Physical iPhone
+NOT performed. Public deploy NOT performed. QX-02B / FINAL PASSED
+NOT declared.
+

@@ -1,5 +1,6 @@
 import type { AsicSpec, Project, Rack } from "./types.ts";
-import { aabbInside, aabbOverlap, doorSwingAabb, rackAabb, roomAabb } from "./geometry.ts";
+import { aabbInside, rackAabb, roomAabb } from "./geometry.ts";
+import { validateRackPlacement } from "./placement.ts";
 import { asicsPerShelf } from "./racks.ts";
 
 function nid(prefix: string, i: number): string {
@@ -39,7 +40,6 @@ export function generateAutoLayout(project: Project, asic: AsicSpec | null): Rac
   const aisle = project.constraints.minAisleM;
   const margin = 0.4;
   const room = roomAabb(project);
-  const doors = project.openings.filter((o) => o.type === "DOOR").map((d) => doorSwingAabb(project, d)).filter(Boolean);
 
   const racks: Rack[] = [];
   let y = margin + front;
@@ -63,10 +63,10 @@ export function generateAutoLayout(project: Project, asic: AsicSpec | null): Rac
         airflowToward: toward,
       };
       const bb = rackAabb(candidate);
-      const hitsDoor = doors.some((d) => d && aabbOverlap(bb, d) > 0);
       const inside = aabbInside(bb, room);
-      const hitsRack = racks.some((r) => aabbOverlap(bb, rackAabb(r)) > 0);
-      if (inside && !hitsDoor && !hitsRack) {
+      const probe = { ...project, racks: [...racks, candidate] };
+      const v = validateRackPlacement(probe, candidate, { ignoreIds: [candidate.id] });
+      if (inside && v.ok) {
         candidate.asicCount = Math.min(perRack, remaining);
         if (candidate.asicCount <= 0) break;
         placed += candidate.asicCount;

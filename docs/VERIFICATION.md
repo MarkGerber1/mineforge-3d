@@ -30,14 +30,15 @@ Date: 2026-09-13
 | QX-03R photo↔canonical sync / atomic APPLY / 3D drag | READY FOR INDEPENDENT QUALITY RETEST |
 | QX-03R2 wall registration / fail-closed APPLY / locked delete / canvas 3D | READY FOR INDEPENDENT QUALITY RETEST (not independently accepted) |
 | QX-03R3 fail-closed absolute photo position / complete lock / 3D cancel | READY FOR INDEPENDENT QUALITY RETEST (not independently accepted) |
-| QX-03R4 Canonical→Photo no invented nx / typed lock identity | IN PROGRESS (not independently accepted) |
+| QX-03R4 Canonical→Photo no invented nx / typed lock identity | READY FOR INDEPENDENT QUALITY RETEST (not independently accepted) |
+| QX-02B-R12 service envelope + imported ASIC trust | READY FOR QX-02B INDEPENDENT RETEST (not independently accepted) |
 
 ## UNIT TESTS
 
 Oracle suite: `src/engineering/oracle/*.test.ts`
 
-TOTAL: 566
-PASSED: 566
+TOTAL: 592
+PASSED: 592
 FAILED: 0
 
 | Test ID | Subsystem | Status |
