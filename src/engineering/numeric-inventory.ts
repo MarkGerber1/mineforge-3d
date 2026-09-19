@@ -53,6 +53,8 @@ export const SAFETY_NUMERIC_INVENTORY: NumericInventoryEntry[] = [
 
   { path: "ventilation.outdoorTempC", class: "NON_SAFETY_METADATA", rule: "finite; unused by pressure / SAFE", invalid: Number.NaN },
   { path: "ventilation.dirtyFilterExtraPa", class: "SAFETY_DRIVING", rule: "finite; ≥ 0 (dirty filter must never improve duty)", invalid: -200 },
+  { path: "ventilation.openingCriteria.maxFaceVelocityMs", class: "SAFETY_DRIVING", rule: "if present: finite; >0; ≤100", invalid: 0 },
+  { path: "ventilation.openingCriteria.freeAreaRatio", class: "SAFETY_DRIVING", rule: "if present: finite; >0; ≤1", invalid: 0 },
   { path: "ventilation.components[].lengthM", class: "SAFETY_DRIVING", rule: "finite; ≥ 0; ≤ MAX_SHAFT_LENGTH_M", invalid: -10 },
   { path: "ventilation.components[].frictionFactor", class: "SAFETY_DRIVING", rule: "finite; ≥ 0", invalid: -1 },
   { path: "ventilation.components[].kLocal", class: "SAFETY_DRIVING", rule: "finite; ≥ 0", invalid: -1 },

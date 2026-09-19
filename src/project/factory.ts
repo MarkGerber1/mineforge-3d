@@ -51,6 +51,12 @@ export function emptyRectangularProject(partial?: Partial<Project["room"]> & { n
       dirtyFilter: false,
       dirtyFilterExtraPa: DIRTY_FILTER_EXTRA_PA,
       outdoorTempC: 25,
+      openingCriteria: {
+        maxFaceVelocityMs: 5,
+        freeAreaRatio: 0.6,
+        source: "MINEFORGE design default; verify against grille/louver/filter manufacturer data",
+      },
+      openingCriteriaEnabled: false,
     },
     electrical: {
       availablePowerW: 0,
@@ -77,6 +83,73 @@ export function emptyRectangularProject(partial?: Partial<Project["room"]> & { n
     lockedObjectIds: [],
     reality: emptyReality(),
   };
+}
+
+/** Controlled engineering fixture for oracle/E2E tests; never injected into production defaults. */
+export function ventRoomTest01(): Project {
+  const project = emptyRectangularProject({ name: "VENT-ROOM-TEST-01", widthM: 4, depthM: 5, heightM: 2.7 });
+  project.openings = [
+    {
+      id: "door_south_test",
+      type: "DOOR",
+      wallId: "south",
+      offsetFromWallStartM: 0.5,
+      widthM: 0.9,
+      heightM: 2.05,
+      bottomElevationM: 0,
+      locked: false,
+    },
+  ];
+  project.ventilation.openingCriteriaEnabled = true;
+  project.fleet.requestedCount = 0;
+  project.racks = [];
+  project.fans = [];
+  project.ventilation.components = [];
+  project.reality = {
+    ...emptyReality(),
+    asBuilt: [
+      {
+        id: "shaft_ne_test",
+        kind: "duct",
+        name: "Vent shaft",
+        x: 3.2,
+        y: 4.2,
+        z: 0,
+        widthM: 0.8,
+        heightM: 2.7,
+        depthM: 0.8,
+        provenance: "USER_CONFIRMED",
+        confidence: "HIGH",
+      },
+      {
+        id: "cabinet_1_test",
+        kind: "obstruction",
+        name: "Control cabinet 1",
+        x: 0.1,
+        y: 1,
+        z: 0,
+        widthM: 0.8,
+        heightM: 1.8,
+        depthM: 0.25,
+        provenance: "USER_CONFIRMED",
+        confidence: "HIGH",
+      },
+      {
+        id: "cabinet_2_test",
+        kind: "obstruction",
+        name: "Control cabinet 2",
+        x: 0.1,
+        y: 1.4,
+        z: 0,
+        widthM: 0.6,
+        heightM: 1.6,
+        depthM: 0.25,
+        provenance: "USER_CONFIRMED",
+        confidence: "HIGH",
+      },
+    ],
+  };
+  return project;
 }
 
 export function defaultVentNetwork(args: {

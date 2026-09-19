@@ -6,6 +6,7 @@ export * from "./aabb3.ts";
 export * from "./electrical.ts";
 export * from "./thermal.ts";
 export * from "./airflow.ts";
+export * from "./opening-airflow.ts";
 export * from "./pressure.ts";
 export * from "./fans.ts";
 export * from "./racks.ts";

@@ -1,4 +1,4 @@
-import type { FanCurvePoint, FanInstance, FanSpec, Project, VentComponent } from "./types.ts";
+import type { FanCurvePoint, FanInstance, FanSpec, Project, VentComponent, TrustLevel } from "./types.ts";
 import { fanIsSpatiallyValid } from "./geometry.ts";
 import { systemPressurePa } from "./pressure.ts";
 
@@ -69,25 +69,18 @@ export function findOperatingPoint(
   const f0 = f(qMin);
   const f1 = f(Math.max(qMin, qMax - 1e-9));
   if (!Number.isFinite(f0) || !Number.isFinite(f1)) return null;
-  // Operating point exists if fan is above system at low flow.
-  if (f0 < 0) {
-    // fan cannot produce static at Q=0 vs system
-    if (fanP(qMin) <= 0) return { q: 0, p: sysP(0) };
-  }
+  // A negative low-flow residual means the system pressure is already above
+  // the fan curve. Returning q=0 would falsely turn an impossible duty into
+  // an operating point, so fail closed unless the curves exactly meet there.
+  if (f0 < -1e-9) return null;
   let lo = qMin;
   let hi = qMax;
   let flo = f(lo);
   if (flo === 0) return { q: lo, p: sysP(lo) };
   // If no sign change, pick the feasible end.
   const fhi = f(hi);
-  if (flo > 0 && fhi > 0) {
-    // fan above system throughout — operating at free air-ish high Q, but
-    // still return the high-Q intersection-ish: clamp to qMax if fan still +ve
-    return { q: hi, p: sysP(hi) };
-  }
-  if (flo < 0 && fhi < 0) {
-    return { q: lo, p: sysP(lo) };
-  }
+  if (flo > 0 && fhi > 0) return null;
+  if (flo < 0 && fhi < 0) return null;
   for (let i = 0; i < 80; i++) {
     const mid = 0.5 * (lo + hi);
     const fm = f(mid);
@@ -289,4 +282,67 @@ export function evaluateProjectFans(
     curve: active.curve,
     systemCurve: active.systemCurve,
   };
+}
+
+export interface FanCandidate {
+  specId: string;
+  model: string;
+  arrangement: FanInstance["arrangement"];
+  count: number;
+  operatingQ_m3h: number | null;
+  operatingP_pa: number | null;
+  requiredQ_m3h: number;
+  requiredP_pa: number;
+  marginM3h: number;
+  pass: boolean;
+  status: "PASS" | "PRELIMINARY" | "FAIL";
+  trust: TrustLevel;
+  reason: string;
+}
+
+function fanTrustEligible(spec: FanSpec): boolean {
+  return spec.source.trust === "OFFICIAL_VERIFIED" || spec.source.trust === "VERIFIED_SECONDARY";
+}
+
+/** Deterministic candidate search. Unverified curves may calculate but never claim VERIFIED suitability. */
+export function selectFanCandidates(
+  project: Project,
+  specs: Record<string, FanSpec>,
+  components: VentComponent[],
+  requiredM3h: number,
+  maxGroupCount = 4,
+): FanCandidate[] {
+  void project;
+  const out: FanCandidate[] = [];
+  for (const spec of Object.values(specs)) {
+    const arrangements: Array<{ arrangement: FanInstance["arrangement"]; count: number }> = [
+      { arrangement: "single", count: 1 },
+      ...Array.from({ length: Math.max(0, maxGroupCount - 1) }, (_, i) => ({ arrangement: "parallel" as const, count: i + 2 })),
+      ...Array.from({ length: Math.max(0, maxGroupCount - 1) }, (_, i) => ({ arrangement: "series" as const, count: i + 2 })),
+    ];
+    for (const combo of arrangements) {
+      const inst: FanInstance = { id: `candidate-${spec.id}-${combo.arrangement}-${combo.count}`, specId: spec.id, name: spec.model, x: 0, y: 0, arrangement: combo.arrangement, count: combo.count, dirtyFilter: false };
+      const duty = evaluateFanDuty(spec, inst, components, requiredM3h, 0);
+      const eligible = fanTrustEligible(spec);
+      out.push({
+        specId: spec.id,
+        model: spec.model,
+        arrangement: combo.arrangement,
+        count: combo.count,
+        operatingQ_m3h: duty.operatingQ_m3h,
+        operatingP_pa: duty.operatingP_pa,
+        requiredQ_m3h: requiredM3h,
+        requiredP_pa: systemPressurePa(components, requiredM3h, 0),
+        marginM3h: duty.marginM3h,
+        pass: duty.pass,
+        status: duty.pass && eligible ? "PASS" : duty.pass ? "PRELIMINARY" : "FAIL",
+        trust: spec.source.trust,
+        reason: duty.pass && !eligible ? `${duty.reason} Curve trust ${spec.source.trust}; not VERIFIED.` : duty.reason,
+      });
+    }
+  }
+  return out.sort((a, b) => {
+    const rank = (s: FanCandidate["status"]) => (s === "PASS" ? 0 : s === "PRELIMINARY" ? 1 : 2);
+    return rank(a.status) - rank(b.status) || a.count - b.count || a.requiredP_pa - b.requiredP_pa;
+  });
 }

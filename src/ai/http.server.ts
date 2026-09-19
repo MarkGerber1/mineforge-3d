@@ -18,7 +18,7 @@ import {
   writeSourceFilesHandler,
 } from "./jobs.server.ts";
 import { writeAudit, auditFromActor } from "./audit.server.ts";
-import { allow, LIMITS, clientIpFromHeaders } from "./ratelimit.server.ts";
+import { allowRequest, LIMITS, clientIpFromHeaders } from "./ratelimit.server.ts";
 
 const ROOT = () => process.env.APP_EDIT_ROOT || process.cwd();
 
@@ -117,7 +117,7 @@ export async function handleAppEditHttp(req: Request): Promise<Response | null> 
   if (!path.startsWith("/api/app-edit")) return null;
 
   if (method === "POST" && (path === "/api/app-edit/login" || path === "/api/app-edit/login/")) {
-    const lim = allow(`login:${ip}`, LIMITS.login);
+    const lim = await allowRequest(`login:${ip}`, LIMITS.login);
     if (!lim.ok) return tooMany(lim.retryAfter);
     const body = (await readJson(req)) as { passphrase?: string; role?: string; isOwner?: boolean };
     const gate = loginWithPassphrase(String(body.passphrase ?? ""));
@@ -145,7 +145,7 @@ export async function handleAppEditHttp(req: Request): Promise<Response | null> 
 
   if (method !== "POST") return json(405, { ok: false, error: "Method not allowed" });
 
-  const mutLim = allow(`mutate:${ip}`, LIMITS.mutate);
+  const mutLim = await allowRequest(`mutate:${ip}`, LIMITS.mutate);
   if (!mutLim.ok) return tooMany(mutLim.retryAfter);
 
   const body = await readJson(req);

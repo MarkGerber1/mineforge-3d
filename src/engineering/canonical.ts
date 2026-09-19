@@ -176,6 +176,12 @@ function validateVentComponent(c: VentComponent, errors: string[]): void {
   if (c.diameterM != null && c.shape !== "round") {
     if (pushFinite(errors, c.diameterM, `Сеть ${tag} диаметр`)) pushPositive(errors, c.diameterM, `Сеть ${tag} диаметр`);
   }
+  if (c.freeAreaRatio != null && (pushFinite(errors, c.freeAreaRatio, `Сеть ${tag} free-area ratio`))) {
+    if (!(c.freeAreaRatio > 0 && c.freeAreaRatio <= 1)) errors.push(`Сеть ${tag} free-area ratio: допустимо >0 и ≤1.`);
+  }
+  if (c.maxFaceVelocityMs != null && pushFinite(errors, c.maxFaceVelocityMs, `Сеть ${tag} face velocity`)) {
+    if (!(c.maxFaceVelocityMs > 0 && c.maxFaceVelocityMs <= 100)) errors.push(`Сеть ${tag} face velocity: допустимо >0 и ≤100 м/с.`);
+  }
 }
 
 function validateRackGeometry(r: Rack, errors: string[]): void {
@@ -296,6 +302,20 @@ export function validateCanonicalProjectDomains(project: Project, catalogs: Cata
 
   if (pushFinite(errors, project.ventilation.dirtyFilterExtraPa, "Грязный фильтр")) {
     pushNonNegative(errors, project.ventilation.dirtyFilterExtraPa, "Грязный фильтр");
+  }
+  const openingCriteria = project.ventilation.openingCriteria;
+  if (openingCriteria) {
+    if (pushFinite(errors, openingCriteria.maxFaceVelocityMs, "Критерий скорости в проёме")) {
+      if (!(openingCriteria.maxFaceVelocityMs > 0 && openingCriteria.maxFaceVelocityMs <= 100)) {
+        errors.push("Критерий скорости в проёме: допустимо >0 и ≤100 м/с.");
+      }
+    }
+    if (pushFinite(errors, openingCriteria.freeAreaRatio, "Коэффициент свободного сечения")) {
+      if (!(openingCriteria.freeAreaRatio > 0 && openingCriteria.freeAreaRatio <= 1)) {
+        errors.push("Коэффициент свободного сечения: допустимо >0 и ≤1.");
+      }
+    }
+    if (!openingCriteria.source.trim()) errors.push("Критерий проёма должен иметь источник/обоснование.");
   }
   for (const c of project.ventilation.components) validateVentComponent(c, errors);
 

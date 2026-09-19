@@ -11,6 +11,7 @@ import { feasibleSpacePacking } from "./space-pack.ts";
 import { calculatePressure, resolvedVentComponents } from "./pressure.ts";
 import { analyzeRacks } from "./racks.ts";
 import { calculateThermal, requiredAirflowPerAsicM3h, thermalAirflowM3s } from "./thermal.ts";
+import { assessOpeningAirflow } from "./opening-airflow.ts";
 import type { AsicSpec, EngineeringResult, FanSpec, Project, Warning } from "./types.ts";
 import { m3sToM3h } from "./units.ts";
 
@@ -55,6 +56,7 @@ export function calculateAll(project: Project, catalogs: Catalogs): EngineeringR
   };
   const electrical = calculateElectrical(project, asic);
   const thermal = calculateThermal(project, asic, electrical.typicalTotalW);
+  const openingAirflow = assessOpeningAirflow(project, thermal.designAirflowM3h);
   const components = resolvedVentComponents(project);
   const pressure = calculatePressure(
     { ...project, ventilation: { ...project.ventilation, components } },
@@ -116,6 +118,29 @@ export function calculateAll(project: Project, catalogs: Catalogs): EngineeringR
       title: "No intake path",
       detail: "Add a valid intake opening. Ventilation SAFE cannot be verified without usable intake.",
     });
+  }
+  for (const a of openingAirflow.enforced ? [...openingAirflow.intake, ...openingAirflow.exhaust] : []) {
+    if (a.status === "UNDERSIZED") {
+      warnings.push({
+        id: `${a.role.toUpperCase()}_OPENING_UNDERSIZED`,
+        severity: "CRITICAL",
+        objectId: a.id,
+        title: a.role === "intake" ? "INTAKE_OPENING_UNDERSIZED" : "EXHAUST_OPENING_UNDERSIZED",
+        detail: `${a.id}: required gross area ${a.requiredGrossAreaM2.toFixed(3)} m², existing ${a.grossAreaM2.toFixed(3)} m²; deficit ${a.deficitAreaM2.toFixed(3)} m². Face velocity ${a.faceVelocityMs.toFixed(2)} m/s > configured ${a.maxFaceVelocityMs.toFixed(2)} m/s. Criterion: ${a.criterionSource}.`,
+        formula: "v = Q / (A × freeAreaRatio)",
+      });
+    } else if (a.status === "EXCESSIVE_FACE_VELOCITY") {
+      warnings.push({
+        id: "EXCESSIVE_FACE_VELOCITY",
+        severity: "CRITICAL",
+        objectId: a.id,
+        title: "EXCESSIVE_FACE_VELOCITY",
+        detail: `${a.id}: ${a.faceVelocityMs.toFixed(2)} m/s > ${a.maxFaceVelocityMs.toFixed(2)} m/s. Effective area ${a.effectiveAreaM2.toFixed(3)} m².`,
+        formula: "v = Q / effective area",
+      });
+    } else if (a.status === "INVALID_AIR_PATH") {
+      warnings.push({ id: "INVALID_AIR_PATH", severity: "CRITICAL", objectId: a.id, title: "INVALID_AIR_PATH", detail: a.errors.join(" ") });
+    }
   }
   if (project.fans.length === 0) {
     warnings.push({
@@ -262,16 +287,17 @@ export function calculateAll(project: Project, catalogs: Catalogs): EngineeringR
   const tmplPack = feasibleSpacePacking(project, asic);
   const spaceN = asic && asicRel.ok ? tmplPack.asicCount : null;
 
-  const ventKnown = fan.operatingQ_m3h != null && asic != null && asicRel.ok;
+  const openingAirflowBlocked = openingAirflow.enforced && [...openingAirflow.intake, ...openingAirflow.exhaust].some((a) => a.status !== "PASS");
+  const ventKnown = fan.operatingQ_m3h != null && asic != null && asicRel.ok && !openingAirflowBlocked;
   const ventN =
-    ventKnown && asic && fan.operatingQ_m3h != null
+    asic && fan.operatingQ_m3h != null && !openingAirflowBlocked
       ? maxAsicByAirflow(
           asic,
           fan.operatingQ_m3h,
           project.thermal.deltaTK,
           project.electrical.auxiliaryW + project.electrical.lightingW + project.electrical.networkW,
         )
-      : null;
+      : openingAirflowBlocked && asic ? 0 : null;
 
   let policyMax =
     project.electrical.policy === "design" ? electrical.maxByDesign : electrical.maxByTypical;
@@ -400,7 +426,7 @@ export function calculateAll(project: Project, catalogs: Catalogs): EngineeringR
 
   return {
     geometry,
-    openings,
+    openings: { ...openings, airflow: openingAirflow },
     electrical,
     asicTrust,
     inventory,

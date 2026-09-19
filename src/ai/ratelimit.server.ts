@@ -11,7 +11,8 @@
  */
 
 import { isIP } from "node:net";
-import { isVercelRuntime } from "./runtime-policy.server.ts";
+import { isVercelRuntime, rateLimitProtectionKind } from "./runtime-policy.server.ts";
+import { createHash } from "node:crypto";
 
 export interface LimitConfig {
   max: number;
@@ -70,6 +71,78 @@ export function allow(key: string, cfg: LimitConfig): AllowResult {
   } catch {
     return { ok: false, remaining: 0, retryAfter: 60 };
   }
+}
+
+let sharedPool: import("pg").Pool | null = null;
+
+function sharedKey(key: string): string {
+  return createHash("sha256").update(key).digest("hex");
+}
+
+/**
+ * Durable multi-instance limiter. Database errors deny the request. The key is
+ * hashed before persistence so attacker-controlled identity values are bounded
+ * and never become unbounded database identifiers.
+ */
+export async function allowShared(
+  key: string,
+  cfg: LimitConfig,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<AllowResult> {
+  try {
+    if (!key || key.length > MAX_KEY_CHARS || cfg.max < 1 || cfg.windowMs < 1) {
+      return { ok: false, remaining: 0, retryAfter: 60 };
+    }
+    if (rateLimitProtectionKind(env) !== "shared") return { ok: false, remaining: 0, retryAfter: 60 };
+    const connectionString = (env.RATE_LIMIT_DATABASE_URL ?? env.DATABASE_URL ?? "").trim();
+    if (!connectionString) return { ok: false, remaining: 0, retryAfter: 60 };
+    if (!sharedPool) {
+      const { Pool } = await import("pg");
+      sharedPool = new Pool({ connectionString, max: 2, idleTimeoutMillis: 10_000, connectionTimeoutMillis: 3_000 });
+    }
+    const now = Date.now();
+    const res = await sharedPool.query(
+      `CREATE TABLE IF NOT EXISTS mf_rate_limit_buckets (
+        bucket_key text PRIMARY KEY,
+        window_started_at bigint NOT NULL,
+        hit_count integer NOT NULL
+      );
+      INSERT INTO mf_rate_limit_buckets(bucket_key, window_started_at, hit_count)
+      VALUES ($1, $2, 1)
+      ON CONFLICT (bucket_key) DO UPDATE SET
+        window_started_at = CASE WHEN mf_rate_limit_buckets.window_started_at + $3 <= $2 THEN $2 ELSE mf_rate_limit_buckets.window_started_at END,
+        hit_count = CASE
+          WHEN mf_rate_limit_buckets.window_started_at + $3 <= $2 THEN 1
+          WHEN mf_rate_limit_buckets.hit_count < $4 THEN mf_rate_limit_buckets.hit_count + 1
+          ELSE $4 + 1
+        END
+      RETURNING window_started_at, hit_count;`,
+      [sharedKey(key), now, cfg.windowMs, cfg.max],
+    );
+    const row = res.rows[0] as { window_started_at?: string | number; hit_count?: number } | undefined;
+    if (!row || typeof row.hit_count !== "number") return { ok: false, remaining: 0, retryAfter: 60 };
+    const start = Number(row.window_started_at);
+    if (!Number.isFinite(start)) return { ok: false, remaining: 0, retryAfter: 60 };
+    if (row.hit_count > cfg.max) {
+      return { ok: false, remaining: 0, retryAfter: Math.max(1, Math.ceil((start + cfg.windowMs - now) / 1000)) };
+    }
+    return { ok: true, remaining: Math.max(0, cfg.max - row.hit_count), retryAfter: 0 };
+  } catch {
+    return { ok: false, remaining: 0, retryAfter: 60 };
+  }
+}
+
+export async function allowRequest(key: string, cfg: LimitConfig, env: NodeJS.ProcessEnv = process.env): Promise<AllowResult> {
+  const protection = rateLimitProtectionKind(env);
+  if (protection === "shared") return allowShared(key, cfg, env);
+  if (protection === "none") return { ok: false, remaining: 0, retryAfter: 60 };
+  return allow(key, cfg);
+}
+
+export async function resetSharedRateLimit(): Promise<void> {
+  if (!sharedPool) return;
+  await sharedPool.end().catch(() => undefined);
+  sharedPool = null;
 }
 
 export function rateLimitTrustMode(env: NodeJS.ProcessEnv = process.env): TrustMode {

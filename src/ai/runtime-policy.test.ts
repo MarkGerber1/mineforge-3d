@@ -171,6 +171,19 @@ describe("AI-PROD fail-closed public Grok (OPTION B)", () => {
     assert.notEqual(local.rateLimitProtection, "shared");
   });
 
+  it("AI-08 shared limiter is advertised only with explicit durable backend config", () => {
+    const env = {
+      VERCEL: "1",
+      XAI_API_KEY: "k",
+      RATE_LIMIT_BACKEND: "postgres",
+      RATE_LIMIT_DATABASE_URL: "postgres://redacted@example.invalid/db",
+    };
+    assert.equal(rateLimitProtectionKind(env), "shared");
+    assert.equal(publicAiAvailable(env), true);
+    const snap = runtimeSnapshot({ env });
+    assert.equal(snap.rateLimitProtection, "shared");
+  });
+
   it("GROK_PROJECT_ID + key also fail-closes AI before provider", async () => {
     let fetchCalls = 0;
     const fetchImpl: typeof fetch = async () => {
