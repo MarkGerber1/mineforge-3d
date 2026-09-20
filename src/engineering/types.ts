@@ -632,6 +632,8 @@ export interface EngineeringResult {
     dirtyQ_m3h: number | null;
     marginM3h: number | null;
     reason: string;
+    trust: TrustLevel | null;
+    finalSafeEligible: boolean;
     curve: FanCurvePoint[];
     systemCurve: FanCurvePoint[];
   };

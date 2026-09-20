@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { assessOpeningAirflow } from "../opening-airflow.ts";
+import { componentLossAtFlow, resolvedVentComponents } from "../pressure.ts";
 import { emptyRectangularProject } from "../../project/factory.ts";
 
 function base() {
@@ -52,5 +53,18 @@ describe("OPEN V2 opening duty model", () => {
     const a = assessOpeningAirflow(p, 10_000).exhaust[0]!;
     assert.ok(a.localLossPa > 0);
     assert.equal(a.localLossPa, 2 * a.dynamicPressurePa);
+  });
+
+  it("OPEN-06 fan/system network uses the same effective opening area", () => {
+    const p = base();
+    p.openings = p.openings.map((o) => ({ ...o, widthM: 1, heightM: 1 }));
+    p.ventilation.components = [{
+      id: "open-component", kind: "opening", name: "Exhaust grille", shape: "rect", widthM: 1, heightM: 1,
+      lengthM: 0, frictionFactor: 0, kLocal: 2, extraPressurePa: 0, openingId: "out",
+    }];
+    const opening = assessOpeningAirflow(p, 3600).exhaust[0]!;
+    const component = componentLossAtFlow(resolvedVentComponents(p)[0]!, 3600);
+    assert.equal(component.velocityMs, opening.faceVelocityMs);
+    assert.equal(component.localPa, opening.localLossPa);
   });
 });

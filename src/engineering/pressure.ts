@@ -9,7 +9,12 @@ import {
 } from "./airflow.ts";
 
 export function componentLossAtFlow(c: VentComponent, flowM3h: number): ComponentLoss {
-  const areaM2 = crossSectionAreaM2(c);
+  const grossAreaM2 = crossSectionAreaM2(c);
+  // Opening K-values are evaluated at the effective/free area when a
+  // louver/grille free-area ratio is known. This keeps the fan/system curve
+  // consistent with the opening-duty model instead of silently using gross
+  // aperture velocity for pressure loss.
+  const areaM2 = c.kind === "opening" ? grossAreaM2 * (c.freeAreaRatio ?? 1) : grossAreaM2;
   const dhM = hydraulicDiameterM(c);
   const v = velocityMs(flowM3h, areaM2);
   const pv = Number.isFinite(v) ? dynamicPressurePa(v) : Infinity;
@@ -105,7 +110,18 @@ export function resolvedVentComponents(project: Project): VentComponent[] {
     if (c.openingId) {
       const o = project.openings.find((x) => x.id === c.openingId);
       if (o) {
-        return { ...c, shape: "rect" as const, widthM: o.widthM, heightM: o.heightM };
+        const configuredFreeArea =
+          c.freeAreaRatio ??
+          (project.ventilation.openingCriteriaEnabled === true
+            ? project.ventilation.openingCriteria?.freeAreaRatio
+            : undefined);
+        return {
+          ...c,
+          shape: "rect" as const,
+          widthM: o.widthM,
+          heightM: o.heightM,
+          freeAreaRatio: configuredFreeArea,
+        };
       }
     }
     return c;

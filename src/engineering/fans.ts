@@ -211,6 +211,8 @@ export function evaluateProjectFans(
       dirtyQ_m3h: null as number | null,
       marginM3h: null as number | null,
       reason: "No fan in the project. Ventilation capacity is UNKNOWN.",
+      trust: null as TrustLevel | null,
+      finalSafeEligible: false,
       curve: [] as FanCurvePoint[],
       systemCurve: [] as FanCurvePoint[],
     };
@@ -232,6 +234,8 @@ export function evaluateProjectFans(
       dirtyQ_m3h: null,
       marginM3h: null,
       reason: "Fan is outside the room. Operating point is not valid.",
+      trust: null as TrustLevel | null,
+      finalSafeEligible: false,
       curve: [],
       systemCurve: [],
     };
@@ -251,6 +255,8 @@ export function evaluateProjectFans(
       dirtyQ_m3h: null,
       marginM3h: null,
       reason: "Fan specification missing. Cannot verify duty.",
+      trust: null as TrustLevel | null,
+      finalSafeEligible: false,
       curve: [],
       systemCurve: [],
     };
@@ -279,6 +285,8 @@ export function evaluateProjectFans(
     dirtyQ_m3h: dirty.operatingQ_m3h,
     marginM3h: active.marginM3h,
     reason: active.reason,
+    trust: spec.source.trust,
+    finalSafeEligible: fanTrustEligible(spec),
     curve: active.curve,
     systemCurve: active.systemCurve,
   };
@@ -300,7 +308,7 @@ export interface FanCandidate {
   reason: string;
 }
 
-function fanTrustEligible(spec: FanSpec): boolean {
+export function fanTrustEligible(spec: FanSpec): boolean {
   return spec.source.trust === "OFFICIAL_VERIFIED" || spec.source.trust === "VERIFIED_SECONDARY";
 }
 

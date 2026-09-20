@@ -167,6 +167,15 @@ export function calculateAll(project: Project, catalogs: Catalogs): EngineeringR
       detail: fan.reason,
     });
   }
+  if (fan.trust != null && !fan.finalSafeEligible) {
+    warnings.push({
+      id: "fan-trust-unverified",
+      severity: "WARNING",
+      objectId: project.fans[0]?.id,
+      title: "Fan curve is not verified",
+      detail: `Fan curve trust is ${fan.trust}. Duty may be calculated, but SAFE remains PRELIMINARY until an OFFICIAL_VERIFIED or VERIFIED_SECONDARY curve is used.`,
+    });
+  }
   if (fan.cleanQ_m3h != null && fan.dirtyPass === false && fan.pass !== false) {
     warnings.push({
       id: "dirty-filter",
@@ -400,6 +409,7 @@ export function calculateAll(project: Project, catalogs: Catalogs): EngineeringR
     intakeKnown: intakeOk,
     openingsValid: openings.valid,
     fanKnown: project.fans.length > 0 && fan.operatingQ_m3h != null,
+    fanFinalSafeEligible: fan.finalSafeEligible,
     floorUnknown: project.constraints.floorLoadingUnknown || !floorKnown,
     hasBlocker,
     hasCriticalConflict,

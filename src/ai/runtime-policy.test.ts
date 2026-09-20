@@ -171,7 +171,7 @@ describe("AI-PROD fail-closed public Grok (OPTION B)", () => {
     assert.notEqual(local.rateLimitProtection, "shared");
   });
 
-  it("AI-08 shared limiter is advertised only with explicit durable backend config", () => {
+  it("AI-08 configured shared limiter is not advertised as operational before a successful DB probe", () => {
     const env = {
       VERCEL: "1",
       XAI_API_KEY: "k",
@@ -181,7 +181,9 @@ describe("AI-PROD fail-closed public Grok (OPTION B)", () => {
     assert.equal(rateLimitProtectionKind(env), "shared");
     assert.equal(publicAiAvailable(env), true);
     const snap = runtimeSnapshot({ env });
-    assert.equal(snap.rateLimitProtection, "shared");
+    assert.equal(snap.rateLimitProtection, "none");
+    assert.equal(snap.ai, false);
+    assert.equal(snap.available, false);
   });
 
   it("GROK_PROJECT_ID + key also fail-closes AI before provider", async () => {
