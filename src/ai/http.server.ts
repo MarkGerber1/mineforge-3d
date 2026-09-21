@@ -4,7 +4,6 @@ import {
   cookieClearHeader,
   cookieSetHeader,
   loginWithPassphrase,
-  runtimeSnapshot,
   type Actor,
 } from "./privilege.server.ts";
 import {
@@ -19,6 +18,7 @@ import {
 } from "./jobs.server.ts";
 import { writeAudit, auditFromActor } from "./audit.server.ts";
 import { allowRequest, LIMITS, clientIpFromHeaders } from "./ratelimit.server.ts";
+import { runtimeSnapshotWithReadiness } from "./runtime-readiness.server.ts";
 
 const ROOT = () => process.env.APP_EDIT_ROOT || process.cwd();
 
@@ -92,7 +92,7 @@ export async function handleAppEditHttp(req: Request): Promise<Response | null> 
   const ip = clientIpFromHeaders(req.headers);
 
   if (method === "GET" && (path === "/api/runtime" || path === "/api/runtime/")) {
-    return json(200, runtimeSnapshot({ cookieHeader: cookieHeader(req) }));
+    return json(200, await runtimeSnapshotWithReadiness({ cookieHeader: cookieHeader(req) }));
   }
 
   if (method === "GET" && path.startsWith("/__preview/")) {

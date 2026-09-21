@@ -73,7 +73,29 @@ export function allow(key: string, cfg: LimitConfig): AllowResult {
   }
 }
 
-let sharedPool: import("pg").Pool | null = null;
+interface SharedPoolLike {
+  query(text: string, values?: unknown[]): Promise<{ rows: unknown[] }>;
+  end(): Promise<void>;
+}
+
+type SharedPoolFactory = (connectionString: string) => Promise<SharedPoolLike>;
+
+async function defaultSharedPoolFactory(connectionString: string): Promise<SharedPoolLike> {
+  const { Pool } = await import("pg");
+  const pool = new Pool({ connectionString, max: 2, idleTimeoutMillis: 10_000, connectionTimeoutMillis: 3_000 });
+  return {
+    async query(text: string, values?: unknown[]) {
+      const result = values ? await pool.query(text, values) : await pool.query(text);
+      return { rows: result.rows as unknown[] };
+    },
+    async end() {
+      await pool.end();
+    },
+  };
+}
+
+let sharedPoolFactory: SharedPoolFactory = defaultSharedPoolFactory;
+let sharedPool: SharedPoolLike | null = null;
 let sharedPoolConnectionString = "";
 let sharedReadyConnectionString = "";
 
@@ -85,11 +107,10 @@ function sharedConnectionString(env: NodeJS.ProcessEnv): string {
   return (env.RATE_LIMIT_DATABASE_URL ?? env.DATABASE_URL ?? "").trim();
 }
 
-async function ensureSharedPool(connectionString: string): Promise<import("pg").Pool> {
+async function ensureSharedPool(connectionString: string): Promise<SharedPoolLike> {
   if (!sharedPool || sharedPoolConnectionString !== connectionString) {
     if (sharedPool) await sharedPool.end().catch(() => undefined);
-    const { Pool } = await import("pg");
-    sharedPool = new Pool({ connectionString, max: 2, idleTimeoutMillis: 10_000, connectionTimeoutMillis: 3_000 });
+    sharedPool = await sharedPoolFactory(connectionString);
     sharedPoolConnectionString = connectionString;
     sharedReadyConnectionString = "";
   }
@@ -116,6 +137,29 @@ export function sharedRateLimitOperational(env: NodeJS.ProcessEnv = process.env)
     connectionString.length > 0 &&
     sharedReadyConnectionString === connectionString
   );
+}
+
+/**
+ * Probe durable shared-limiter readiness without consuming quota.
+ * A successful probe performs only pool/table initialization and SELECT 1.
+ * Any failure clears process-local readiness/pool state and returns false.
+ */
+export async function probeSharedRateLimitOperational(
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<boolean> {
+  let connectionString = "";
+  try {
+    if (rateLimitProtectionKind(env) !== "shared") return false;
+    connectionString = sharedConnectionString(env);
+    if (!connectionString) return false;
+    await ensureSharedPool(connectionString);
+    return sharedReadyConnectionString === connectionString;
+  } catch {
+    if (connectionString && sharedPoolConnectionString === connectionString) {
+      await resetSharedRateLimit();
+    }
+    return false;
+  }
 }
 
 /**
@@ -172,6 +216,11 @@ export async function allowRequest(key: string, cfg: LimitConfig, env: NodeJS.Pr
   if (protection === "shared") return allowShared(key, cfg, env);
   if (protection === "none") return { ok: false, remaining: 0, retryAfter: 60 };
   return allow(key, cfg);
+}
+
+/** Test-only dependency injection for deterministic shared-store readiness/quota tests. */
+export function setSharedRateLimitPoolFactoryForTests(factory?: SharedPoolFactory): void {
+  sharedPoolFactory = factory ?? defaultSharedPoolFactory;
 }
 
 export async function resetSharedRateLimit(): Promise<void> {
