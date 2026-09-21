@@ -1484,7 +1484,7 @@ describe("QX-02A WebKit West/South wall drag", () => {
 });
 
 describe("QX-02B HUD + numeric fail-closed", () => {
-  async function seedVerified(page: Page): Promise<void> {
+  async function seedKnownPreliminary(page: Page): Promise<void> {
     await page.evaluate(() => {
       const s = (window as unknown as { __MF_STORE__: { getState: () => {
         project: {
@@ -1513,12 +1513,12 @@ describe("QX-02B HUD + numeric fail-closed", () => {
             __MF_STORE__: {
               getState: () => {
                 project: { fleet: { requestedCount: number }; constraints: { floorLoadingUnknown: boolean } };
-                result: { capacity: { verified: boolean } };
+                result: { capacity: { verified: boolean; safety: string } };
               };
             };
           }
         ).__MF_STORE__.getState();
-        return s.project.fleet.requestedCount === 24 && s.project.constraints.floorLoadingUnknown === false && s.result.capacity.verified === true;
+        return s.project.fleet.requestedCount === 24 && s.project.constraints.floorLoadingUnknown === false && s.result.capacity.verified === false && s.result.capacity.safety === "PRELIMINARY";
       },
       null,
       { timeout: 8000 },
@@ -1540,14 +1540,14 @@ describe("QX-02B HUD + numeric fail-closed", () => {
     );
   }
 
-  it("HUD-SAFE-01/08 375 verified not green-false", async () => {
+  it("HUD-SAFE-01/08 375 clean synthetic-fan fixture is preliminary", async () => {
     const { ctx, page } = await openPhone("375x812");
     try {
-      await seedVerified(page);
-      await waitHudSafety(page, "mobile", "VERIFIED");
+      await seedKnownPreliminary(page);
+      await waitHudSafety(page, "mobile", "PRELIMINARY");
       const el = hudMobile(page);
-      assert.equal(await el.getAttribute("data-mf-verified"), "1");
-      assert.equal(await el.getAttribute("data-mf-safety"), "VERIFIED");
+      assert.equal(await el.getAttribute("data-mf-verified"), "0");
+      assert.equal(await el.getAttribute("data-mf-safety"), "PRELIMINARY");
     } finally {
       await ctx.close();
     }
@@ -1556,8 +1556,8 @@ describe("QX-02B HUD + numeric fail-closed", () => {
   it("HUD-SAFE-02 requested > safe", async () => {
     const { ctx, page } = await openPhone("390x844");
     try {
-      await seedVerified(page);
-      await waitHudSafety(page, "mobile", "VERIFIED");
+      await seedKnownPreliminary(page);
+      await waitHudSafety(page, "mobile", "PRELIMINARY");
       await page.evaluate(() => {
         const s = (window as unknown as { __MF_STORE__: { getState: () => {
           project: { fleet: { asicId: string } };
@@ -1585,8 +1585,8 @@ describe("QX-02B HUD + numeric fail-closed", () => {
   it("HUD-SAFE-03 rack collision is not green", async () => {
     const { ctx, page } = await openPhone("430x932");
     try {
-      await seedVerified(page);
-      await waitHudSafety(page, "mobile", "VERIFIED");
+      await seedKnownPreliminary(page);
+      await waitHudSafety(page, "mobile", "PRELIMINARY");
       await page.evaluate(() => {
         const s = (window as unknown as { __MF_STORE__: { getState: () => {
           project: { racks: Array<Record<string, unknown>>; fleet: { requestedCount: number } };
@@ -1612,8 +1612,8 @@ describe("QX-02B HUD + numeric fail-closed", () => {
   it("HUD-SAFE-04/05 invalid opening and missing intake", async () => {
     const { ctx, page } = await openPhone("375x812");
     try {
-      await seedVerified(page);
-      await waitHudSafety(page, "mobile", "VERIFIED");
+      await seedKnownPreliminary(page);
+      await waitHudSafety(page, "mobile", "PRELIMINARY");
       await page.evaluate(() => {
         const s = (window as unknown as { __MF_STORE__: { getState: () => {
           project: { openings: Array<{ type: string; widthM: number }> };
@@ -1655,11 +1655,11 @@ describe("QX-02B HUD + numeric fail-closed", () => {
       });
       const cont = page.getByText("Продолжить текущий проект");
       if (await cont.count()) await cont.first().click();
-      await seedVerified(page);
-      await waitHudSafety(page, "desktop", "VERIFIED");
+      await seedKnownPreliminary(page);
+      await waitHudSafety(page, "desktop", "PRELIMINARY");
       const el = hudDesktop(page);
       await el.waitFor({ state: "visible", timeout: 8000 });
-      assert.equal(await el.getAttribute("data-mf-verified"), "1");
+      assert.equal(await el.getAttribute("data-mf-verified"), "0");
     } finally {
       await ctx.close();
     }
@@ -1668,7 +1668,7 @@ describe("QX-02B HUD + numeric fail-closed", () => {
   it("invalid height / power / rack ASIC visible rejection", async () => {
     const { ctx, page } = await openPhone("375x812");
     try {
-      await seedVerified(page);
+      await seedKnownPreliminary(page);
       await page.evaluate(() => {
         const s = (window as unknown as { __MF_STORE__: { getState: () => {
           openSheet: (t: string, st: string) => void;

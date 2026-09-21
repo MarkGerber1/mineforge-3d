@@ -50,6 +50,14 @@ function rackAt(x: number, y: number, id = "r1", extra: Partial<Rack> = {}): Rac
   };
 }
 
+function assertFixtureFanPreliminary(r: ReturnType<typeof calculateAll>): void {
+  assert.equal(r.fan.trust, "TEST_FIXTURE");
+  assert.equal(r.fan.finalSafeEligible, false);
+  assert.equal(r.capacity.verified, false);
+  assert.equal(r.capacity.confidence, "PRELIMINARY");
+  assert.equal(r.capacity.safety, "PRELIMINARY");
+}
+
 describe("catalog electrical identity R8-R10", () => {
   it("matrix", () => {
     assert.equal(ASIC_S21_PRO.inputPhases, 1);
@@ -164,7 +172,7 @@ describe("FREQ-08 mismatch then restore", () => {
     p.electrical.frequencyHz = 50;
     const good = calculateAll(p, catalogs);
     assert.equal(good.warnings.some((w) => w.id === "asic-frequency-mismatch"), false);
-    assert.equal(good.capacity.verified, true);
+    assertFixtureFanPreliminary(good);
   });
 });
 
@@ -196,7 +204,7 @@ describe("TRUST-01 OFFICIAL_VERIFIED eligible", () => {
     assert.equal(catalogs.asics[p.fleet.asicId]?.source.trust, "OFFICIAL_VERIFIED");
     const r = calculateAll(p, catalogs);
     assert.equal(r.asicTrust.finalSafeEligible, true);
-    assert.equal(r.capacity.verified, true);
+    assertFixtureFanPreliminary(r);
   });
 });
 
@@ -260,9 +268,12 @@ describe("TRUST-07 same numbers different trust", () => {
     const rb = calculateAll(b, catalogs);
     assert.equal(ra.electrical.typicalTotalW, rb.electrical.typicalTotalW);
     assert.equal(ra.thermal.totalHeatW, rb.thermal.totalHeatW);
-    assert.equal(ra.capacity.verified, true);
+    assert.equal(ra.asicTrust.finalSafeEligible, true);
+    assert.equal(rb.asicTrust.finalSafeEligible, false);
+    assert.equal(ra.capacity.verified, false);
     assert.equal(rb.capacity.verified, false);
     assert.equal(rb.capacity.confidence, "PRELIMINARY");
+    assertFixtureFanPreliminary(ra);
   });
 });
 
@@ -280,7 +291,9 @@ describe("TRUST-09 unverified → official restores", () => {
     useImported(p, officialTestAsicA({ source: { label: "ai", trust: "AI_FOUND_UNVERIFIED" } }));
     assert.equal(calculateAll(p, catalogs).capacity.verified, false);
     p.fleet = { asicId: ASIC_S21_PRO.id, requestedCount: p.fleet.requestedCount };
-    assert.equal(calculateAll(p, catalogs).capacity.verified, true);
+    const restored = calculateAll(p, catalogs);
+    assert.equal(restored.asicTrust.finalSafeEligible, true);
+    assertFixtureFanPreliminary(restored);
   });
 });
 
@@ -595,18 +608,20 @@ describe("INV-14 verified fixtures have placed ≤ requested", () => {
     const p = verifiedAcceptanceProject();
     assert.ok(placedAsicCount(p) <= p.fleet.requestedCount);
     assert.equal(validateCanonicalProjectDomains(p, catalogs).ok, true);
-    assert.equal(calculateAll(p, catalogs).capacity.verified, true);
+    const r = calculateAll(p, catalogs);
+    assert.equal(r.capacity.safe, 24);
+    assertFixtureFanPreliminary(r);
   });
 });
 
-describe("ADV-ELEC-01 official 1-phase compatible may VERIFIED", () => {
+describe("ADV-ELEC-01 official 1-phase compatible while fan keeps global PRELIMINARY", () => {
   it("subject to other constraints", () => {
     const r = calculateAll(verifiedAcceptanceProject(), catalogs);
     assert.equal(r.asicTrust.finalSafeEligible, true);
     assert.equal(r.electrical.supplyVoltageCompatible, true);
     assert.equal(r.electrical.supplyFrequencyCompatible, true);
     assert.equal(r.electrical.phaseModel, "SINGLE_PHASE_DISTRIBUTED");
-    assert.equal(r.capacity.verified, true);
+    assertFixtureFanPreliminary(r);
   });
 });
 
@@ -626,7 +641,10 @@ describe("ADV-ELEC-03 same numeric trust split", () => {
     const ra = calculateAll(a, catalogs);
     const rb = calculateAll(b, catalogs);
     assert.equal(ra.electrical.typicalTotalW, rb.electrical.typicalTotalW);
-    assert.notEqual(ra.capacity.verified, rb.capacity.verified);
+    assert.equal(ra.asicTrust.finalSafeEligible, true);
+    assert.equal(rb.asicTrust.finalSafeEligible, false);
+    assert.equal(ra.capacity.verified, false);
+    assert.equal(rb.capacity.verified, false);
   });
 });
 

@@ -40,6 +40,14 @@ function verifiedBase(): Project {
   return verifiedAcceptanceProject();
 }
 
+function assertFixtureFanPreliminary(r: ReturnType<typeof calculateAll>): void {
+  assert.equal(r.fan.trust, "TEST_FIXTURE");
+  assert.equal(r.fan.finalSafeEligible, false);
+  assert.equal(r.capacity.verified, false);
+  assert.equal(r.capacity.confidence, "PRELIMINARY");
+  assert.equal(r.capacity.safety, "PRELIMINARY");
+}
+
 function imported(asic: AsicSpec): Project {
   const p = verifiedBase();
   p.fleet = { asicId: asic.id, requestedCount: 24, imported: asic };
@@ -152,7 +160,7 @@ describe("VOLT-01 TEST_ASIC_A + 230 V compatible", () => {
     assert.equal(r.electrical.supplyVoltageCompatible, true);
     assert.equal(supplyVoltageCompatible(TEST_ASIC_A, 230), true);
     assert.equal(r.warnings.some((w) => w.id === "asic-voltage-mismatch"), false);
-    assert.equal(r.capacity.verified, true);
+    assertFixtureFanPreliminary(r);
   });
 });
 
@@ -260,7 +268,7 @@ describe("VOLT-10 restoring valid voltage removes voltage CRITICAL", () => {
     const good = calculateAll(p, catalogs);
     assert.equal(good.warnings.some((w) => w.id === "asic-voltage-mismatch"), false);
     assert.equal(good.electrical.supplyVoltageCompatible, true);
-    assert.equal(good.capacity.verified, true);
+    assertFixtureFanPreliminary(good);
   });
 });
 
@@ -360,7 +368,7 @@ describe("FLOOR-SAFE-04 adequate floor is not bottleneck", () => {
     assert.equal(r.floor.pass, true);
     assert.equal(r.floor.known, true);
     assert.ok(r.capacity.slots.some((s) => s.kind === "FLOOR" && s.known && (s.value ?? 0) >= 24));
-    assert.equal(r.capacity.verified, true);
+    assertFixtureFanPreliminary(r);
     // Compact INV-14 layout (placed === requested on one rack) makes FLOOR
     // share the RACK cap via maxAsicByFloorOnRack. That is not a floor-pressure
     // failure; do not require FLOOR to be absent from bottlenecks.
@@ -463,7 +471,8 @@ describe("FLOOR-SAFE-12 unknown returns PRELIMINARY", () => {
   it("setFloorLoading true", () => {
     const p = verifiedBase();
     live().loadProject(p, false);
-    assert.equal(live().result.capacity.verified, true);
+    assertFixtureFanPreliminary(live().result);
+    assert.equal(live().result.floor.known, true);
     const res = live().setFloorLoading(true);
     assert.equal(res.ok, true);
     assert.equal(live().project.constraints.floorLoadingUnknown, true);
