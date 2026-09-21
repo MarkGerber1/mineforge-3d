@@ -136,11 +136,22 @@ export const projectSchema = z.object({
         kLocal: z.number().finite().nonnegative(),
         extraPressurePa: z.number().finite().nonnegative(),
         openingId: z.string().optional(),
+        freeAreaRatio: z.number().finite().positive().max(1).optional(),
+        maxFaceVelocityMs: z.number().finite().positive().max(100).optional(),
+        criterionSource: z.string().optional(),
       }),
     ),
     dirtyFilter: z.boolean(),
     dirtyFilterExtraPa: z.number().finite().nonnegative(),
     outdoorTempC: z.number().finite(),
+    openingCriteria: z
+      .object({
+        maxFaceVelocityMs: z.number().finite().positive().max(100),
+        freeAreaRatio: z.number().finite().positive().max(1),
+        source: z.string().min(1),
+      })
+      .optional(),
+    openingCriteriaEnabled: z.boolean().optional(),
   }),
   electrical: z.object({
     availablePowerW: z.number().finite(),

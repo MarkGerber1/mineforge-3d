@@ -93,6 +93,14 @@ function notVerifiedHud(safety: string): void {
   assert.notEqual(HUD_SAFETY_LABEL_RU[safety as keyof typeof HUD_SAFETY_LABEL_RU], "ПРОВЕРЕНО");
 }
 
+function assertFixtureFanPreliminary(r: ReturnType<typeof calculateAll>): void {
+  assert.equal(r.fan.trust, "TEST_FIXTURE");
+  assert.equal(r.fan.finalSafeEligible, false);
+  assert.equal(r.capacity.verified, false);
+  assert.equal(r.capacity.confidence, "PRELIMINARY");
+  assert.equal(r.capacity.safety, "PRELIMINARY");
+}
+
 function useImported(p: Project, asic: AsicSpec): Project {
   p.fleet = { ...p.fleet, asicId: asic.id, imported: asic };
   return p;
@@ -485,7 +493,7 @@ describe("TRUST-IMPORT-06 exact trusted catalog match rebinds", () => {
     const r = calculateAll(p, catalogs);
     assert.equal(r.asicTrust.finalSafeEligible, true);
     assert.equal(r.asicTrust.level, "OFFICIAL_VERIFIED");
-    assert.equal(r.capacity.verified, true);
+    assertFixtureFanPreliminary(r);
   });
 });
 
@@ -564,11 +572,12 @@ describe("TRUST-IMPORT-10 Grok fake official trust remains downgraded", () => {
   });
 });
 
-describe("SAFE-E2E-01 front service AsBuilt on otherwise VERIFIED fixture", () => {
+describe("SAFE-E2E-01 front service AsBuilt on otherwise clean fixture", () => {
   it("verified false, CRITICAL, HUD != ПРОВЕРЕНО", () => {
     const p = verifiedAcceptanceProject();
     const baseline = calculateAll(p, catalogs);
-    assert.equal(baseline.capacity.verified, true);
+    assert.equal(baseline.capacity.safe, 24);
+    assertFixtureFanPreliminary(baseline);
     const rack = p.racks[0]!;
     const front = frontServiceAabb(rack, p.constraints.frontServiceClearanceM)!;
     p.reality = {
@@ -592,7 +601,7 @@ describe("SAFE-E2E-01 front service AsBuilt on otherwise VERIFIED fixture", () =
   });
 });
 
-describe("SAFE-E2E-02 door swing service conflict on otherwise VERIFIED fixture", () => {
+describe("SAFE-E2E-02 door swing service conflict on otherwise clean fixture", () => {
   it("verified false, CRITICAL", () => {
     const p = verifiedAcceptanceProject();
     const rack = p.racks.find((r) => r.airflowToward === "south") ?? p.racks[0]!;
@@ -636,10 +645,12 @@ describe("SAFE-E2E-03 fake imported OFFICIAL_VERIFIED ASIC only", () => {
   });
 });
 
-describe("SAFE-E2E-04 remove hostile condition restores VERIFIED", () => {
+describe("SAFE-E2E-04 remove hostile condition restores clean PRELIMINARY baseline", () => {
   it("only if all other constraints remain valid", () => {
     const p = verifiedAcceptanceProject();
-    assert.equal(calculateAll(p, catalogs).capacity.verified, true);
+    const clean = calculateAll(p, catalogs);
+    assert.equal(clean.capacity.safe, 24);
+    assertFixtureFanPreliminary(clean);
     const rack = p.racks[0]!;
     const front = frontServiceAabb(rack, p.constraints.frontServiceClearanceM)!;
     const blocked = structuredClone(p);
@@ -658,8 +669,9 @@ describe("SAFE-E2E-04 remove hostile condition restores VERIFIED", () => {
     assert.equal(calculateAll(blocked, catalogs).capacity.verified, false);
     blocked.reality.asBuilt = [];
     const restored = calculateAll(blocked, catalogs);
-    assert.equal(restored.capacity.verified, true);
-    assert.equal(restored.capacity.safety, "VERIFIED");
-    assert.equal(HUD_SAFETY_LABEL_RU.VERIFIED, "ПРОВЕРЕНО");
+    assert.equal(restored.capacity.safe, 24);
+    assert.equal(restored.warnings.some((w) => w.severity === "CRITICAL"), false);
+    assertFixtureFanPreliminary(restored);
+    assert.equal(HUD_SAFETY_LABEL_RU.PRELIMINARY, "ПРЕДВАРИТЕЛЬНО");
   });
 });

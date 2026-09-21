@@ -19,9 +19,10 @@ export const grokEngineer = createServerFn({ method: "POST" })
   });
 
 export const grokStatus = createServerFn({ method: "POST" }).handler(async () => {
-  const { runtimeSnapshot, readRequestCookieHeader } = await import("./privilege.server.ts");
+  const { readRequestCookieHeader } = await import("./privilege.server.ts");
+  const { runtimeSnapshotWithReadiness } = await import("./runtime-readiness.server.ts");
   const cookieHeader = await readRequestCookieHeader();
-  return runtimeSnapshot({ cookieHeader });
+  return runtimeSnapshotWithReadiness({ cookieHeader });
 });
 
 export const runtimeHealth = grokStatus;

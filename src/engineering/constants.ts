@@ -6,6 +6,12 @@ export const SUPPLY_VOLTAGE_V = 230;
 export const SUPPLY_FREQUENCY_HZ = 50;
 export const PHASE_COUNT = 3;
 
+/** Opening design criteria. These are configurable design defaults, not regulatory certification. */
+export const DEFAULT_MAX_FACE_VELOCITY_MS = 5;
+export const DEFAULT_FREE_AREA_RATIO = 0.6;
+export const DEFAULT_OPENING_CRITERION_SOURCE =
+  "MINEFORGE design default; verify against grille/louver/filter manufacturer data";
+
 export const MM = 0.001;
 export const CFM_PER_M3H = 1 / 1.6990107955;
 

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { routeIntent } from "./intent.ts";
-import { allow, LIMITS, clientIpFromRequest } from "./ratelimit.server.ts";
+import { allowRequest, LIMITS, clientIpFromRequest } from "./ratelimit.server.ts";
 
 const inputSchema = z.object({
   message: z.string().min(1).max(4000),
@@ -46,7 +46,7 @@ export async function executeGrokEngineer(
   }
 
   const ip = opts.ip ?? (await clientIpFromRequest());
-  const lim = allow(`grok:${ip}`, LIMITS.grok);
+  const lim = await allowRequest(`grok:${ip}`, LIMITS.grok, env);
   if (!lim.ok) {
     return {
       ok: false as const,
@@ -297,4 +297,3 @@ ${data.projectJson.slice(0, 24000)}`;
     findingJson: finding ? JSON.stringify(finding) : "",
   };
 }
-

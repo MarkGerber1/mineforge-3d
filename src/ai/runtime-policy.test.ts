@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { describe, it, beforeEach } from "node:test";
+import { describe, it, beforeEach, afterEach } from "node:test";
 import {
   isServerlessProduction,
   publicAiAvailable,
@@ -14,6 +14,12 @@ import {
   sessionSecret,
 } from "./privilege.server.ts";
 import { executeGrokEngineer, getGrokProviderCalls, resetGrokProviderCalls } from "./grok-engine.server.ts";
+import {
+  resetSharedRateLimit,
+  setSharedRateLimitPoolFactoryForTests,
+  sharedRateLimitOperational,
+} from "./ratelimit.server.ts";
+import { runtimeSnapshotWithReadiness } from "./runtime-readiness.server.ts";
 import { calculateAll } from "../engineering/pipeline.ts";
 import { defaultCatalogs } from "../engineering/catalogs.ts";
 import { emptyRectangularProject } from "../project/factory.ts";
@@ -171,6 +177,21 @@ describe("AI-PROD fail-closed public Grok (OPTION B)", () => {
     assert.notEqual(local.rateLimitProtection, "shared");
   });
 
+  it("AI-08 configured shared limiter is not advertised as operational before a successful DB probe", () => {
+    const env = {
+      VERCEL: "1",
+      XAI_API_KEY: "k",
+      RATE_LIMIT_BACKEND: "postgres",
+      RATE_LIMIT_DATABASE_URL: "postgres://redacted@example.invalid/db",
+    };
+    assert.equal(rateLimitProtectionKind(env), "shared");
+    assert.equal(publicAiAvailable(env), true);
+    const snap = runtimeSnapshot({ env });
+    assert.equal(snap.rateLimitProtection, "none");
+    assert.equal(snap.ai, false);
+    assert.equal(snap.available, false);
+  });
+
   it("GROK_PROJECT_ID + key also fail-closes AI before provider", async () => {
     let fetchCalls = 0;
     const fetchImpl: typeof fetch = async () => {
@@ -186,5 +207,93 @@ describe("AI-PROD fail-closed public Grok (OPTION B)", () => {
     assert.equal("offline" in r && r.offline, true);
     assert.equal(fetchCalls, 0);
     assert.equal(getGrokProviderCalls(), 0);
+  });
+});
+
+
+
+describe("AI shared-limiter request safety after runtime bootstrap", () => {
+  const sharedEnv = {
+    VERCEL: "1",
+    XAI_API_KEY: "test-not-a-real-key",
+    RATE_LIMIT_BACKEND: "postgres",
+    RATE_LIMIT_DATABASE_URL: "postgres://test.invalid/mineforge",
+  };
+
+  function installFakeSharedStore(failQuota: () => boolean = () => false) {
+    const queries: Array<{ text: string; values?: unknown[] }> = [];
+    setSharedRateLimitPoolFactoryForTests(async () => ({
+      async query(text: string, values?: unknown[]) {
+        queries.push({ text, values });
+        if (/INSERT INTO mf_rate_limit_buckets/i.test(text)) {
+          if (failQuota()) throw new Error("db unavailable during quota mutation");
+          return { rows: [{ window_started_at: Date.now(), hit_count: 1 }] };
+        }
+        return { rows: [] };
+      },
+      async end() {},
+    }));
+    return queries;
+  }
+
+  beforeEach(async () => {
+    resetGrokProviderCalls();
+    await resetSharedRateLimit();
+  });
+
+  afterEach(async () => {
+    await resetSharedRateLimit();
+    setSharedRateLimitPoolFactoryForTests();
+    resetGrokProviderCalls();
+  });
+
+  it("AI-BOOT-05 first Grok request after bootstrap still passes durable allowShared", async () => {
+    const queries = installFakeSharedStore();
+    const snap = await runtimeSnapshotWithReadiness({ env: sharedEnv });
+    assert.equal(snap.ai, true);
+    assert.equal(queries.some((q) => /INSERT INTO mf_rate_limit_buckets/i.test(q.text)), false);
+
+    let fetchCalls = 0;
+    const fetchImpl: typeof fetch = async () => {
+      fetchCalls += 1;
+      return new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+    const result = await executeGrokEngineer(GROK_INPUT, {
+      env: sharedEnv,
+      ip: "198.51.100.20",
+      fetchImpl,
+    });
+    assert.equal(result.ok, true);
+    assert.equal(queries.filter((q) => /INSERT INTO mf_rate_limit_buckets/i.test(q.text)).length, 1);
+    assert.equal(fetchCalls, 1);
+    assert.equal(getGrokProviderCalls(), 1);
+  });
+
+  it("AI-BOOT-06 DB failure during actual quota mutation never reaches provider", async () => {
+    let failQuota = false;
+    const queries = installFakeSharedStore(() => failQuota);
+    const snap = await runtimeSnapshotWithReadiness({ env: sharedEnv });
+    assert.equal(snap.ai, true);
+    failQuota = true;
+
+    let fetchCalls = 0;
+    const fetchImpl: typeof fetch = async () => {
+      fetchCalls += 1;
+      return new Response("{}", { status: 200 });
+    };
+    const result = await executeGrokEngineer(GROK_INPUT, {
+      env: sharedEnv,
+      ip: "198.51.100.20",
+      fetchImpl,
+    });
+    assert.equal(result.ok, false);
+    assert.equal("rateLimited" in result && result.rateLimited, true);
+    assert.equal(queries.filter((q) => /INSERT INTO mf_rate_limit_buckets/i.test(q.text)).length, 1);
+    assert.equal(fetchCalls, 0);
+    assert.equal(getGrokProviderCalls(), 0);
+    assert.equal(sharedRateLimitOperational(sharedEnv), false);
   });
 });

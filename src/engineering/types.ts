@@ -151,6 +151,36 @@ export interface VentComponent {
   kLocal: number;
   extraPressurePa: number;
   openingId?: string;
+  /** Optional component-specific free-area/face-velocity criteria. */
+  freeAreaRatio?: number;
+  maxFaceVelocityMs?: number;
+  criterionSource?: string;
+}
+
+export interface OpeningAirflowCriteria {
+  maxFaceVelocityMs: number;
+  freeAreaRatio: number;
+  source: string;
+}
+
+export interface OpeningAirflowAssessment {
+  id: string;
+  type: OpeningType;
+  role: "intake" | "exhaust" | "other";
+  requiredFlowM3h: number;
+  grossAreaM2: number;
+  effectiveAreaM2: number;
+  requiredEffectiveAreaM2: number;
+  requiredGrossAreaM2: number;
+  faceVelocityMs: number;
+  maxFaceVelocityMs: number;
+  freeAreaRatio: number;
+  dynamicPressurePa: number;
+  localLossPa: number;
+  deficitAreaM2: number;
+  status: "PASS" | "UNDERSIZED" | "EXCESSIVE_FACE_VELOCITY" | "INVALID_AIR_PATH" | "GEOMETRY_INVALID";
+  criterionSource: string;
+  errors: string[];
 }
 
 export interface Rack {
@@ -461,6 +491,9 @@ export interface Project {
     dirtyFilter: boolean;
     dirtyFilterExtraPa: number;
     outdoorTempC: number;
+    openingCriteria?: OpeningAirflowCriteria;
+    /** Backward-compatible opt-in for the new opening duty gate. */
+    openingCriteriaEnabled?: boolean;
   };
   electrical: ElectricalSupply;
   fleet: Fleet;
@@ -523,6 +556,15 @@ export interface EngineeringResult {
       insideWall: boolean;
       errors: string[];
     }>;
+    airflow: {
+      valid: boolean;
+      enforced: boolean;
+      criterion: OpeningAirflowCriteria;
+      requiredFlowM3h: number;
+      intake: OpeningAirflowAssessment[];
+      exhaust: OpeningAirflowAssessment[];
+      errors: string[];
+    };
   };
   electrical: {
     asic: AsicSpec | null;
@@ -590,6 +632,8 @@ export interface EngineeringResult {
     dirtyQ_m3h: number | null;
     marginM3h: number | null;
     reason: string;
+    trust: TrustLevel | null;
+    finalSafeEligible: boolean;
     curve: FanCurvePoint[];
     systemCurve: FanCurvePoint[];
   };

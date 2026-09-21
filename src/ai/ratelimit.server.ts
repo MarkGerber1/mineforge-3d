@@ -4,14 +4,15 @@
  * Valid ONLY on a single persistent process (workspace preview).
  * This Map is NOT production-wide protection across serverless instances.
  * Public Grok AI on multi-instance hosts is fail-closed unless a shared limiter exists
- * (none is implemented — see runtime-policy.server.ts).
+ * and has successfully initialized against its durable Postgres store.
  *
  * Client identity is taken only from a trusted source for the deployment
  * architecture. Attacker-controlled X-Forwarded-For first hops are never keys.
  */
 
 import { isIP } from "node:net";
-import { isVercelRuntime } from "./runtime-policy.server.ts";
+import { isVercelRuntime, rateLimitProtectionKind } from "./runtime-policy.server.ts";
+import { createHash } from "node:crypto";
 
 export interface LimitConfig {
   max: number;
@@ -70,6 +71,163 @@ export function allow(key: string, cfg: LimitConfig): AllowResult {
   } catch {
     return { ok: false, remaining: 0, retryAfter: 60 };
   }
+}
+
+interface SharedPoolLike {
+  query(text: string, values?: unknown[]): Promise<{ rows: unknown[] }>;
+  end(): Promise<void>;
+}
+
+type SharedPoolFactory = (connectionString: string) => Promise<SharedPoolLike>;
+
+async function defaultSharedPoolFactory(connectionString: string): Promise<SharedPoolLike> {
+  const { Pool } = await import("pg");
+  const pool = new Pool({ connectionString, max: 2, idleTimeoutMillis: 10_000, connectionTimeoutMillis: 3_000 });
+  return {
+    async query(text: string, values?: unknown[]) {
+      const result = values ? await pool.query(text, values) : await pool.query(text);
+      return { rows: result.rows as unknown[] };
+    },
+    async end() {
+      await pool.end();
+    },
+  };
+}
+
+let sharedPoolFactory: SharedPoolFactory = defaultSharedPoolFactory;
+let sharedPool: SharedPoolLike | null = null;
+let sharedPoolConnectionString = "";
+let sharedReadyConnectionString = "";
+
+function sharedKey(key: string): string {
+  return createHash("sha256").update(key).digest("hex");
+}
+
+function sharedConnectionString(env: NodeJS.ProcessEnv): string {
+  return (env.RATE_LIMIT_DATABASE_URL ?? env.DATABASE_URL ?? "").trim();
+}
+
+async function ensureSharedPool(connectionString: string): Promise<SharedPoolLike> {
+  if (!sharedPool || sharedPoolConnectionString !== connectionString) {
+    if (sharedPool) await sharedPool.end().catch(() => undefined);
+    sharedPool = await sharedPoolFactory(connectionString);
+    sharedPoolConnectionString = connectionString;
+    sharedReadyConnectionString = "";
+  }
+  if (sharedReadyConnectionString !== connectionString) {
+    // Keep DDL separate from the parameterized quota mutation. node-postgres
+    // uses the extended query protocol when parameters are supplied, where a
+    // multi-statement prepared query is not valid.
+    await sharedPool.query(`CREATE TABLE IF NOT EXISTS mf_rate_limit_buckets (
+      bucket_key text PRIMARY KEY,
+      window_started_at bigint NOT NULL,
+      hit_count integer NOT NULL
+    )`);
+    await sharedPool.query("SELECT 1");
+    sharedReadyConnectionString = connectionString;
+  }
+  return sharedPool;
+}
+
+/** Conservative runtime signal: true only after this process has reached the durable store successfully. */
+export function sharedRateLimitOperational(env: NodeJS.ProcessEnv = process.env): boolean {
+  const connectionString = sharedConnectionString(env);
+  return (
+    rateLimitProtectionKind(env) === "shared" &&
+    connectionString.length > 0 &&
+    sharedReadyConnectionString === connectionString
+  );
+}
+
+/**
+ * Probe durable shared-limiter readiness without consuming quota.
+ * A successful probe performs only pool/table initialization and SELECT 1.
+ * Any failure clears process-local readiness/pool state and returns false.
+ */
+export async function probeSharedRateLimitOperational(
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<boolean> {
+  let connectionString = "";
+  try {
+    if (rateLimitProtectionKind(env) !== "shared") return false;
+    connectionString = sharedConnectionString(env);
+    if (!connectionString) return false;
+    await ensureSharedPool(connectionString);
+    return sharedReadyConnectionString === connectionString;
+  } catch {
+    if (connectionString && sharedPoolConnectionString === connectionString) {
+      await resetSharedRateLimit();
+    }
+    return false;
+  }
+}
+
+/**
+ * Durable multi-instance limiter. Database errors deny the request. The key is
+ * hashed before persistence so attacker-controlled identity values are bounded
+ * and never become unbounded database identifiers.
+ */
+export async function allowShared(
+  key: string,
+  cfg: LimitConfig,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<AllowResult> {
+  let connectionString = "";
+  try {
+    if (!key || key.length > MAX_KEY_CHARS || cfg.max < 1 || cfg.windowMs < 1) {
+      return { ok: false, remaining: 0, retryAfter: 60 };
+    }
+    if (rateLimitProtectionKind(env) !== "shared") return { ok: false, remaining: 0, retryAfter: 60 };
+    connectionString = sharedConnectionString(env);
+    if (!connectionString) return { ok: false, remaining: 0, retryAfter: 60 };
+    const pool = await ensureSharedPool(connectionString);
+    const now = Date.now();
+    const res = await pool.query(
+      `INSERT INTO mf_rate_limit_buckets(bucket_key, window_started_at, hit_count)
+      VALUES ($1, $2, 1)
+      ON CONFLICT (bucket_key) DO UPDATE SET
+        window_started_at = CASE WHEN mf_rate_limit_buckets.window_started_at + $3 <= $2 THEN $2 ELSE mf_rate_limit_buckets.window_started_at END,
+        hit_count = CASE
+          WHEN mf_rate_limit_buckets.window_started_at + $3 <= $2 THEN 1
+          WHEN mf_rate_limit_buckets.hit_count < $4 THEN mf_rate_limit_buckets.hit_count + 1
+          ELSE $4 + 1
+        END
+      RETURNING window_started_at, hit_count;`,
+      [sharedKey(key), now, cfg.windowMs, cfg.max],
+    );
+    const row = res.rows[0] as { window_started_at?: string | number; hit_count?: number } | undefined;
+    if (!row || typeof row.hit_count !== "number") return { ok: false, remaining: 0, retryAfter: 60 };
+    const start = Number(row.window_started_at);
+    if (!Number.isFinite(start)) return { ok: false, remaining: 0, retryAfter: 60 };
+    if (row.hit_count > cfg.max) {
+      return { ok: false, remaining: 0, retryAfter: Math.max(1, Math.ceil((start + cfg.windowMs - now) / 1000)) };
+    }
+    return { ok: true, remaining: Math.max(0, cfg.max - row.hit_count), retryAfter: 0 };
+  } catch {
+    if (connectionString && sharedPoolConnectionString === connectionString) {
+      await resetSharedRateLimit();
+    }
+    return { ok: false, remaining: 0, retryAfter: 60 };
+  }
+}
+
+export async function allowRequest(key: string, cfg: LimitConfig, env: NodeJS.ProcessEnv = process.env): Promise<AllowResult> {
+  const protection = rateLimitProtectionKind(env);
+  if (protection === "shared") return allowShared(key, cfg, env);
+  if (protection === "none") return { ok: false, remaining: 0, retryAfter: 60 };
+  return allow(key, cfg);
+}
+
+/** Test-only dependency injection for deterministic shared-store readiness/quota tests. */
+export function setSharedRateLimitPoolFactoryForTests(factory?: SharedPoolFactory): void {
+  sharedPoolFactory = factory ?? defaultSharedPoolFactory;
+}
+
+export async function resetSharedRateLimit(): Promise<void> {
+  if (sharedPool) await sharedPool.end().catch(() => undefined);
+  sharedPool = null;
+  sharedPoolConnectionString = "";
+  sharedReadyConnectionString = "";
 }
 
 export function rateLimitTrustMode(env: NodeJS.ProcessEnv = process.env): TrustMode {

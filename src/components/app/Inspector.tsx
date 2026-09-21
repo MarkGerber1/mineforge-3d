@@ -498,6 +498,26 @@ export function Inspector({ hideGrok }: { hideGrok?: boolean }) {
           </div>
         </div>
 
+        <details className="mt-4 rounded-[10px] border border-border bg-panel p-2" data-mf-id="opening-airflow-detail">
+          <summary className="cursor-pointer text-[10px] uppercase tracking-[0.12em] text-muted">
+            Проёмы · расход и скорость
+          </summary>
+          <div className="mt-2 space-y-2 font-mono text-[10px]">
+            <div className="text-muted">
+              Критерий: ≤ {result.openings.airflow.criterion.maxFaceVelocityMs.toFixed(1)} м/с · free area {(result.openings.airflow.criterion.freeAreaRatio * 100).toFixed(0)}% · design default
+            </div>
+            {[...result.openings.airflow.intake, ...result.openings.airflow.exhaust].map((a) => (
+              <div key={a.id} className={a.status === "PASS" ? "text-ok" : "text-crit"}>
+                <div>{a.role.toUpperCase()} {a.id}: {a.status}</div>
+                <div className="text-muted">
+                  Q {a.requiredFlowM3h.toFixed(0)} · A {a.grossAreaM2.toFixed(3)} / req {a.requiredGrossAreaM2.toFixed(3)} m² · v {a.faceVelocityMs.toFixed(2)} / {a.maxFaceVelocityMs.toFixed(2)} м/с
+                </div>
+              </div>
+            ))}
+            {result.openings.airflow.errors.length > 0 && <div className="text-crit">{result.openings.airflow.errors.join(" · ")}</div>}
+          </div>
+        </details>
+
         {store.scenarios.length > 0 && (
           <div className="mt-4">
             <div className="mb-1 text-[10px] uppercase tracking-[0.12em] text-muted">Сценарии</div>

@@ -59,6 +59,14 @@ function verifiedBase() {
   return verifiedAcceptanceProject();
 }
 
+function assertFixtureFanPreliminary(r: ReturnType<typeof calculateAll>): void {
+  assert.equal(r.fan.trust, "TEST_FIXTURE");
+  assert.equal(r.fan.finalSafeEligible, false);
+  assert.equal(r.capacity.verified, false);
+  assert.equal(r.capacity.confidence, "PRELIMINARY");
+  assert.equal(r.capacity.safety, "PRELIMINARY");
+}
+
 function perRack(): number {
   return rackAsicCapacity(
     { id: "t", name: "t", ...TEST_RACK_A, x: 0, y: 0, rotationDeg: 0, asicCount: 0, airflowToward: "south" },
@@ -635,7 +643,8 @@ describe("ADV-01 collision → CRITICAL not VERIFIED", () => {
   it("valid then overlap", () => {
     const p = verifiedBase();
     const a = calculateAll(p, catalogs);
-    assert.equal(a.capacity.verified, true);
+    assert.equal(a.capacity.safe, 24);
+    assertFixtureFanPreliminary(a);
     p.racks = [rackAt(2, 2, "a"), rackAt(2.2, 2, "b")];
     const b = calculateAll(p, catalogs);
     assert.ok(b.warnings.some((w) => w.severity === "CRITICAL"));
@@ -648,7 +657,7 @@ describe("ADV-01 collision → CRITICAL not VERIFIED", () => {
 describe("ADV-02 delete intake", () => {
   it("ventilation no longer VERIFIED", () => {
     const p = verifiedBase();
-    assert.equal(calculateAll(p, catalogs).capacity.verified, true);
+    assertFixtureFanPreliminary(calculateAll(p, catalogs));
     p.openings = p.openings.filter((o) => o.type !== "INTAKE");
     const r = calculateAll(p, catalogs);
     assert.equal(r.capacity.verified, false);
@@ -718,10 +727,10 @@ describe("ADV-07 dirty filter one-time penalty", () => {
 });
 
 describe("HUD-SAFE oracle states", () => {
-  it("verified / over / collision / invalid opening / missing intake / blocker", () => {
+  it("clean preliminary / over / collision / invalid opening / missing intake / blocker", () => {
     const v = calculateAll(verifiedBase(), catalogs);
-    assert.equal(v.capacity.safety, "VERIFIED");
-    assert.equal(v.capacity.verified, true);
+    assert.equal(v.capacity.safe, 24);
+    assertFixtureFanPreliminary(v);
 
     const over = verifiedBase();
     over.fleet.requestedCount = 10_000;

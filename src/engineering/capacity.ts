@@ -37,6 +37,7 @@ export interface CapacityInputs {
   intakeKnown: boolean;
   openingsValid: boolean;
   fanKnown: boolean;
+  fanFinalSafeEligible?: boolean;
   floorUnknown: boolean;
   hasBlocker: boolean;
   hasCriticalConflict: boolean;
@@ -113,6 +114,7 @@ export function calculateCapacity(input: CapacityInputs) {
   else if (
     input.floorUnknown ||
     !input.fanKnown ||
+    input.fanFinalSafeEligible === false ||
     !input.electricalKnown ||
     input.asicFinalSafeEligible === false ||
     input.frequencyCapabilityKnown === false ||

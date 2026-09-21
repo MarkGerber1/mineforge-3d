@@ -5,7 +5,7 @@
  *   runtime type + XAI key + rate-limit protection = AI capability.
  *
  * Process-local Map limiter is valid only on a single persistent process.
- * There is no shared durable limiter in this tree — do not advertise one.
+ * Multi-instance production requires an explicitly configured durable store.
  */
 
 export type RateLimitProtection = "local-process" | "shared" | "none";
@@ -21,14 +21,17 @@ export function isServerlessProduction(env: NodeJS.ProcessEnv = process.env): bo
   return isVercelRuntime(env);
 }
 
-/**
- * What abuse/cost protection actually exists.
- * Never returns "shared" — no durable multi-instance store is implemented.
- */
+/** Shared limiter is opt-in only when the deployment names a Postgres store. */
+export function sharedRateLimitConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
+  const backend = (env.RATE_LIMIT_BACKEND ?? "").trim().toLowerCase();
+  const url = (env.RATE_LIMIT_DATABASE_URL ?? env.DATABASE_URL ?? "").trim();
+  return backend === "postgres" && url.length > 0;
+}
+
 export function rateLimitProtectionKind(env: NodeJS.ProcessEnv = process.env): RateLimitProtection {
-  if (isServerlessProduction(env)) return "none";
+  if (isServerlessProduction(env)) return sharedRateLimitConfigured(env) ? "shared" : "none";
   const explicit = (env.PRODUCTION_INSTANCE_MODEL ?? "").trim().toLowerCase();
-  if (explicit === "multi-instance") return "none";
+  if (explicit === "multi-instance") return sharedRateLimitConfigured(env) ? "shared" : "none";
   return "local-process";
 }
 

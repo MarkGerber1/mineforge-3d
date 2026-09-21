@@ -6,6 +6,7 @@ import {
   rateLimitProtectionKind,
   type RateLimitProtection,
 } from "./runtime-policy.server.ts";
+import { sharedRateLimitOperational } from "./ratelimit.server.ts";
 
 export type ActorRole = "anonymous" | "user" | "owner";
 
@@ -203,7 +204,10 @@ export function runtimeSnapshot(
   const env = input.env ?? process.env;
   const enabled = isAppEditEnabled(env);
   const session = verifySession(parseCookieHeader(input.cookieHeader, PRIV_COOKIE), sessionSecret(env));
-  const ai = publicAiAvailable(env);
+  const configuredProtection = rateLimitProtectionKind(env);
+  const protection: RateLimitProtection =
+    configuredProtection === "shared" && !sharedRateLimitOperational(env) ? "none" : configuredProtection;
+  const ai = publicAiAvailable(env) && protection !== "none";
   const id = deployedIdentity(env);
   return {
     mode: "server",
@@ -214,7 +218,7 @@ export function runtimeSnapshot(
     sha: id.sha,
     buildId: id.buildId,
     instanceModel: advertisedInstanceModel(env),
-    rateLimitProtection: rateLimitProtectionKind(env),
+    rateLimitProtection: protection,
   };
 }
 
