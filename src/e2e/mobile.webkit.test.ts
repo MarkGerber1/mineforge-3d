@@ -2629,6 +2629,25 @@ describe("3D-E2E-R3 cancel is not commit", () => {
   });
 });
 
+describe("MOB-PORT-01 iPhone project import file input", () => {
+  it("portable bundle input is tappable in the add menu", async () => {
+    const { ctx, page } = await openPhone("390x844");
+    try {
+      await mf(page, "toolbar-add").tap();
+      const input = mf(page, "project-import-file");
+      await input.waitFor({ state: "attached", timeout: 5000 });
+      assert.equal(await input.getAttribute("accept"), ".mineforge.json,application/json");
+      const box = await mf(page, "project-import").boundingBox();
+      assert.ok(box, "import control has a box");
+      assert.ok(box!.height >= 44, `import height ${box?.height}`);
+      assert.ok(box!.width >= 44, `import width ${box?.width}`);
+      assert.ok(await mf(page, "project-export").boundingBox());
+    } finally {
+      await ctx.close();
+    }
+  });
+});
+
 describe("console cleanliness", () => {
   it("no unexplained page errors", () => {
     const severe = errors.filter((e) => !/ResizeObserver|hydration|webkit fake|Importing a module script failed/i.test(e));
