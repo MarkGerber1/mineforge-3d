@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from "react";
+import { Component, lazy, Suspense, useEffect, type ReactNode } from "react";
 import { Cad2D } from "@/components/cad/Cad2D";
 import { PhotoAnnotator } from "@/components/reality/PhotoAnnotator";
 import { useLiveProject, useLiveResult, useProjectStore } from "@/project/store";
@@ -9,7 +9,43 @@ import { cn } from "@/lib/utils";
 import { HUD_SAFETY_LABEL_RU } from "@/engineering/capacity";
 import { FAILURE_LABELS } from "@/ai/failure";
 
-const Twin3D = lazy(() => import("@/components/twin/Twin3D").then((m) => ({ default: m.Twin3D })));
+async function loadTwin() {
+  let last: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const mod = await import("@/components/twin/Twin3D");
+      return { default: mod.Twin3D };
+    } catch (error) {
+      last = error;
+      await new Promise((resolve) => setTimeout(resolve, 400 * (attempt + 1)));
+    }
+  }
+  throw last;
+}
+
+const Twin3D = lazy(loadTwin);
+
+class TwinBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true };
+  }
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center text-[12px] text-muted">
+        <p>3D не загрузился.</p>
+        <button
+          type="button"
+          className="h-11 rounded-[8px] border border-border bg-raised px-3 text-fg"
+          onClick={() => window.location.reload()}
+        >
+          Обновить
+        </button>
+      </div>
+    );
+  }
+}
 
 const xrayKeys = [
   { id: "airflow" as const, label: "Воздух" },
@@ -72,9 +108,11 @@ export function Workspace() {
       {!photoWorkspace && view === "2d" && <Cad2D />}
       {!photoWorkspace && view === "photo" && <Cad2D />}
       {!photoWorkspace && view === "3d" && (
-        <Suspense fallback={<div className="flex h-full items-center justify-center text-[12px] text-muted">Digital Twin…</div>}>
-          <Twin3D />
-        </Suspense>
+        <TwinBoundary>
+          <Suspense fallback={<div className="flex h-full items-center justify-center text-[12px] text-muted">Digital Twin…</div>}>
+            <Twin3D />
+          </Suspense>
+        </TwinBoundary>
       )}
       {!photoWorkspace && view === "split" && (
         <div className="grid h-full min-h-0 grid-cols-2 max-md:grid-cols-1">
@@ -82,9 +120,11 @@ export function Workspace() {
             <Cad2D />
           </div>
           <div className="min-h-0">
-            <Suspense fallback={<div className="flex h-full items-center justify-center text-[12px] text-muted">Digital Twin…</div>}>
-              <Twin3D />
-            </Suspense>
+            <TwinBoundary>
+              <Suspense fallback={<div className="flex h-full items-center justify-center text-[12px] text-muted">Digital Twin…</div>}>
+                <Twin3D />
+              </Suspense>
+            </TwinBoundary>
           </div>
         </div>
       )}

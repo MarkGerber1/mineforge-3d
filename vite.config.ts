@@ -160,6 +160,9 @@ export default defineConfig(({ command, isPreview }) => ({
     strictPort: true,
   },
   resolve: { tsconfigPaths: true },
+  optimizeDeps: {
+    include: ["three", "@react-three/fiber", "@react-three/drei"],
+  },
   plugins: [
     pgliteBootstrapPlugin(),
     // Before tanstackStart so /auth/popup never falls through to the SPA.
