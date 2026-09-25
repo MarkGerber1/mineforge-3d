@@ -26,12 +26,13 @@ function downloadJson(filename: string, json: string) {
   URL.revokeObjectURL(url);
 }
 
-export function ProjectPortability({ onDone }: { onDone?: () => void }) {
+export function ProjectPortability({ surface }: { surface: "mobile" | "desktop" }) {
   const store = useProjectStore();
   const inputRef = useRef<HTMLInputElement>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState<PortableBundle | null>(null);
   const [busy, setBusy] = useState(false);
+  const id = (name: string) => `project-${name}-${surface}`;
 
   async function onExport() {
     if (busy) return;
@@ -66,7 +67,6 @@ export function ProjectPortability({ onDone }: { onDone?: () => void }) {
     store.setView("2d");
     setPending(null);
     setNotice(`Проект импортирован: ${project.name}`);
-    onDone?.();
   }
 
   async function onFile(file: File | undefined) {
@@ -117,10 +117,10 @@ export function ProjectPortability({ onDone }: { onDone?: () => void }) {
   }
 
   return (
-    <div className="flex flex-col gap-1" data-mf-id="project-portability">
+    <div className="flex flex-col gap-1" data-mf-id={id("portability")}>
       <button
         type="button"
-        data-mf-id="project-export"
+        data-mf-id={id("export")}
         className="h-11 rounded-[8px] bg-raised px-2 text-[11px] text-fg"
         onClick={() => void onExport()}
         disabled={busy}
@@ -129,14 +129,14 @@ export function ProjectPortability({ onDone }: { onDone?: () => void }) {
       </button>
       <label
         className="relative flex h-11 items-center justify-center rounded-[8px] bg-raised px-2 text-[11px] text-fg"
-        data-mf-id="project-import"
+        data-mf-id={id("import")}
       >
         Импорт проекта
         <input
           ref={inputRef}
           type="file"
           accept={PROJECT_IMPORT_ACCEPT}
-          data-mf-id="project-import-file"
+          data-mf-id={id("import-file")}
           className="absolute inset-0 cursor-pointer opacity-0"
           onChange={(event) => void onFile(event.target.files?.[0])}
         />
@@ -145,7 +145,7 @@ export function ProjectPortability({ onDone }: { onDone?: () => void }) {
         <div className="grid grid-cols-1 gap-1">
           <button
             type="button"
-            data-mf-id="project-import-replace"
+            data-mf-id={id("import-replace")}
             className="h-11 rounded-[8px] border border-border px-2 text-[11px] text-fg"
             onClick={() => void decide("replace")}
           >
@@ -153,7 +153,7 @@ export function ProjectPortability({ onDone }: { onDone?: () => void }) {
           </button>
           <button
             type="button"
-            data-mf-id="project-import-copy"
+            data-mf-id={id("import-copy")}
             className="h-11 rounded-[8px] border border-border px-2 text-[11px] text-fg"
             onClick={() => void decide("copy")}
           >
@@ -162,7 +162,7 @@ export function ProjectPortability({ onDone }: { onDone?: () => void }) {
         </div>
       )}
       {notice && (
-        <p className="text-[11px] leading-snug text-muted" data-mf-id="project-portability-notice">
+        <p className="text-[11px] leading-snug text-muted" data-mf-id={id("portability-notice")}>
           {notice}
         </p>
       )}

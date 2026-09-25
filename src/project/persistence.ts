@@ -111,7 +111,11 @@ export async function commitImportedProject(project: Project, media: Record<stri
       tx.objectStore(STORE).put(project);
       tx.objectStore(META).put(project.id, "lastId");
       const mediaStore = tx.objectStore("media");
-      for (const [id, dataUrl] of Object.entries(media)) mediaStore.put(dataUrl, id);
+      for (const id of photoIdsOf(project)) {
+        const bytes = media[id];
+        if (bytes) mediaStore.put(bytes, id);
+        else mediaStore.delete(id);
+      }
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error ?? new Error("import failed"));
       tx.onabort = () => reject(tx.error ?? new Error("import aborted"));

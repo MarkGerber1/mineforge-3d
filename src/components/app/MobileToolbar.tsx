@@ -71,7 +71,7 @@ export function MobileToolbar() {
         </button>
         {addOpen && (
           <div
-            className="absolute bottom-12 left-1/2 z-30 w-[min(280px,calc(100vw-24px))] -translate-x-1/2 rounded-[12px] border border-border bg-panel p-2 shadow-panel"
+            className="absolute bottom-12 left-0 z-30 w-[min(280px,calc(100vw-24px))] rounded-[12px] border border-border bg-panel p-2 shadow-panel"
             data-mf-id="add-menu"
           >
             <div className="mb-1 text-[10px] uppercase tracking-[0.12em] text-muted">
@@ -133,7 +133,7 @@ export function MobileToolbar() {
                 Демо
               </button>
             </div>
-            <ProjectPortability onDone={() => setAddOpen(false)} />
+            <ProjectPortability surface="mobile" />
           </div>
         )}
       </div>

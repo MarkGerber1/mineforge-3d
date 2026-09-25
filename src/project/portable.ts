@@ -272,12 +272,18 @@ export function emptyPortableStore(): PortableStore {
   return { projects: {}, lastId: null, media: {} };
 }
 
-/** Same writes as the IndexedDB import transaction: project, lastId, media. */
+/** Same writes as the IndexedDB import transaction: project, lastId, photo media. */
 export function applyImportedRecords(store: PortableStore, project: Project, media: Record<string, string>): PortableStore {
+  const nextMedia = { ...store.media };
+  for (const id of photoIdsOf(project)) {
+    const bytes = media[id];
+    if (bytes) nextMedia[id] = bytes;
+    else delete nextMedia[id];
+  }
   return {
     projects: { ...store.projects, [project.id]: project },
     lastId: project.id,
-    media: { ...store.media, ...media },
+    media: nextMedia,
   };
 }
 

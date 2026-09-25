@@ -10,6 +10,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, before, describe, it } from "node:test";
 import { webkit, devices, type Browser, type BrowserContext, type Page } from "playwright";
+import { emptyReality } from "../engineering/types.ts";
+import { emptyRectangularProject } from "../project/factory.ts";
+import { buildPortableBundle, parsePortableBundle, stringifyPortableBundle } from "../project/portable.ts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const BASE = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:8080";
@@ -17,8 +20,127 @@ const PHOTO = join(ROOT, "tests/fixtures/photo/south.jpg");
 const VIDEO_WEBM = join(ROOT, "tests/fixtures/video/frames-rgb.webm");
 const CORRUPT = join(ROOT, "tests/fixtures/video/corrupt.mp4");
 const EVIDENCE_PATH = join(ROOT, "test-results/batch4-webkit-video.json");
-const PORTRAIT = join(ROOT, "tests/fixtures/photo/portrait.jpg");
+const FARM_PHOTO = join(ROOT, "tests/fixtures/photo/farm-north.jpg");
+const FARM_BUNDLE = join(ROOT, "test-results/farm-real-01.mineforge.json");
+
+function writeFarmBundle(): void {
+  const jpeg = readFileSync(FARM_PHOTO);
+  const dataUrl = `data:image/jpeg;base64,${jpeg.toString("base64")}`;
+  const widthPx = 1500;
+  const heightPx = 2000;
+  const ax = 736;
+  const bx = 824;
+  const y = 952;
+  const project = emptyRectangularProject({ name: "FARM-REAL-01", widthM: 2.67, depthM: 4.6, heightM: 3.87 });
+  project.id = "proj_farm_real_01";
+  project.openings = [];
+  project.racks = [];
+  project.fans = [];
+  project.fleet = { ...project.fleet, requestedCount: 0 };
+  project.reality = {
+    ...emptyReality(),
+    photos: [
+      {
+        id: "PHOTO-01",
+        name: "PHOTO-01.jpg",
+        mime: "image/jpeg",
+        createdAt: 1,
+        notes: "North wall. Scale is the measured 0.500 m opening diameter, not a pixel estimate.",
+        wallHint: "north",
+        widthPx,
+        heightPx,
+        markers: [
+          { id: "a", nx: ax / widthPx, ny: y / heightPx, kind: "opening", label: "A", pairId: "b", provenance: "FIELD_MEASUREMENT" },
+          {
+            id: "b",
+            nx: bx / widthPx,
+            ny: y / heightPx,
+            kind: "opening",
+            label: "B",
+            pairId: "a",
+            lengthM: 0.5,
+            provenance: "FIELD_MEASUREMENT",
+          },
+        ],
+        calibration: {
+          scaleMPerPx: 0.5 / (bx - ax),
+          lengthM: 0.5,
+          aId: "a",
+          bId: "b",
+          provenance: "FIELD_MEASUREMENT",
+        },
+      },
+    ],
+    findings: [
+      {
+        id: "N-OPEN-LOW-01",
+        kind: "opening",
+        summary: "NORTH Ø0.500 m. Bottom Z 1.600 m. Center Z 1.850 m. Horizontal offset from WEST is missing.",
+        confidence: "HIGH",
+        status: "PENDING",
+        incomplete: true,
+        missing: ["horizontal offset from WEST wall"],
+        photoId: "PHOTO-01",
+      },
+      {
+        id: "N-OPEN-UP-02",
+        kind: "opening",
+        summary: "NORTH Ø0.500 m. Bottom Z 2.200 m. Center Z 2.450 m. Clear vertical gap 0.100 m. Horizontal offset from WEST is missing.",
+        confidence: "HIGH",
+        status: "PENDING",
+        incomplete: true,
+        missing: ["horizontal offset from WEST wall"],
+        photoId: "PHOTO-01",
+      },
+      {
+        id: "N-HATCH-01",
+        kind: "opening",
+        summary: "NORTH technical hatch. Bottom Z 0. Width, height, and X offset from WEST are missing.",
+        confidence: "HIGH",
+        status: "PENDING",
+        incomplete: true,
+        missing: ["width", "height", "horizontal offset from WEST wall"],
+        photoId: "PHOTO-01",
+      },
+      {
+        id: "DUCT-W-01",
+        kind: "duct",
+        summary: "Existing rectangular metal duct along WEST. Exact section and Y extents are not confirmed.",
+        confidence: "LOW",
+        status: "PENDING",
+        incomplete: true,
+        missing: ["exact width", "exact height", "Y start", "Y end", "base Z"],
+        photoId: "PHOTO-01",
+      },
+      {
+        id: "BEAM-01",
+        kind: "beam",
+        summary: "Ceiling beam. Position and section are not measured.",
+        confidence: "LOW",
+        status: "PENDING",
+        incomplete: true,
+        missing: ["Y", "section width", "section height", "bottom Z"],
+        photoId: "PHOTO-01",
+      },
+      {
+        id: "BEAM-02",
+        kind: "beam",
+        summary: "Ceiling beam. Position and section are not measured.",
+        confidence: "LOW",
+        status: "PENDING",
+        incomplete: true,
+        missing: ["Y", "section width", "section height", "bottom Z"],
+        photoId: "PHOTO-01",
+      },
+    ],
+  };
+  const bundle = buildPortableBundle(project, { "PHOTO-01": dataUrl }, "2026-09-25T00:00:00.000Z");
+  parsePortableBundle(stringifyPortableBundle(bundle));
+  mkdirSync(dirname(FARM_BUNDLE), { recursive: true });
+  writeFileSync(FARM_BUNDLE, stringifyPortableBundle(bundle));
+}
 const LANDSCAPE = join(ROOT, "tests/fixtures/photo/landscape.jpg");
+const PORTRAIT = join(ROOT, "tests/fixtures/photo/portrait.jpg");
 
 const IPHONES = [
   { id: "375x812", device: { ...devices["iPhone X"], viewport: { width: 375, height: 812 } } },
@@ -2629,22 +2751,97 @@ describe("3D-E2E-R3 cancel is not commit", () => {
   });
 });
 
-describe("MOB-PORT-01 iPhone project import file input", () => {
-  it("portable bundle input is tappable in the add menu", async () => {
-    const { ctx, page } = await openPhone("390x844");
-    try {
-      await mf(page, "toolbar-add").tap();
-      const input = mf(page, "project-import-file");
-      await input.waitFor({ state: "attached", timeout: 5000 });
-      assert.equal(await input.getAttribute("accept"), ".mineforge.json,application/json");
-      const box = await mf(page, "project-import").boundingBox();
-      assert.ok(box, "import control has a box");
-      assert.ok(box!.height >= 44, `import height ${box?.height}`);
-      assert.ok(box!.width >= 44, `import width ${box?.width}`);
-      assert.ok(await mf(page, "project-export").boundingBox());
-    } finally {
-      await ctx.close();
-    }
+async function importFarmOnPhone(phoneId: "390x844" | "430x932"): Promise<void> {
+  writeFarmBundle();
+  const { ctx, page } = await openPhone(phoneId);
+  try {
+    await page.getByText("8.000 × 5.000 × 2.800").first().waitFor({ timeout: 15000 });
+    await mf(page, "toolbar-add").tap();
+    const visible = page.locator("[data-mf-id='project-import-mobile']");
+    await visible.waitFor({ timeout: 5000 });
+    const box = await visible.boundingBox();
+    assert.ok(box, "visible mobile import has no box");
+    assert.ok(box.height >= 44 && box.width >= 44, `mobile import box ${box.width}x${box.height}`);
+    assert.equal(await page.locator("[data-mf-id='project-import-desktop']").boundingBox(), null);
+    await page.locator("[data-mf-id='project-import-file-mobile']").setInputFiles(FARM_BUNDLE);
+    await page.locator("[data-mf-id='project-portability-notice-mobile']").waitFor({ timeout: 20000 });
+    await page.getByText("Проект импортирован: FARM-REAL-01").waitFor();
+    await page.getByText("2.670 × 4.600 × 3.870 m · 12.282 m²").first().waitFor({ timeout: 15000 });
+    assert.equal(await mf(page, "hud-safe").getAttribute("data-mf-verified"), "0");
+    const bound = await page.evaluate(() => {
+      const w = window as unknown as {
+        __MF_STORE__: { getState: () => { project: {
+          name: string;
+          openings: unknown[];
+          racks: Array<{ name: string }>;
+          fans: unknown[];
+          reality: { photos: Array<{ wallHint?: string; wallRegistration?: unknown; calibration?: { lengthM: number } }>; findings: Array<{ status: string; incomplete?: boolean }> };
+        } } };
+      };
+      const p = w.__MF_STORE__.getState().project;
+      const photo = p.reality.photos[0];
+      return {
+        name: p.name,
+        racks: p.racks.map((r) => r.name),
+        openings: p.openings.length,
+        fans: p.fans.length,
+        wall: photo?.wallHint ?? null,
+        length: photo?.calibration?.lengthM ?? null,
+        registered: Boolean(photo?.wallRegistration),
+        pending: p.reality.findings.filter((f) => f.status === "PENDING" && f.incomplete).length,
+      };
+    });
+    assert.equal(bound.name, "FARM-REAL-01");
+    assert.deepEqual(bound.racks, []);
+    assert.equal(bound.openings, 0);
+    assert.equal(bound.fans, 0);
+    assert.equal(bound.wall, "north");
+    assert.equal(bound.length, 0.5);
+    assert.equal(bound.registered, false);
+    assert.equal(bound.pending, 6);
+    await mf(page, "toolbar-reality").tap();
+    const handle = page.locator("[data-mf-id='sheet-handle']");
+    const handleBox = await handle.boundingBox();
+    assert.ok(handleBox, "reality sheet handle");
+    await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(handleBox.x + handleBox.width / 2, Math.max(8, handleBox.y - 160), { steps: 12 });
+    await page.mouse.up();
+    await page.locator("[data-mf-sheet='full']").waitFor({ timeout: 5000 });
+    await page.locator("[data-mf-id='annotator']").scrollIntoViewIfNeeded();
+    await mf(page, "annotator-img").waitFor({ timeout: 15000 });
+    await page.waitForFunction(() => {
+      const img = document.querySelector("[data-mf-id='annotator-img']") as HTMLImageElement | null;
+      return Boolean(img && img.naturalWidth > 100);
+    });
+    await page.getByText("МАСШТАБ: ГОТОВ").first().waitFor();
+    await page.getByText("ПРИВЯЗКА К СТЕНЕ: НЕ ЗАДАНА").first().waitFor();
+    await mf(page, "sheet-dismiss").tap();
+    await mf(page, "toolbar-3d").tap();
+    await page.getByText("1:1 Digital Twin · 2.670 × 4.600 × 3.870 m").first().waitFor({ timeout: 20000 });
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => Boolean((window as unknown as { __MF_STORE__?: unknown }).__MF_STORE__), null, { timeout: 20000 });
+    await page.getByText("2.670 × 4.600 × 3.870 m · 12.282 m²").first().waitFor({ timeout: 20000 });
+    const after = await page.evaluate(() => {
+      const w = window as unknown as { __MF_STORE__: { getState: () => { project: { name: string; racks: unknown[] } } } };
+      return w.__MF_STORE__.getState().project;
+    });
+    assert.equal(after.name, "FARM-REAL-01");
+    assert.equal(after.racks.length, 0);
+  } finally {
+    await ctx.close();
+  }
+}
+
+describe("MOB-PORT-01 visible mobile import of FARM-REAL-01", () => {
+  it("390×844 imports the real shell, photo, 2D, 3D, and reload", async () => {
+    await importFarmOnPhone("390x844");
+  });
+});
+
+describe("MOB-PORT-02 second phone width", () => {
+  it("430×932 imports the same visible room", async () => {
+    await importFarmOnPhone("430x932");
   });
 });
 

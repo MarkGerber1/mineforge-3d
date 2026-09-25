@@ -272,18 +272,47 @@ describe("PORT-J existing project id is not silently overwritten", () => {
   });
 });
 
+describe("PORT-L replace drops stale photo bytes", () => {
+  it("deletes a photo id that the incoming bundle does not carry", () => {
+    const project = farmReal01();
+    const oldBytes = JPEG;
+    const other = PNG;
+    let stored = applyImportedRecords(emptyPortableStore(), project, { "PHOTO-01": oldBytes });
+    stored = {
+      ...stored,
+      media: { ...stored.media, "OTHER-PHOTO": other },
+    };
+    const replacement = buildPortableBundle(project, { "PHOTO-01": null }, "2026-09-25T00:00:00.000Z");
+    assert.deepEqual(replacement.missingMedia, ["PHOTO-01"]);
+    const prepared = prepareImport(replacement, new Set([project.id]), "replace");
+    stored = applyImportedRecords(stored, prepared.project, prepared.media);
+    assert.equal(stored.media["PHOTO-01"], undefined);
+    assert.equal(stored.media["OTHER-PHOTO"], other);
+    assert.equal(stored.lastId, "proj_farm_real_01");
+    assert.equal(stored.projects["proj_farm_real_01"]?.room.widthM, 2.67);
+
+    stored = applyImportedRecords(stored, project, { "PHOTO-01": PNG });
+    assert.equal(stored.media["PHOTO-01"], PNG);
+    assert.equal(stored.media["OTHER-PHOTO"], other);
+  });
+});
+
 describe("PORT-K mobile file input contract", () => {
   it("exposes a 44px file input that accepts a portable bundle", () => {
     assert.equal(PROJECT_IMPORT_ACCEPT, ".mineforge.json,application/json");
     assert.equal(safeProjectFilename("FARM-REAL-01"), "FARM-REAL-01.mineforge.json");
     const ui = readFileSync(new URL("../../components/app/ProjectPortability.tsx", import.meta.url), "utf8");
     const mobile = readFileSync(new URL("../../components/app/MobileToolbar.tsx", import.meta.url), "utf8");
-    assert.match(ui, /data-mf-id="project-import-file"/);
-    assert.match(ui, /data-mf-id="project-export"/);
+    const desktop = readFileSync(new URL("../../components/app/LeftSidebar.tsx", import.meta.url), "utf8");
+    assert.match(ui, /project-\$\{name\}-\$\{surface\}/);
+    assert.match(ui, /data-mf-id=\{id\("import-file"\)\}/);
+    assert.match(ui, /data-mf-id=\{id\("export"\)\}/);
     assert.match(ui, /absolute inset-0/);
     assert.match(ui, /h-11/);
     assert.match(ui, /PROJECT_IMPORT_ACCEPT/);
-    assert.match(mobile, /ProjectPortability/);
+    assert.match(mobile, /surface="mobile"/);
+    assert.match(desktop, /surface="desktop"/);
+    assert.equal(ui.includes('data-mf-id="project-import-file"'), false);
     assert.ok(MAX_BUNDLE_CHARS > 1_000_000);
   });
 

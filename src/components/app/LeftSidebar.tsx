@@ -125,7 +125,7 @@ export function LeftSidebar() {
           >
             Новое 6×4×2.8
           </Button>
-          <ProjectPortability />
+          <ProjectPortability surface="desktop" />
         </div>
       </div>
     </aside>
