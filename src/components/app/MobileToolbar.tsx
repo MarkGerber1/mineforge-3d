@@ -5,6 +5,7 @@ import { PHOTO_OVERLAY_KINDS, PHOTO_OVERLAY_LABEL_RU } from "@/engineering/photo
 import { emptyRectangularProject, undergroundParkingFarm } from "@/project/factory";
 import { cn } from "@/lib/utils";
 import type { PhotoOverlayKind } from "@/engineering/types";
+import { ProjectPortability } from "./ProjectPortability";
 
 const ADD_2D: Array<{ id: CadTool; label: string; icon: typeof Box }> = [
   { id: "rack", label: "Стойка", icon: Box },
@@ -70,7 +71,7 @@ export function MobileToolbar() {
         </button>
         {addOpen && (
           <div
-            className="absolute bottom-12 left-1/2 z-30 w-[min(280px,calc(100vw-24px))] -translate-x-1/2 rounded-[12px] border border-border bg-panel p-2 shadow-panel"
+            className="absolute bottom-12 left-0 z-30 w-[min(280px,calc(100vw-24px))] rounded-[12px] border border-border bg-panel p-2 shadow-panel"
             data-mf-id="add-menu"
           >
             <div className="mb-1 text-[10px] uppercase tracking-[0.12em] text-muted">
@@ -132,6 +133,7 @@ export function MobileToolbar() {
                 Демо
               </button>
             </div>
+            <ProjectPortability surface="mobile" />
           </div>
         )}
       </div>

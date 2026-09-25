@@ -1,5 +1,7 @@
 import type { Project } from "../engineering/types.ts";
+import { loadMedia } from "../reality/media.ts";
 import { migrateProject } from "./schema.ts";
+import { photoIdsOf } from "./portable.ts";
 
 const DB = "mineforge";
 const STORE = "projects";
@@ -88,4 +90,37 @@ export function exportProjectJson(project: Project): string {
 
 export function importProjectJson(text: string): Project {
   return migrateProject(JSON.parse(text));
+}
+
+export async function readProjectMedia(project: Project): Promise<Record<string, string | null>> {
+  const media: Record<string, string | null> = {};
+  for (const id of photoIdsOf(project)) media[id] = await loadMedia(id);
+  return media;
+}
+
+/**
+ * One transaction: project + lastId + photo media.
+ * Must match applyImportedRecords. Caller validates before this runs.
+ * A failed transaction does not activate the project.
+ */
+export async function commitImportedProject(project: Project, media: Record<string, string>): Promise<void> {
+  const db = await openDb();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction([STORE, META, "media"], "readwrite");
+      tx.objectStore(STORE).put(project);
+      tx.objectStore(META).put(project.id, "lastId");
+      const mediaStore = tx.objectStore("media");
+      for (const id of photoIdsOf(project)) {
+        const bytes = media[id];
+        if (bytes) mediaStore.put(bytes, id);
+        else mediaStore.delete(id);
+      }
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error ?? new Error("import failed"));
+      tx.onabort = () => reject(tx.error ?? new Error("import aborted"));
+    });
+  } finally {
+    db.close();
+  }
 }

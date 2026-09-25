@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { ASIC_CATALOG } from "@/equipment/asic-catalog";
 import { FAN_CATALOG } from "@/equipment/fan-catalog";
 import { emptyRectangularProject, undergroundParkingFarm } from "@/project/factory";
+import { ProjectPortability } from "./ProjectPortability";
 
 const tools: Array<{ id: CadTool; label: string; icon: typeof MousePointer2; hint: string }> = [
   { id: "select", label: "Выбор", icon: MousePointer2, hint: "V" },
@@ -124,6 +125,7 @@ export function LeftSidebar() {
           >
             Новое 6×4×2.8
           </Button>
+          <ProjectPortability surface="desktop" />
         </div>
       </div>
     </aside>

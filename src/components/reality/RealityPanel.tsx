@@ -130,7 +130,7 @@ export function RealityPanel() {
   const selectedForAi = videos.flatMap((v) => v.selectedFrameIds);
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-surface" data-mf-id="reality">
+    <div className="flex h-full min-h-0 flex-col overflow-y-auto bg-surface" data-mf-id="reality">
       <div className="flex items-center justify-between px-3 py-2">
         <div className="text-[10px] uppercase tracking-[0.12em] text-muted">Reality Sync</div>
         <div className="flex gap-1" data-mf-id="compare">
@@ -259,7 +259,7 @@ export function RealityPanel() {
           В AI уйдёт {Math.min(selectedForAi.length, VIDEO_LIMITS.maxAiFrames)} кадр. с timestamp — не «видеофайл».
         </div>
       )}
-      <div className="min-h-0 flex-1">
+      <div className="h-[42vh] min-h-[220px] shrink-0">
         {store.activePhotoId ? (
           <PhotoAnnotator photoId={store.activePhotoId} />
         ) : (

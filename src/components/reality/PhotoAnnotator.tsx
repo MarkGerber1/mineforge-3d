@@ -568,7 +568,7 @@ export function PhotoAnnotator({ photoId }: { photoId: string }) {
           inputMode="decimal"
           className="h-11 min-w-[120px] flex-1 rounded-[6px] border border-border bg-bg px-2 font-mono text-[12px]"
           data-mf-id="cal-length"
-          placeholder={mode === "calibrate" ? "A–B = 2,43 m (замер)" : "длина, если известна"}
+          placeholder={mode === "calibrate" ? "длина A–B, м" : "длина, если известна"}
           value={len}
           onChange={(e) => setLen(e.target.value)}
         />
