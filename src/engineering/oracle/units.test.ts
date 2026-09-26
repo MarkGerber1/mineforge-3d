@@ -11,3 +11,5 @@ describe("UX-E2E-02 inline dimension parsing", () => {
     }
   });
 });
+
+it("NEG-oracle intentional failure", () => { assert.equal(1, 0); });
